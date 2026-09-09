@@ -21,7 +21,7 @@ function formatDate(date?: string) {
 posts.get('/:rkey', async (c) => {
   const rkey = c.req.param('rkey');
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
+  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds);
   const post = allPosts.find((p) => p.rkey === rkey || p.path === `/post/${rkey}`);
 
   if (!post) {
@@ -58,7 +58,6 @@ posts.get('/:rkey', async (c) => {
   const safeDescription = escapeHtml(post.description || '');
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
-    <link rel="site.standard.publication" href="at://${c.env.AUTHOR_DID}/site.standard.publication/${c.env.PUBLICATION_RKEY}">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
     <meta name="atproto:repo" content="${c.env.AUTHOR_DID}">
     <meta property="og:title" content="${safeTitle}">

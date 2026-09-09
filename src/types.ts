@@ -2,7 +2,7 @@ export type Env = {
   PUB_NAME: string;
   PUB_DESCRIPTION: string;
   AUTHOR_DID: string;
-  PUBLICATION_RKEY: string;
+  PUBLICATION_RKEY?: string;
   DEFAULT_PDS: string;
 };
 

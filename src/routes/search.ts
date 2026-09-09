@@ -28,7 +28,7 @@ search.get('/', async (c) => {
 
   if (query.trim()) {
     try {
-      const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
+      const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds);
       results = searchArticles(allPosts, query);
     } catch (e) {
       error = 'Failed to search articles. Please try again.';

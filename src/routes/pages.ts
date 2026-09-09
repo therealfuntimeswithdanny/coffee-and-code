@@ -53,7 +53,7 @@ pages.get('/about', (c) => {
 
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
+  const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
   const archiveItems = posts
     .map(
       (post) => `

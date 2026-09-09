@@ -30,7 +30,7 @@ meta.get('/.well-known/site.standard.publication', (c) => {
 // RSS 2.0 Feed
 meta.get('/rss.xml', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
+  const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
   const baseUrl = new URL(c.req.url).origin;
 
   const rssItems = posts
@@ -64,7 +64,7 @@ meta.get('/rss.xml', async (c) => {
 // Sitemap XML
 meta.get('/sitemap.xml', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
+  const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
   const baseUrl = new URL(c.req.url).origin;
 
   const urls = posts
