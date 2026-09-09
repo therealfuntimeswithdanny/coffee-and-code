@@ -1,0 +1,10 @@
+name = "coffee-and-code"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+PUB_NAME = "Coffee and Code"
+PUB_DESCRIPTION = "A small tech publication by Daniel Morrisey."
+AUTHOR_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
+DEFAULT_PDS = "https://eurosky.social"
