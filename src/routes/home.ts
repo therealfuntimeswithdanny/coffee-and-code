@@ -77,8 +77,14 @@ home.get('/', async (c) => {
     .join('');
 
   const body = `
+    <section class="publication-intro">
+      <p class="eyebrow">Independent technology journal</p>
+      <h1>${c.env.PUB_NAME}</h1>
+      <p>${c.env.PUB_DESCRIPTION}</p>
+    </section>
+
     <section class="front-page" aria-label="Latest stories">
-      <div class="section-heading"><span>Latest stories</span><span>${latestPosts.length} most recent</span></div>
+      <div class="section-heading"><span>Latest</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
       <div class="front-page__grid">
         ${heroHtml}
         <aside class="recent-stories" aria-label="More recent stories">
