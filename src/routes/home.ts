@@ -116,7 +116,10 @@ home.get('/', async (c) => {
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    ${heroPost?.cover ? `<meta property="og:image" content="${escapeHtml(heroPost.cover)}"><meta property="og:image:type" content="image/jpeg"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${escapeHtml(heroPost.cover)}">` : `<meta name="twitter:card" content="summary">`}
+    <meta property="og:image" content="${escapeHtml(pageUrl.split('/').slice(0, 3).join('/'))}/og.png">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="${escapeHtml(pageUrl.split('/').slice(0, 3).join('/'))}/og.png">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 

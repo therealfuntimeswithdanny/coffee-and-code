@@ -40,11 +40,14 @@ pages.get('/about', (c) => {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+  const baseUrl = new URL(pageUrl).origin;
   const metaTags = `
     <meta property="og:title" content="About ${escapeHtml(c.env.PUB_NAME)}">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${baseUrl}/og.png">
+    <meta property="og:image:type" content="image/png">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 

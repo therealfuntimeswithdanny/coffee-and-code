@@ -77,6 +77,8 @@ posts.get('/:rkey', async (c) => {
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(getDescription());
   const previewImage = getImage();
+  const baseUrl = new URL(pageUrl).origin;
+  const ogImage = previewImage || `${baseUrl}/og.png`;
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
@@ -85,7 +87,12 @@ posts.get('/:rkey', async (c) => {
     <meta property="og:description" content="${safeDescription}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    ${previewImage ? `<meta property="og:image" content="${escapeHtml(previewImage)}"><meta property="og:image:type" content="image/jpeg"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${escapeHtml(previewImage)}">` : `<meta name="twitter:card" content="summary">`}
+    <meta property="og:image" content="${escapeHtml(ogImage)}">
+    <meta property="og:image:type" content="${previewImage ? 'image/jpeg' : 'image/png'}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${safeTitle}">
+    <meta name="twitter:description" content="${safeDescription}">
+    <meta name="twitter:image" content="${escapeHtml(ogImage)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 

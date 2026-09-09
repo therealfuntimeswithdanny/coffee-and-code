@@ -1,6 +1,6 @@
 import { StandardDocument } from '../types';
 
-const imageCdnUrl = 'https://cdn.coffee-and-code.com/';
+const imageCdnUrl = 'https://cdn.coffeencode.cc/';
 
 // Retry helper with exponential backoff
 async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): Promise<Response> {
