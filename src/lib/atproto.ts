@@ -1,0 +1,69 @@
+async function fetchArticles(did: string, pdsUrl: string): Promise<StandardDocument[]> {
+  const articles: StandardDocument[] = [];
+  try {
+    // 1. Fetch site.standard.document records
+    const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=site.standard.document&limit=50`;
+    const stdRes = await fetch(stdUrl);
+
+    if (stdRes.ok) {
+      const data: any = await stdRes.json();
+      for (const rec of data.records || []) {
+        if (!rec?.value) continue;
+        const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
+        const content = typeof rec.value.content === 'string' ? rec.value.content : '';
+        
+        articles.push({
+          uri: rec.uri || '',
+          cid: rec.cid || '',
+          rkey: rkey || '',
+          title: rec.value.title || 'Untitled Post',
+          content: content,
+          publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+          path: rec.value.path || `/post/${rkey}`,
+          description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
+          cover: rec.value.cover?.ref?.$link 
+            ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${rec.value.cover.ref.$link}` 
+            : undefined
+        });
+      }
+    }
+
+    // 2. Fallback to app.bsky.feed.post if no standard.site documents exist
+    if (articles.length === 0) {
+      const bskyUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=app.bsky.feed.post&limit=30`;
+      const bskyRes = await fetch(bskyUrl);
+      if (bskyRes.ok) {
+        const data: any = await bskyRes.json();
+        for (const rec of data.records || []) {
+          // Ignore replies
+          if (!rec?.value || rec.value.reply) continue;
+          
+          const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
+          const rawText = typeof rec.value.text === 'string' ? rec.value.text : '';
+          const textLines = rawText.split('\n');
+          const title = textLines[0] ? (textLines[0].length > 60 ? textLines[0].substring(0, 60) + '...' : textLines[0]) : 'Tech Note';
+
+          articles.push({
+            uri: rec.uri || '',
+            cid: rec.cid || '',
+            rkey: rkey || '',
+            title: title,
+            content: rawText,
+            publishedAt: rec.value.createdAt || new Date().toISOString(),
+            path: `/post/${rkey}`,
+            description: rawText ? (rawText.length > 160 ? rawText.substring(0, 160) + '...' : rawText) : ''
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching articles from PDS:', e);
+  }
+
+  // Safe sort
+  return articles.sort((a, b) => {
+    const timeA = new Date(a.publishedAt).getTime() || 0;
+    const timeB = new Date(b.publishedAt).getTime() || 0;
+    return timeB - timeA;
+  });
+}
