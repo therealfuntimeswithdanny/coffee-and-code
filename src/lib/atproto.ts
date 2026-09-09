@@ -24,10 +24,9 @@ function extractDocumentContent(value: any): string {
 
 function documentCoverUrl(value: any, did: string, pdsUrl: string): string | undefined {
   const cid = value.coverImage?.ref?.$link || value.cover?.ref?.$link;
-  const imageUrl = cid
+  return cid
     ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`
     : undefined;
-  return imageUrl ? proxyImageUrl(imageUrl) : undefined;
 }
 
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {

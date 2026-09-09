@@ -41,7 +41,6 @@ pages.get('/archive', async (c) => {
     .map(
       (post) => `
         <article class="archive-story">
-          ${post.cover ? `<a class="archive-story__image" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}"><img src="${post.cover}" alt="" class="story-image"></a>` : ''}
           <div>
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>
             <h2><a href="${post.path}">${post.title || 'Untitled'}</a></h2>

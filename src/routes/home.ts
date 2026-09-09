@@ -53,6 +53,7 @@ home.get('/', async (c) => {
             <article class="side-story">
               ${post.cover ? `<a class="side-story__image" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}"><img src="${post.cover}" alt="" class="story-image"></a>` : ''}
               <div>
+                <p class="eyebrow">Recent story</p>
                 <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
                 ${articleMeta(post)}
               </div>
@@ -65,8 +66,8 @@ home.get('/', async (c) => {
     .map(
       (post) => `
         <article class="archive-story">
-          ${post.cover ? `<a class="archive-story__image" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}"><img src="${post.cover}" alt="" class="story-image"></a>` : ''}
           <div>
+            <p class="eyebrow">From the archive</p>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             <p>${excerpt(post, 130)}</p>
           </div>
@@ -76,7 +77,14 @@ home.get('/', async (c) => {
     .join('');
 
   const body = `
+    <section class="publication-intro">
+      <p class="eyebrow">Independent technology journal</p>
+      <h1>${c.env.PUB_NAME}</h1>
+      <p>${c.env.PUB_DESCRIPTION}</p>
+    </section>
+
     <section class="front-page" aria-label="Latest stories">
+      <div class="section-heading"><span>Latest</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
       <div class="front-page__grid">
         ${heroHtml}
         <aside class="recent-stories" aria-label="More recent stories">
