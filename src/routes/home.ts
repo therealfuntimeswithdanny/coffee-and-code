@@ -26,16 +26,9 @@ function articleMeta(post: StandardDocument) {
 home.get('/', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
   const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
-  const requestedPage = Number.parseInt(c.req.query('page') || '1', 10);
-  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const pageSize = 10;
-  const startIndex = (page - 1) * pageSize;
-  const pagePosts = posts.slice(startIndex, startIndex + pageSize);
-  const [heroPost, ...otherPosts] = pagePosts;
+  const [heroPost, ...otherPosts] = posts;
   const sidePosts = otherPosts.slice(0, 3);
   const archivePosts = otherPosts.slice(3);
-  const displayedStart = pagePosts.length ? startIndex + 1 : 0;
-  const displayedEnd = startIndex + pagePosts.length;
 
   const heroHtml = heroPost
     ? `
@@ -44,7 +37,7 @@ home.get('/', async (c) => {
           ${heroPost.cover ? `<img src="${heroPost.cover}" alt="" class="story-image">` : '<span>Latest dispatch</span>'}
         </a>
         <div class="lead-story__content">
-          <p class="eyebrow">${page === 1 ? 'Most recent' : 'More stories'}</p>
+          <p class="eyebrow">Most recent</p>
           <h2><a href="${heroPost.path}">${heroPost.title || 'Untitled'}</a></h2>
           <p class="lead-story__summary">${excerpt(heroPost, 260)}</p>
           <div class="story-footer">${articleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <span aria-hidden="true">→</span></a></div>
@@ -83,8 +76,14 @@ home.get('/', async (c) => {
     .join('');
 
   const body = `
-    <section class="front-page" aria-label="${page === 1 ? 'Latest stories' : 'More stories'}">
-      <div class="section-heading"><span>${page === 1 ? 'Latest stories' : 'More stories'}</span><span>${displayedStart ? `Showing ${displayedStart}–${displayedEnd} of ${posts.length}` : 'No stories'}</span></div>
+    <section class="publication-intro">
+      <p class="eyebrow">Independent technology journal</p>
+      <h1>${c.env.PUB_NAME}</h1>
+      <p>${c.env.PUB_DESCRIPTION}</p>
+    </section>
+
+    <section class="front-page" aria-label="Latest stories">
+      <div class="section-heading"><span>Latest</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
       <div class="front-page__grid">
         ${heroHtml}
         <aside class="recent-stories" aria-label="More recent stories">
@@ -100,11 +99,6 @@ home.get('/', async (c) => {
             <div class="section-heading"><span>Earlier stories</span></div>
             <div class="archive-grid">${archiveHtml}</div>
           </section>`
-        : ''
-    }
-    ${
-      displayedEnd < posts.length
-        ? `<nav class="more-stories" aria-label="More stories"><a class="more-stories__button" href="/?page=${page + 1}">View more stories <span aria-hidden="true">→</span></a></nav>`
         : ''
     }
   `;
