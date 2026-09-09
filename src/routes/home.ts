@@ -81,7 +81,6 @@ home.get('/', async (c) => {
 
   const body = `
     <section class="publication-intro">
-      <p class="eyebrow">Independent technology journal</p>
       <h1>${c.env.PUB_NAME}</h1>
       <p>${c.env.PUB_DESCRIPTION}</p>
     </section>
