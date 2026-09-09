@@ -1,12 +1,5 @@
 import { StandardDocument } from '../types';
 
-const imageCdnUrl = 'https://cdn.coffee-and-code.com/';
-
-export function proxyImageUrl(imageUrl: string): string {
-  if (imageUrl.startsWith(imageCdnUrl)) return imageUrl;
-  return `${imageCdnUrl}${encodeURIComponent(imageUrl)}`;
-}
-
 function extractDocumentContent(value: any): string {
   if (typeof value.content === 'string') return value.content;
   if (typeof value.textContent === 'string') return value.textContent;
@@ -24,10 +17,9 @@ function extractDocumentContent(value: any): string {
 
 function documentCoverUrl(value: any, did: string, pdsUrl: string): string | undefined {
   const cid = value.coverImage?.ref?.$link || value.cover?.ref?.$link;
-  const imageUrl = cid
+  return cid
     ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`
     : undefined;
-  return imageUrl ? proxyImageUrl(imageUrl) : undefined;
 }
 
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {
