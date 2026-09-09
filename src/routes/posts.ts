@@ -21,7 +21,7 @@ function formatDate(date?: string) {
 posts.get('/:rkey', async (c) => {
   const rkey = c.req.param('rkey');
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds);
+  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
   const post = allPosts.find((p) => p.rkey === rkey || p.path === `/post/${rkey}`);
 
   if (!post) {
@@ -30,7 +30,11 @@ posts.get('/:rkey', async (c) => {
         <p class="eyebrow">404</p>
         <h1>Article not found</h1>
         <p>The requested story could not be located. It may have moved or no longer be published.</p>
-        <a href="/" class="read-link">Back to publication <span aria-hidden="true">→</span></a>
+        <div class="not-found__actions">
+          <a href="/" class="read-link">Back to publication <span aria-hidden="true">→</span></a>
+          <a href="/archive" class="read-link">Browse archive <span aria-hidden="true">→</span></a>
+          <a href="/search" class="read-link">Search articles <span aria-hidden="true">→</span></a>
+        </div>
       </section>
     `), 404);
   }
@@ -41,14 +45,28 @@ posts.get('/:rkey', async (c) => {
     (_match: string, before: string, source: string, after: string) => `${before}${proxyImageUrl(source)}${after}`
   );
   const pageUrl = new URL(c.req.url).toString();
+
+  // Escape HTML entities for safe attribute values
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const safeTitle = escapeHtml(post.title);
+  const safeDescription = escapeHtml(post.description || '');
   const articleMetaTags = `
-    <link rel="site.standard.document" href="${post.uri}">
-    <meta name="atproto:uri" content="${post.uri}">
-    <meta property="og:title" content="${post.title}">
-    <meta property="og:description" content="${post.description || ''}">
+    <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
+    <link rel="site.standard.publication" href="at://${c.env.AUTHOR_DID}/site.standard.publication/${c.env.PUBLICATION_RKEY}">
+    <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
+    <meta name="atproto:repo" content="${c.env.AUTHOR_DID}">
+    <meta property="og:title" content="${safeTitle}">
+    <meta property="og:description" content="${safeDescription}">
     <meta property="og:type" content="article">
-    <meta property="og:url" content="${pageUrl}">
-    ${post.cover ? `<meta property="og:image" content="${post.cover}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${post.cover}">` : ''}
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    ${post.cover ? `<meta property="og:image" content="${escapeHtml(post.cover)}"><meta property="og:image:type" content="image/jpeg"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${escapeHtml(post.cover)}">` : `<meta name="twitter:card" content="summary">`}
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
   const body = `

@@ -4,6 +4,7 @@ import homeRouter from './routes/home';
 import postsRouter from './routes/posts';
 import pagesRouter from './routes/pages';
 import metaRouter from './routes/meta';
+import searchRouter from './routes/search';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -12,5 +13,6 @@ app.route('/', homeRouter);
 app.route('/', pagesRouter);
 app.route('/post', postsRouter);
 app.route('/', metaRouter);
+app.route('/', searchRouter);
 
 export default app;

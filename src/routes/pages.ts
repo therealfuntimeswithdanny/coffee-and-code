@@ -31,12 +31,29 @@ pages.get('/about', (c) => {
       </p>
     </article>
   `;
-  return c.html(renderLayout(c, 'About', body));
+
+  const pageUrl = new URL(c.req.url).toString();
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const metaTags = `
+    <meta property="og:title" content="About ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'About', body, metaTags));
 });
 
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
+  const posts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
   const archiveItems = posts
     .map(
       (post) => `
@@ -61,27 +78,67 @@ pages.get('/archive', async (c) => {
     </section>
   `;
 
-  return c.html(renderLayout(c, 'Archive', body));
+  const pageUrl = new URL(c.req.url).toString();
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const metaTags = `
+    <meta property="og:title" content="Archive — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'Archive', body, metaTags));
 });
 
 pages.get('/privacy', (c) => {
-  return c.html(
-    renderLayout(
-      c,
-      'Privacy',
-      '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Privacy</h1><p class="text-gray-300 leading-relaxed">Coffee &amp; Code does not sell personal information. This site reads publicly available publication records from AT Protocol to display its stories.</p></article>'
-    )
-  );
+  const body = '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Privacy</h1><p class="text-gray-300 leading-relaxed">Coffee &amp; Code does not sell personal information. This site reads publicly available publication records from AT Protocol to display its stories.</p></article>';
+
+  const pageUrl = new URL(c.req.url).toString();
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const metaTags = `
+    <meta property="og:title" content="Privacy — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'Privacy', body, metaTags));
 });
 
 pages.get('/terms', (c) => {
-  return c.html(
-    renderLayout(
-      c,
-      'Terms',
-      '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Terms</h1><p class="text-gray-300 leading-relaxed">Content is provided for informational purposes. Reuse must respect the rights held by the original authors and publishers.</p></article>'
-    )
-  );
+  const body = '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Terms</h1><p class="text-gray-300 leading-relaxed">Content is provided for informational purposes. Reuse must respect the rights held by the original authors and publishers.</p></article>';
+
+  const pageUrl = new URL(c.req.url).toString();
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const metaTags = `
+    <meta property="og:title" content="Terms — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'Terms', body, metaTags));
 });
 
 export default pages;

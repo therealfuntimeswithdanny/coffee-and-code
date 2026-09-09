@@ -25,7 +25,7 @@ function articleMeta(post: StandardDocument) {
 
 home.get('/', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
+  const posts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
   const latestPosts = posts.slice(0, 10);
   const [heroPost, ...otherPosts] = latestPosts;
   const sidePosts = otherPosts.slice(0, 3);
@@ -80,11 +80,6 @@ home.get('/', async (c) => {
     .join('');
 
   const body = `
-    <section class="publication-intro">
-      <h1>${c.env.PUB_NAME}</h1>
-      <p>${c.env.PUB_DESCRIPTION}</p>
-    </section>
-
     <section class="front-page" aria-label="Latest stories">
       <div class="section-heading"><span>Latest</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
       <div class="front-page__grid">
@@ -107,7 +102,25 @@ home.get('/', async (c) => {
     }
   `;
 
-  return c.html(renderLayout(c, 'Home', body));
+  // Open Graph tags for the publication
+  const pageUrl = new URL(c.req.url).toString();
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const metaTags = `
+    <meta property="og:title" content="${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    ${heroPost?.cover ? `<meta property="og:image" content="${escapeHtml(heroPost.cover)}"><meta property="og:image:type" content="image/jpeg"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${escapeHtml(heroPost.cover)}">` : `<meta name="twitter:card" content="summary">`}
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'Home', body, metaTags));
 });
 
 export default home;

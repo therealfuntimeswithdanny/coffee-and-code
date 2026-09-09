@@ -12,4 +12,5 @@ enabled = true
 PUB_NAME = "Coffee and Code"
 PUB_DESCRIPTION = "A small tech publication by Daniel Morrisey."
 AUTHOR_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
+PUBLICATION_RKEY = "3m3lav73ujc27"
 DEFAULT_PDS = "https://eurosky.social"
