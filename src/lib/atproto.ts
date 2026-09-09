@@ -1,5 +1,35 @@
 import { StandardDocument } from '../types';
 
+const imageCdnUrl = 'https://cdn.coffee-and-code.com/';
+
+export function proxyImageUrl(imageUrl: string): string {
+  if (imageUrl.startsWith(imageCdnUrl)) return imageUrl;
+  return `${imageCdnUrl}${encodeURIComponent(imageUrl)}`;
+}
+
+function extractDocumentContent(value: any): string {
+  if (typeof value.content === 'string') return value.content;
+  if (typeof value.textContent === 'string') return value.textContent;
+  if (typeof value.content?.textContent === 'string') return value.content.textContent;
+
+  if (Array.isArray(value.content?.items)) {
+    return value.content.items
+      .map((item: any) => (typeof item?.plaintext === 'string' ? item.plaintext : ''))
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  return '';
+}
+
+function documentCoverUrl(value: any, did: string, pdsUrl: string): string | undefined {
+  const cid = value.coverImage?.ref?.$link || value.cover?.ref?.$link;
+  const imageUrl = cid
+    ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`
+    : undefined;
+  return imageUrl ? proxyImageUrl(imageUrl) : undefined;
+}
+
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {
   try {
     const res = await fetch(`https://plc.directory/${did}`, {
@@ -28,7 +58,7 @@ export async function fetchArticles(did: string, pdsUrl: string): Promise<Standa
       for (const rec of data.records || []) {
         if (!rec?.value) continue;
         const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
-        const content = typeof rec.value.content === 'string' ? rec.value.content : '';
+        const content = extractDocumentContent(rec.value);
 
         articles.push({
           uri: rec.uri || '',
@@ -37,11 +67,11 @@ export async function fetchArticles(did: string, pdsUrl: string): Promise<Standa
           title: rec.value.title || 'Untitled Post',
           content: content,
           publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-          path: rec.value.path || `/post/${rkey}`,
+          // Always link through this worker so documents render consistently,
+          // regardless of any custom source path stored on the record.
+          path: `/post/${rkey}`,
           description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
-          cover: rec.value.cover?.ref?.$link
-            ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${rec.value.cover.ref.$link}`
-            : undefined,
+          cover: documentCoverUrl(rec.value, did, pdsUrl),
         });
       }
     }

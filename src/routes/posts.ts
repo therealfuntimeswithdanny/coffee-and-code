@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { marked } from 'marked';
 import { Env } from '../types';
-import { getPdsEndpoint, fetchArticles } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, proxyImageUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 
 const posts = new Hono<{ Bindings: Env }>();
@@ -32,12 +32,20 @@ posts.get('/:rkey', async (c) => {
     );
   }
 
-  const htmlContent = marked.parse(post.content || '');
+  const renderedContent = await marked.parse(post.content || '');
+  const htmlContent = renderedContent.replace(
+    /(<img\b[^>]*\bsrc=")([^"]+)(")/gi,
+    (_match: string, before: string, source: string, after: string) => `${before}${proxyImageUrl(source)}${after}`
+  );
+  const pageUrl = new URL(c.req.url).toString();
   const articleMetaTags = `
     <link rel="site.standard.document" href="${post.uri}">
     <meta name="atproto:uri" content="${post.uri}">
     <meta property="og:title" content="${post.title}">
     <meta property="og:description" content="${post.description || ''}">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="${pageUrl}">
+    ${post.cover ? `<meta property="og:image" content="${post.cover}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${post.cover}">` : ''}
   `;
 
   const body = `
