@@ -20,21 +20,25 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   <style>
     :root { --ink: #f7f0e2; --paper: #28190E; --paper-deep: #3b2a1d; --accent: #B2AC88; --muted: #c4b9a6; --line: rgba(178, 172, 136, .34); }
     * { box-sizing: border-box; }
-    body { display: flex; flex-direction: column; margin: 0; min-height: 100vh; min-width: 320px; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', sans-serif; font-size: 18px; line-height: 1.45; }
+    body { margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', sans-serif; font-size: 18px; line-height: 1.45; }
     a { color: inherit; text-decoration: none; }
     a:hover { color: var(--accent); }
     .site-header { border-bottom: 1px solid var(--ink); background: var(--paper); }
-    .header-inner, .page-content, .footer-inner { width: min(860px, calc(100% - 48px)); margin: 0 auto; }
+    .header-inner, .page-content, .footer-inner { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
     .header-inner { min-height: 100px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; }
     .site-nav, .header-links { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
     .header-links { justify-content: flex-end; }
     .site-brand { font-family: Lora, serif; font-size: clamp(1.55rem, 3vw, 2.3rem); font-weight: 700; letter-spacing: -.06em; white-space: nowrap; }
     .rss-link { border-bottom: 1px solid var(--ink); padding-bottom: 2px; }
-    .page-content { flex: 1; padding: 50px 0 72px; }
+    .page-content { padding: 50px 0 72px; }
+    .publication-intro { max-width: 720px; margin-bottom: 42px; }
     .eyebrow, .section-heading, .recent-stories__heading, .article-meta { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .1em; line-height: 1.2; text-transform: uppercase; }
+    .publication-intro .eyebrow { margin: 0 0 10px; color: var(--accent); }
+    .publication-intro h1 { margin: 0; font-family: Lora, serif; font-size: clamp(2.7rem, 7vw, 5rem); letter-spacing: -.065em; line-height: .98; }
+    .publication-intro > p:last-child { max-width: 580px; margin: 16px 0 0; color: var(--muted); font-size: 21px; }
     .section-heading { display: flex; justify-content: space-between; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); color: var(--ink); padding: 10px 0; }
     .section-heading span:last-child { color: var(--muted); }
-    .front-page__grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(230px, .8fr); gap: 32px; padding-top: 28px; }
+    .front-page__grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, .85fr); gap: 38px; padding-top: 28px; }
     .lead-story { border-bottom: 1px solid var(--line); padding-bottom: 25px; }
     .lead-image { display: block; aspect-ratio: 1.75 / 1; background: var(--paper-deep); overflow: hidden; }
     .lead-image--placeholder { align-items: end; background: linear-gradient(130deg, #5a402c, var(--accent)); color: var(--paper); display: flex; font-family: Lora, serif; font-size: 30px; padding: 30px; }
@@ -55,18 +59,13 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .side-story h3 { font-size: 22px; margin: 0 0 12px; }
     .side-empty, .empty-state { color: var(--muted); }
     .archive-section { margin-top: 64px; }
-    .archive-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px; }
+    .archive-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
     .archive-story { border-bottom: 1px solid var(--line); display: flex; flex-direction: column; justify-content: space-between; min-height: 240px; padding: 22px 0; }
     .archive-story h3 { font-size: 25px; margin: 0 0 10px; }
     .archive-story p:not(.eyebrow) { color: var(--muted); font-size: 17px; margin: 0; }
     .archive-story__footer { margin-top: 22px; }
-    .subscribe-link { background: var(--accent); color: var(--paper); padding: 8px 12px; transition: background-color .2s ease, color .2s ease; }
-    .subscribe-link:hover { background: var(--ink); color: var(--paper); }
     .site-footer { background: #1b0f07; color: #e9e1d3; padding: 30px 0; }
-    .footer-inner { align-items: center; color: #cec6b7; display: flex; font-size: 14px; justify-content: space-between; gap: 32px; }
-    .footer-brand { color: var(--ink); font-family: Lora, serif; font-size: 18px; font-weight: 600; }
-    .footer-description { margin: 3px 0 0; }
-    .footer-links { display: flex; gap: 18px; }
+    .footer-inner { align-items: center; color: #cec6b7; display: flex; font-size: 14px; justify-content: space-between; }
     .footer-inner a { color: var(--accent); }
     .prose { max-width: 720px; }
     .prose code { background: var(--paper-deep); border-radius: 3px; padding: .15rem .3rem; }
@@ -75,25 +74,20 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .prose h1, .prose h2, .prose h3 { color: var(--ink); }
     .prose a { color: var(--accent); text-decoration: underline; }
     @media (max-width: 760px) { .header-inner { grid-template-columns: 1fr auto; min-height: 76px; } .site-nav { display: none; } .header-links { gap: 15px; } .header-links .pds-link { display: none; } .page-content { padding-top: 34px; } .front-page__grid { grid-template-columns: 1fr; gap: 38px; } .archive-grid { grid-template-columns: 1fr; gap: 0; } .archive-story { min-height: 0; } }
-    @media (max-width: 480px) { .header-inner, .page-content, .footer-inner { width: min(100% - 32px, 860px); } .site-brand { font-size: 1.35rem; } .header-links { font-size: 12px; } .side-story { grid-template-columns: 88px minmax(0, 1fr); } .footer-inner { align-items: flex-start; flex-direction: column; gap: 18px; } .footer-links { flex-wrap: wrap; } }
+    @media (max-width: 480px) { .header-inner, .page-content, .footer-inner { width: min(100% - 32px, 1180px); } .site-brand { font-size: 1.35rem; } .header-links { font-size: 12px; } .side-story { grid-template-columns: 88px minmax(0, 1fr); } .footer-inner { align-items: flex-start; flex-direction: column; gap: 8px; } }
   </style>
   ${metaTags}
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/about">About</a></nav>
+      <nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/about">About</a></nav>
       <a href="/" class="site-brand">${pubName}</a>
-      <div class="header-links"><a class="rss-link" href="/rss.xml">RSS</a><a class="subscribe-link" href="https://sequoia.pub/" target="_blank" rel="noopener">Subscribe</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener">Bluesky ↗</a></div>
+      <div class="header-links"><a class="rss-link" href="/rss.xml">RSS</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener">Bluesky ↗</a></div>
     </div>
   </header>
   <main class="page-content">${content}</main>
-  <footer class="site-footer">
-    <div class="footer-inner">
-      <div><div class="footer-brand">Coffee &amp; Code</div><p class="footer-description">A tech news publication by Daniel Morrisey.</p></div>
-      <nav class="footer-links" aria-label="Footer navigation"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/about#how-this-site-works">How this site works</a></nav>
-    </div>
-  </footer>
+  <footer class="site-footer"><div class="footer-inner"><span>© ${new Date().getFullYear()} ${pubName}. Independent publishing on the open web.</span><a href="/.well-known/site.standard.publication">standard.site</a></div></footer>
 </body>
 </html>`;
 }
