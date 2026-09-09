@@ -1,5 +1,12 @@
 import { StandardDocument } from '../types';
 
+const imageCdnUrl = 'https://cdn.coffee-and-code.com/';
+
+export function proxyImageUrl(imageUrl: string): string {
+  if (imageUrl.startsWith(imageCdnUrl)) return imageUrl;
+  return `${imageCdnUrl}${encodeURIComponent(imageUrl)}`;
+}
+
 function extractDocumentContent(value: any): string {
   if (typeof value.content === 'string') return value.content;
   if (typeof value.textContent === 'string') return value.textContent;
