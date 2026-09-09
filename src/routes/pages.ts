@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, searchArticles } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
@@ -42,12 +42,15 @@ pages.get('/about', (c) => {
 
   const baseUrl = new URL(pageUrl).origin;
   const metaTags = `
-    <meta property="og:title" content="About ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     <meta property="og:image" content="${baseUrl}/og.png">
     <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
@@ -56,7 +59,12 @@ pages.get('/about', (c) => {
 
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
+  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds);
+  const query = c.req.query('q') || '';
+
+  // Filter posts based on search query
+  const posts = query.trim() ? searchArticles(allPosts, query) : allPosts;
+
   const archiveItems = posts
     .map(
       (post) => `
@@ -74,10 +82,32 @@ pages.get('/archive', async (c) => {
     )
     .join('');
 
+  const searchForm = `
+    <div class="archive-search">
+      <form class="search-form" action="/archive" method="get">
+        <input
+          type="text"
+          name="q"
+          placeholder="Search archive..."
+          value="${query.replace(/"/g, '&quot;')}"
+          class="search-input"
+          autocomplete="off"
+        >
+        <button type="submit" class="search-button">Search</button>
+      </form>
+    </div>
+  `;
+
+  const emptyMessage = query.trim() ? 'No stories found matching your search.' : 'No stories have been published yet.';
+  const gridOrEmpty = archiveItems
+    ? `<div class="archive-grid">${archiveItems}</div>`
+    : `<p class="empty-state">${emptyMessage}</p>`;
+
   const body = `
     <section class="archive-page" aria-labelledby="archive-title">
+      ${searchForm}
       <div class="section-heading"><span id="archive-title">Archive</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
-      ${archiveItems ? `<div class="archive-grid">${archiveItems}</div>` : '<p class="empty-state">No stories have been published yet.</p>'}
+      ${gridOrEmpty}
     </section>
   `;
 
@@ -90,10 +120,13 @@ pages.get('/archive', async (c) => {
     .replace(/'/g, '&#39;');
 
   const metaTags = `
-    <meta property="og:title" content="Archive — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
@@ -112,10 +145,13 @@ pages.get('/privacy', (c) => {
     .replace(/'/g, '&#39;');
 
   const metaTags = `
-    <meta property="og:title" content="Privacy — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
@@ -134,10 +170,13 @@ pages.get('/terms', (c) => {
     .replace(/'/g, '&#39;');
 
   const metaTags = `
-    <meta property="og:title" content="Terms — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 

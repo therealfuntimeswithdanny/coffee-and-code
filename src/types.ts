@@ -16,4 +16,6 @@ export interface StandardDocument {
   path: string;
   description?: string;
   cover?: string;
+  format?: string; // Content format: 'markdown', 'html', 'plaintext', 'richtext'
+  mimeType?: string; // MIME type of the content
 }

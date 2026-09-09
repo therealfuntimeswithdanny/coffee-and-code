@@ -33,19 +33,43 @@ export function proxyImageUrl(imageUrl: string): string {
   return `${imageCdnUrl}${encodeURIComponent(imageUrl)}`;
 }
 
-function extractDocumentContent(value: any): string {
-  if (typeof value.content === 'string') return value.content;
-  if (typeof value.textContent === 'string') return value.textContent;
-  if (typeof value.content?.textContent === 'string') return value.content.textContent;
+function extractDocumentContent(value: any): { content: string; format?: string; mimeType?: string } {
+  // Try to get format metadata
+  const format = value.contentFormat || value.format;
+  const mimeType = value.mimeType || value.contentType;
 
+  // Try direct string content
+  if (typeof value.content === 'string') {
+    return { content: value.content, format, mimeType };
+  }
+
+  // Try text content variations
+  if (typeof value.textContent === 'string') {
+    return { content: value.textContent, format, mimeType };
+  }
+  if (typeof value.content?.textContent === 'string') {
+    return { content: value.content.textContent, format, mimeType };
+  }
+
+  // Try structured content with items (rich text)
   if (Array.isArray(value.content?.items)) {
-    return value.content.items
+    const content = value.content.items
       .map((item: any) => (typeof item?.plaintext === 'string' ? item.plaintext : ''))
       .filter(Boolean)
       .join('\n\n');
+    return { content, format: format || 'richtext', mimeType };
   }
 
-  return '';
+  // Try blocks format
+  if (Array.isArray(value.blocks)) {
+    return {
+      content: JSON.stringify(value.blocks),
+      format: format || 'richtext',
+      mimeType: mimeType || 'application/json'
+    };
+  }
+
+  return { content: '', format, mimeType };
 }
 
 function firstContentImage(content: string): string | undefined {
@@ -95,7 +119,7 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
           for (const rec of data.records || []) {
             if (!rec?.value) continue;
             const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
-            const content = extractDocumentContent(rec.value);
+            const { content, format, mimeType } = extractDocumentContent(rec.value);
 
             articles.push({
               uri: rec.uri || '',
@@ -107,6 +131,8 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
               path: `/post/${rkey}`,
               description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
+              format,
+              mimeType,
             });
           }
         }
@@ -131,7 +157,7 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
         for (const rec of data.records || []) {
           if (!rec?.value) continue;
           const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
-          const content = extractDocumentContent(rec.value);
+          const { content, format, mimeType } = extractDocumentContent(rec.value);
 
           articles.push({
             uri: rec.uri || '',
@@ -143,6 +169,8 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
             path: `/post/${rkey}`,
             description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
+            format,
+            mimeType,
           });
         }
       }

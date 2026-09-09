@@ -1,12 +1,10 @@
 import { Hono } from 'hono';
-import { marked } from 'marked';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, proxyImageUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
+import { renderContent, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 
 const posts = new Hono<{ Bindings: Env }>();
-
-marked.setOptions({ breaks: true, gfm: true });
 
 function formatDate(date?: string) {
   if (!date) return '';
@@ -39,11 +37,14 @@ posts.get('/:rkey', async (c) => {
     `), 404);
   }
 
-  const renderedContent = await marked.parse(post.content || '');
-  const htmlContent = renderedContent.replace(
-    /(<img\b[^>]*\bsrc=")([^"]+)(")/gi,
-    (_match: string, before: string, source: string, after: string) => `${before}${proxyImageUrl(source)}${after}`
-  );
+  // Render content based on detected format
+  const renderedContent = await renderContent(post.content || '', post.format, post.mimeType);
+
+  // Process images to use proxy URLs
+  const processedContent = processImages(renderedContent, proxyImageUrl);
+
+  // Enhance HTML structure with prose classes for better styling
+  const htmlContent = enhanceHtmlStructure(processedContent);
   const pageUrl = new URL(c.req.url).toString();
 
   // Escape HTML entities for safe attribute values
@@ -107,7 +108,7 @@ posts.get('/:rkey', async (c) => {
       ${post.cover ? `<figure class="article__cover"><img src="${post.cover}" alt="" class="story-image"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
       <footer class="article__footer">
-        <span>Published on the open web.</span>
+        <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on AT Protocol ↗</a>
         <a href="https://bsky.app/profile/${c.env.AUTHOR_DID}" target="_blank" rel="noopener">View author on Bluesky ↗</a>
       </footer>
     </article>

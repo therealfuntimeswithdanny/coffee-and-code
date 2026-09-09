@@ -26,10 +26,10 @@ function articleMeta(post: StandardDocument) {
 home.get('/', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
   const posts = await fetchArticles(c.env.AUTHOR_DID, pds);
-  const latestPosts = posts.slice(0, 10);
+  const latestPosts = posts.slice(0, 11);
   const [heroPost, ...otherPosts] = latestPosts;
-  const sidePosts = otherPosts.slice(0, 3);
-  const archivePosts = otherPosts.slice(3);
+  const sidePosts = otherPosts.slice(0, 4);
+  const archivePosts = otherPosts.slice(4);
 
   const heroHtml = heroPost
     ? `
@@ -112,13 +112,15 @@ home.get('/', async (c) => {
     .replace(/'/g, '&#39;');
 
   const metaTags = `
-    <meta property="og:title" content="${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     <meta property="og:image" content="${escapeHtml(pageUrl.split('/').slice(0, 3).join('/'))}/og.png">
     <meta property="og:image:type" content="image/png">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta name="twitter:image" content="${escapeHtml(pageUrl.split('/').slice(0, 3).join('/'))}/og.png">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;

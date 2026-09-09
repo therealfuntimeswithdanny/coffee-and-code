@@ -84,10 +84,13 @@ search.get('/', async (c) => {
     .replace(/'/g, '&#39;');
 
   const metaTags = `
-    <meta property="og:title" content="Search — ${escapeHtml(c.env.PUB_NAME)}">
+    <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
