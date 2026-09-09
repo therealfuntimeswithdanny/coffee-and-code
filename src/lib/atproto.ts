@@ -22,11 +22,19 @@ function extractDocumentContent(value: any): string {
   return '';
 }
 
-function documentCoverUrl(value: any, did: string, pdsUrl: string): string | undefined {
+function firstContentImage(content: string): string | undefined {
+  const markdownImage = content.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)/i);
+  const htmlImage = content.match(/<img\b[^>]*\bsrc=["'](https?:\/\/[^"']+)/i);
+  return markdownImage?.[1] || htmlImage?.[1];
+}
+
+function documentCoverUrl(value: any, content: string, did: string, pdsUrl: string): string | undefined {
   const cid = value.coverImage?.ref?.$link || value.cover?.ref?.$link;
-  return cid
-    ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`
-    : undefined;
+  if (cid) {
+    return `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
+  }
+
+  return firstContentImage(content);
 }
 
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {
@@ -70,7 +78,7 @@ export async function fetchArticles(did: string, pdsUrl: string): Promise<Standa
           // regardless of any custom source path stored on the record.
           path: `/post/${rkey}`,
           description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
-          cover: documentCoverUrl(rec.value, did, pdsUrl),
+          cover: documentCoverUrl(rec.value, content, did, pdsUrl),
         });
       }
     }
