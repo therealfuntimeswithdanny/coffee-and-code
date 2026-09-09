@@ -4,6 +4,13 @@ import { getPdsEndpoint, fetchArticles } from '../lib/atproto';
 
 const meta = new Hono<{ Bindings: Env }>();
 
+// AT Protocol domain-to-DID verification record.
+meta.get('/.well-known/atproto-did', (c) => {
+  return c.text('did:plc:ofkstpvgn3okv2mllx4ezkod', 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+  });
+});
+
 // standard.site publication record
 meta.get('/.well-known/site.standard.publication', (c) => {
   const pubRecord = {
