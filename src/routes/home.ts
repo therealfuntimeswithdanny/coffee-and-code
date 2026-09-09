@@ -51,9 +51,10 @@ home.get('/', async (c) => {
         .map(
           (post) => `
             <article class="side-story">
-              ${post.cover ? `<a class="side-story__image" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}"><img src="${post.cover}" alt="" class="story-image"></a>` : ''}
+              <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
+                ${post.cover ? `<img src="${post.cover}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+              </a>
               <div>
-                <p class="eyebrow">Recent story</p>
                 <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
                 ${articleMeta(post)}
               </div>
@@ -66,8 +67,10 @@ home.get('/', async (c) => {
     .map(
       (post) => `
         <article class="archive-story">
+          <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
+            ${post.cover ? `<img src="${post.cover}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+          </a>
           <div>
-            <p class="eyebrow">From the archive</p>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             <p>${excerpt(post, 130)}</p>
           </div>
@@ -97,8 +100,9 @@ home.get('/', async (c) => {
     ${
       archivePosts.length
         ? `<section class="archive-section" aria-label="Earlier stories">
-            <div class="section-heading"><span>Earlier stories</span></div>
+            <div class="section-heading"><span>More stories</span></div>
             <div class="archive-grid">${archiveHtml}</div>
+          <div class="archive-section__footer"><a href="/archive" class="read-link">View all stories <span aria-hidden="true">→</span></a></div>
           </section>`
         : ''
     }
