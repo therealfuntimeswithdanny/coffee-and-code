@@ -59,7 +59,9 @@ export async function fetchArticles(did: string, pdsUrl: string): Promise<Standa
           title: rec.value.title || 'Untitled Post',
           content: content,
           publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-          path: rec.value.path || `/post/${rkey}`,
+          // Always link through this worker so documents render consistently,
+          // regardless of any custom source path stored on the record.
+          path: `/post/${rkey}`,
           description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
           cover: documentCoverUrl(rec.value, did, pdsUrl),
         });
