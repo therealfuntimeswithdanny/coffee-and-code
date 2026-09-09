@@ -38,6 +38,15 @@ function extractDocumentContent(value: any): { content: string; format?: string;
   const format = value.contentFormat || value.format;
   const mimeType = value.mimeType || value.contentType;
 
+  // Try Leaflet content format
+  if (value.content?.$type === 'pub.leaflet.content') {
+    return {
+      content: JSON.stringify(value.content),
+      format: 'leaflet',
+      mimeType: mimeType || 'application/json'
+    };
+  }
+
   // Try direct string content
   if (typeof value.content === 'string') {
     return { content: value.content, format, mimeType };

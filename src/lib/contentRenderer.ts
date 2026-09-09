@@ -131,6 +131,67 @@ export async function renderMarkdown(content: string): Promise<string> {
 }
 
 /**
+ * Renders Leaflet document format (pub.leaflet.content)
+ */
+export function renderLeaflet(content: string): string {
+  try {
+    const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+
+    // Handle Leaflet content format
+    if (parsed.$type === 'pub.leaflet.content' && parsed.pages && Array.isArray(parsed.pages)) {
+      return parsed.pages
+        .map((page: any) => {
+          if (!page.blocks || !Array.isArray(page.blocks)) return '';
+
+          return page.blocks
+            .map((blockWrapper: any) => {
+              const block = blockWrapper.block || blockWrapper;
+              const blockType = block.$type || '';
+
+              // Handle Leaflet text blocks
+              if (blockType === 'pub.leaflet.blocks.text') {
+                const text = block.plaintext || block.text || '';
+                return `<p class="prose-paragraph">${escapeHtml(text)}</p>`;
+              }
+
+              // Handle Leaflet image blocks
+              if (blockType === 'pub.leaflet.blocks.image') {
+                const imageRef = block.image?.ref?.$link;
+                if (!imageRef) return '';
+
+                const aspectRatio = block.aspectRatio;
+                const paddingBottom = aspectRatio
+                  ? `${(aspectRatio.height / aspectRatio.width) * 100}%`
+                  : '66.67%';
+
+                return `
+                  <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
+                    <img
+                      src="/api/blob/${imageRef}"
+                      alt="Article image"
+                      class="prose-image"
+                      loading="lazy"
+                    />
+                  </figure>
+                `;
+              }
+
+              return '';
+            })
+            .filter(Boolean)
+            .join('');
+        })
+        .join('');
+    }
+
+    return '';
+  } catch (error) {
+    console.error('Leaflet rendering error:', error);
+    return '';
+  }
+}
+
+/**
  * Renders rich text content (structured blocks format)
  */
 export function renderRichtext(content: string): string {
@@ -195,6 +256,11 @@ export function renderRichtext(content: string): string {
         })
         .filter(Boolean)
         .join('');
+    }
+
+    // Handle Leaflet content format
+    if (typeof parsed === 'object' && parsed.$type === 'pub.leaflet.content') {
+      return renderLeaflet(parsed);
     }
 
     // Handle object format with content array
