@@ -32,9 +32,9 @@ app.all('*', (c) => {
       <h1>Page not found</h1>
       <p>The page you're looking for doesn't exist. It may have moved or been removed.</p>
       <div class="not-found__actions">
-        <a href="/" class="read-link">Back to publication <span aria-hidden="true">→</span></a>
-        <a href="/archive" class="read-link">Browse archive <span aria-hidden="true">→</span></a>
-        <a href="/search" class="read-link">Search articles <span aria-hidden="true">→</span></a>
+        <a href="/" class="read-link">Back to publication <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        <a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        <a href="/search" class="read-link">Search articles <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </div>
     </section>
   `;

@@ -81,7 +81,7 @@ pages.get('/archive', async (c) => {
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             ${excerpt(post) ? `<p>${excerpt(post)}</p>` : ''}
           </div>
-          <a href="${post.path}" class="read-link">Read story <span aria-hidden="true">→</span></a>
+          <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </article>`
     )
     .join('');

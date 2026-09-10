@@ -29,9 +29,9 @@ posts.get('/:rkey', async (c) => {
         <h1>Article not found</h1>
         <p>The requested story could not be located. It may have moved or no longer be published.</p>
         <div class="not-found__actions">
-          <a href="/" class="read-link">Back to publication <span aria-hidden="true">→</span></a>
-          <a href="/archive" class="read-link">Browse archive <span aria-hidden="true">→</span></a>
-          <a href="/search" class="read-link">Search articles <span aria-hidden="true">→</span></a>
+          <a href="/" class="read-link">Back to publication <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          <a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          <a href="/search" class="read-link">Search articles <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </div>
       </section>
     `), 404);
@@ -106,7 +106,7 @@ posts.get('/:rkey', async (c) => {
 
   const body = `
     <article class="article">
-      <a href="/" class="article__back">← All stories</a>
+      <a href="/" class="article__back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All stories</a>
       <header class="article__header">
         <p class="eyebrow">${formatDate(post.publishedAt)}</p>
         <h1>${post.title}</h1>
@@ -115,7 +115,7 @@ posts.get('/:rkey', async (c) => {
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
       <footer class="article__footer">
-        <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls ↗</a>
+        <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </footer>
     </article>
   `;

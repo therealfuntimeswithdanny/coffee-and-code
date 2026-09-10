@@ -45,7 +45,7 @@ home.get('/', async (c) => {
           <p class="eyebrow">Most recent</p>
           <h2><a href="${heroPost.path}">${heroPost.title || 'Untitled'}</a></h2>
           ${excerpt(heroPost, 260) ? `<p class="lead-story__summary">${excerpt(heroPost, 260)}</p>` : ''}
-          <div class="story-footer">${articleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <span aria-hidden="true">→</span></a></div>
+          <div class="story-footer">${articleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </div>
       </article>`
     : '<p class="empty-state">No stories have been published yet. Please check back soon.</p>';
@@ -78,7 +78,7 @@ home.get('/', async (c) => {
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             ${excerpt(post, 130) ? `<p>${excerpt(post, 130)}</p>` : ''}
           </div>
-          <div class="archive-story__footer">${articleMeta(post)} <a href="${post.path}" class="read-link">Read <span aria-hidden="true">→</span></a></div>
+          <div class="archive-story__footer">${articleMeta(post)} <a href="${post.path}" class="read-link">Read <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </article>`
     )
     .join('');
@@ -100,7 +100,7 @@ home.get('/', async (c) => {
         ? `<section class="archive-section" aria-label="Earlier stories">
             <div class="section-heading"><span>More stories</span></div>
             <div class="archive-grid">${archiveHtml}</div>
-          <div class="archive-section__footer"><a href="/archive" class="read-link">View all stories <span aria-hidden="true">→</span></a></div>
+          <div class="archive-section__footer"><a href="/archive" class="read-link">View all stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
           </section>`
         : ''
     }
