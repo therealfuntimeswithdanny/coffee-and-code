@@ -41,7 +41,18 @@ posts.get('/:rkey', async (c) => {
   const renderedContent = await renderContent(post.content || '', post.format, post.mimeType);
 
   // Process images to use proxy URLs
-  const processedContent = processImages(renderedContent, proxyImageUrl);
+  const requestOrigin = new URL(c.req.url).origin;
+  const processImageSource = (source: string) => {
+    if (source.startsWith('/api/blob/')) {
+      const cid = source.replace(/^\/api\/blob\//, '');
+      const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(c.env.AUTHOR_DID)}&cid=${encodeURIComponent(cid)}`;
+      return proxyImageUrl(blobUrl, requestOrigin);
+    }
+
+    return proxyImageUrl(source, requestOrigin);
+  };
+
+  const processedContent = processImages(renderedContent, processImageSource);
 
   // Enhance HTML structure with prose classes for better styling
   const htmlContent = enhanceHtmlStructure(processedContent);
@@ -57,15 +68,7 @@ posts.get('/:rkey', async (c) => {
 
   // Auto-generate description from content if missing
   const getDescription = () => {
-    if (post.description) return post.description;
-    const plainText = post.content
-      .replace(/^#+\s+/gm, '')
-      .replace(/!\[.*?\]\(.*?\)/g, '')
-      .replace(/\[.*?\]\(.*?\)/g, '')
-      .replace(/[*_~`]/g, '')
-      .replace(/\n+/g, ' ')
-      .trim();
-    return plainText.substring(0, 160) + (plainText.length > 160 ? '…' : '');
+    return post.description?.trim() || '';
   };
 
   // Extract first image from content or use cover
@@ -75,11 +78,15 @@ posts.get('/:rkey', async (c) => {
     return match ? match[1] : undefined;
   };
 
+  const articleDescription = getDescription();
+  const articleSubtitle = articleDescription?.trim() || '';
   const safeTitle = escapeHtml(post.title);
-  const safeDescription = escapeHtml(getDescription());
+  const safeDescription = escapeHtml(articleDescription);
   const previewImage = getImage();
   const baseUrl = new URL(pageUrl).origin;
-  const ogImage = previewImage || `${baseUrl}/og.png`;
+  const proxiedPreviewImage = previewImage ? proxyImageUrl(previewImage, baseUrl) : undefined;
+  const ogImage = proxiedPreviewImage || `${baseUrl}/og.png`;
+  const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
@@ -103,13 +110,12 @@ posts.get('/:rkey', async (c) => {
       <header class="article__header">
         <p class="eyebrow">${formatDate(post.publishedAt)}</p>
         <h1>${post.title}</h1>
-        ${post.description ? `<p class="article__dek">${post.description}</p>` : ''}
+        ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
       </header>
-      ${post.cover ? `<figure class="article__cover"><img src="${post.cover}" alt="" class="story-image"></figure>` : ''}
+      ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
       <footer class="article__footer">
-        <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on AT Protocol ↗</a>
-        <a href="https://bsky.app/profile/${c.env.AUTHOR_DID}" target="_blank" rel="noopener">View author on Bluesky ↗</a>
+        <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls ↗</a>
       </footer>
     </article>
   `;

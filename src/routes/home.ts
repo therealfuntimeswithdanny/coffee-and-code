@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, proxyImageUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 
 const home = new Hono<{ Bindings: Env }>();
@@ -15,7 +15,8 @@ function formatDate(date?: string) {
 }
 
 function excerpt(post: StandardDocument, length = 180) {
-  const text = post.description || post.content || '';
+  const text = post.description?.trim() || '';
+  if (!text) return '';
   return text.length > length ? `${text.substring(0, length).trimEnd()}…` : text;
 }
 
@@ -30,17 +31,20 @@ home.get('/', async (c) => {
   const [heroPost, ...otherPosts] = latestPosts;
   const sidePosts = otherPosts.slice(0, 4);
   const archivePosts = otherPosts.slice(4);
+  const homeBaseUrl = new URL(c.req.url).origin;
+
+  const proxiedCover = (source?: string) => (source ? proxyImageUrl(source, pds || homeBaseUrl) : source);
 
   const heroHtml = heroPost
     ? `
       <article class="lead-story">
         <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${heroPost.path}" aria-label="Read ${heroPost.title || 'Untitled'}">
-          ${heroPost.cover ? `<img src="${heroPost.cover}" alt="" class="story-image">` : '<span>Latest dispatch</span>'}
+          ${heroPost.cover ? `<img src="${proxiedCover(heroPost.cover)}" alt="" class="story-image">` : '<span>Latest dispatch</span>'}
         </a>
         <div class="lead-story__content">
           <p class="eyebrow">Most recent</p>
           <h2><a href="${heroPost.path}">${heroPost.title || 'Untitled'}</a></h2>
-          <p class="lead-story__summary">${excerpt(heroPost, 260)}</p>
+          ${excerpt(heroPost, 260) ? `<p class="lead-story__summary">${excerpt(heroPost, 260)}</p>` : ''}
           <div class="story-footer">${articleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <span aria-hidden="true">→</span></a></div>
         </div>
       </article>`
@@ -52,7 +56,7 @@ home.get('/', async (c) => {
           (post) => `
             <article class="side-story">
               <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-                ${post.cover ? `<img src="${post.cover}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+                ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
               </a>
               <div>
                 <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
@@ -68,11 +72,11 @@ home.get('/', async (c) => {
       (post) => `
         <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${post.cover}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+            ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
-            <p>${excerpt(post, 130)}</p>
+            ${excerpt(post, 130) ? `<p>${excerpt(post, 130)}</p>` : ''}
           </div>
           <div class="archive-story__footer">${articleMeta(post)} <a href="${post.path}" class="read-link">Read <span aria-hidden="true">→</span></a></div>
         </article>`

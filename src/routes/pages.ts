@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, searchArticles } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, searchArticles, proxyImageUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
@@ -15,7 +15,8 @@ function formatDate(date?: string) {
 }
 
 function excerpt(post: StandardDocument) {
-  const text = post.description || post.content || '';
+  const text = post.description?.trim() || '';
+  if (!text) return '';
   return text.length > 150 ? `${text.substring(0, 150).trimEnd()}…` : text;
 }
 
@@ -64,18 +65,21 @@ pages.get('/archive', async (c) => {
 
   // Filter posts based on search query
   const posts = query.trim() ? searchArticles(allPosts, query) : allPosts;
+  const archiveBaseUrl = new URL(c.req.url).origin;
+
+  const proxiedCover = (source?: string) => (source ? proxyImageUrl(source, pds || archiveBaseUrl) : source);
 
   const archiveItems = posts
     .map(
       (post) => `
         <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${post.cover}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+            ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
-            <p>${excerpt(post)}</p>
+            ${excerpt(post) ? `<p>${excerpt(post)}</p>` : ''}
           </div>
           <a href="${post.path}" class="read-link">Read story <span aria-hidden="true">→</span></a>
         </article>`

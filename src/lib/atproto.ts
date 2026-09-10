@@ -28,9 +28,15 @@ async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): P
   throw lastError || new Error('Failed after retries');
 }
 
-export function proxyImageUrl(imageUrl: string): string {
+export function proxyImageUrl(imageUrl: string, baseUrl?: string): string {
   if (imageUrl.startsWith(imageCdnUrl)) return imageUrl;
-  return `${imageCdnUrl}${encodeURIComponent(imageUrl)}`;
+
+  let absoluteUrl = imageUrl;
+  if (imageUrl.startsWith('/')) {
+    absoluteUrl = baseUrl ? new URL(imageUrl, baseUrl).toString() : imageUrl;
+  }
+
+  return `${imageCdnUrl}${encodeURIComponent(absoluteUrl)}`;
 }
 
 function extractDocumentContent(value: any): { content: string; format?: string; mimeType?: string } {
@@ -138,7 +144,7 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
               content: content,
               publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
               path: `/post/${rkey}`,
-              description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
+              description: rec.value.description || rec.value.summary || '',
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
               mimeType,
@@ -176,7 +182,7 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
             content: content,
             publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
             path: `/post/${rkey}`,
-            description: rec.value.description || rec.value.summary || (content ? content.substring(0, 160) + '...' : ''),
+            description: rec.value.description || rec.value.summary || '',
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
             format,
             mimeType,

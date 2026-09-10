@@ -14,7 +14,7 @@ app.route('/', homeRouter);
 app.route('/', pagesRouter);
 app.route('/post', postsRouter);
 app.route('/', metaRouter);
-app.route('/', searchRouter);
+app.route('/search', searchRouter);
 
 // Catch-all 404 handler
 app.all('*', (c) => {
