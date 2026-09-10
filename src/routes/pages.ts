@@ -138,7 +138,7 @@ pages.get('/archive', async (c) => {
 });
 
 pages.get('/privacy', (c) => {
-  const body = '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Privacy</h1><p class="text-gray-300 leading-relaxed">Coffee &amp; Code does not sell personal information. This site reads publicly available publication records from AT Protocol to display its stories.</p></article>';
+  const body = '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Privacy</h1><p class="text-gray-300 leading-relaxed mb-4">Coffee &amp; Code does not sell personal information. This site reads publicly available publication records from AT Protocol to display its stories.</p><p class="text-gray-300 leading-relaxed">We use Umami Analytics, provided by Umami Cloud, to understand how visitors use this site and improve it. Umami may process privacy-focused, aggregated usage information such as page views, referring pages, device and browser details, and approximate location. We do not use this analytics data to identify you or sell it to third parties. The Umami service is loaded when you visit pages on this site.</p></article>';
 
   const pageUrl = new URL(c.req.url).toString();
   const escapeHtml = (str: string) => str

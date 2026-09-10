@@ -18,6 +18,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   ${metaTags}
   <link rel="alternate" type="application/rss+xml" title="${pubName} RSS Feed" href="/rss.xml">
   <script type="module" src="/components/sequoia-subscribe.js"></script>
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
