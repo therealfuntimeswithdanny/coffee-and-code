@@ -83,9 +83,9 @@ posts.get('/:rkey', async (c) => {
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleDescription);
   const previewImage = getImage();
-  const baseUrl = new URL(pageUrl).origin;
-  const proxiedPreviewImage = previewImage ? proxyImageUrl(previewImage, baseUrl) : undefined;
-  const ogImage = proxiedPreviewImage || `${baseUrl}/og.png`;
+  const pageOrigin = new URL(pageUrl).origin;
+  const proxiedPreviewImage = previewImage ? proxyImageUrl(previewImage, pageOrigin) : undefined;
+  const ogImage = proxiedPreviewImage || `${pageOrigin}/og.png`;
   const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
