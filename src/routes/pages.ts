@@ -162,29 +162,4 @@ pages.get('/privacy', (c) => {
   return c.html(renderLayout(c, 'Privacy', body, metaTags));
 });
 
-pages.get('/terms', (c) => {
-  const body = '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Terms</h1><p class="text-gray-300 leading-relaxed">Content is provided for informational purposes. Reuse must respect the rights held by the original authors and publishers.</p></article>';
-
-  const pageUrl = new URL(c.req.url).toString();
-  const escapeHtml = (str: string) => str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-  const metaTags = `
-    <meta property="og:title" content="Coffee and Code.">
-    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Coffee and Code.">
-    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
-    <link rel="canonical" href="${escapeHtml(pageUrl)}">
-  `;
-
-  return c.html(renderLayout(c, 'Terms', body, metaTags));
-});
-
 export default pages;
