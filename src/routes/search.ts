@@ -1,78 +1,25 @@
 import { Hono } from 'hono';
-import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, searchArticles } from '../lib/atproto';
+import { Env } from '../types';
 import { renderLayout } from '../templates/layout';
 
 const search = new Hono<{ Bindings: Env }>();
 
-function formatDate(date?: string) {
-  if (!date) return '';
-  return new Date(date).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-function excerpt(post: StandardDocument, length = 150) {
-  const text = post.description || post.content || '';
-  return text.length > length ? `${text.substring(0, length).trimEnd()}…` : text;
-}
-
-search.get('/', async (c) => {
-  const query = c.req.query('q') || '';
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-
-  let results: StandardDocument[] = [];
-  let error = '';
-
-  if (query.trim()) {
-    try {
-      const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds);
-      results = searchArticles(allPosts, query);
-    } catch (e) {
-      error = 'Failed to search articles. Please try again.';
-      console.error('Search error:', e);
-    }
-  }
-
-  const resultsHtml = results.length
-    ? results
-        .map(
-          (post) => `
-            <article class="search-result">
-              <div class="search-result__content">
-                <h3><a href="${post.path}">${post.title}</a></h3>
-                <p class="search-result__excerpt">${excerpt(post, 200)}</p>
-                <span class="article-meta">${formatDate(post.publishedAt)}</span>
-              </div>
-            </article>`
-        )
-        .join('')
-    : `<p class="empty-state">${query.trim() ? 'No articles found matching your search.' : 'Enter a search term to find articles.'}</p>`;
-
+search.get('/', (c) => {
   const body = `
     <section class="search-page">
       <div class="search-header">
         <h1>Search articles</h1>
-        <form class="search-form" action="/search" method="get">
-          <input
-            type="text"
-            name="q"
-            placeholder="Search by title or content..."
-            value="${query.replace(/"/g, '&quot;')}"
-            class="search-input"
-            autocomplete="off"
-          >
-          <button type="submit" class="search-button">Search</button>
-        </form>
-      </div>
-      ${error ? `<div class="search-error">${error}</div>` : ''}
-      <div class="search-results">
-        ${results.length ? `<p class="search-count">${results.length} ${results.length === 1 ? 'result' : 'results'} found</p>` : ''}
-        ${resultsHtml}
+        <search-bar-snippet class="cloudflare-search"
+          api-url="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/search"
+          placeholder="Search Coffee &amp; Code"
+          max-results="25"
+          max-render-results="7"
+          show-url="true"
+          show-date="true">
+        </search-bar-snippet>
       </div>
     </section>
+    <script type="module" src="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js"></script>
   `;
 
   const pageUrl = new URL(c.req.url).toString();
@@ -94,7 +41,7 @@ search.get('/', async (c) => {
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
-  return c.html(renderLayout(c, `Search: ${query || 'Articles'}`, body, metaTags));
+  return c.html(renderLayout(c, 'Search Articles', body, metaTags));
 });
 
 export default search;
