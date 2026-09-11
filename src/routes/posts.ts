@@ -16,6 +16,8 @@ function formatDate(date?: string) {
   });
 }
 
+posts.get('/', (c) => c.redirect('/'));
+
 posts.get('/:rkey', async (c) => {
   const rkey = c.req.param('rkey');
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
