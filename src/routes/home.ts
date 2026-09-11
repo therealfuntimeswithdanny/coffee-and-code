@@ -127,6 +127,7 @@ home.get('/', async (c) => {
     <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta name="twitter:image" content="${escapeHtml(pageUrl.split('/').slice(0, 3).join('/'))}/og.png">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
+    <link rel="site.standard.document" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
   `;
 
   return c.html(renderLayout(c, 'Home', body, metaTags));
