@@ -10,7 +10,7 @@ search.get('/', (c) => {
       <div class="search-header">
         <h1>Search articles</h1>
         <search-bar-snippet class="cloudflare-search"
-          api-url="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/search"
+          api-url="https://search.coffeencode.cc/search"
           placeholder="Search Coffee &amp; Code"
           max-results="25"
           max-render-results="7"
