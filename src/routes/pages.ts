@@ -20,42 +20,52 @@ function excerpt(post: StandardDocument) {
   return text.length > 150 ? `${text.substring(0, 150).trimEnd()}…` : text;
 }
 
-pages.get('/about', (c) => {
-  const body = `
-    <article class="max-w-2xl mx-auto py-8" id="how-this-site-works">
-      <h1 class="text-3xl font-bold text-white mb-4">About ${c.env.PUB_NAME}</h1>
-      <p class="text-gray-300 leading-relaxed mb-4">
-        ${c.env.PUB_NAME} is an independent, decentralized technology publication built on top of Cloudflare Workers and the standard.site protocol.
-      </p>
-      <p class="text-gray-400 leading-relaxed">
-        All articles are sourced directly from an ATProtocol Personal Data Server (PDS), ensuring full data ownership and portability across the open web.
-      </p>
-    </article>
-  `;
+pages.get('/authors', async (c) => {
+  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
+  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const authors = new Map<string, { author: NonNullable<StandardDocument['author']>; postCount: number }>();
 
-  const pageUrl = new URL(c.req.url).toString();
-  const escapeHtml = (str: string) => str
+  allPosts.forEach((post) => {
+    if (!post.author) return;
+    const key = post.author.handle.toLowerCase();
+    const existing = authors.get(key);
+    if (existing) {
+      existing.postCount += 1;
+    } else {
+      authors.set(key, { author: post.author, postCount: 1 });
+    }
+  });
+
+  const escapeHtml = (value: string) => value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+  const origin = new URL(c.req.url).origin;
+  const authorItems = [...authors.values()]
+    .sort((a, b) => (a.author.displayName || a.author.handle).localeCompare(b.author.displayName || b.author.handle))
+    .map(({ author, postCount }) => {
+      const name = author.displayName || author.handle;
+      const avatar = author.avatar ? proxyImageUrl(author.avatar, origin) : '';
+      return `<a class="author-card" href="/author/${encodeURIComponent(author.handle)}">
+        ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
+        <span class="author-card__details"><strong>${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
+      </a>`;
+    })
+    .join('');
 
-  const baseUrl = new URL(pageUrl).origin;
-  const metaTags = `
-    <meta property="og:title" content="Coffee and Code.">
-    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    <meta property="og:image" content="${baseUrl}/og.png">
-    <meta property="og:image:type" content="image/png">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Coffee and Code.">
-    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
-    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  const body = `
+    <section class="authors-page" aria-labelledby="authors-title">
+      <header class="authors-page__header">
+        <p class="eyebrow">Contributors</p>
+        <h1 id="authors-title">Authors</h1>
+      </header>
+      ${authorItems ? `<div class="author-grid">${authorItems}</div>` : '<p class="empty-state">No authors have published stories yet.</p>'}
+    </section>
   `;
 
-  return c.html(renderLayout(c, 'About', body, metaTags));
+  return c.html(renderLayout(c, 'Authors', body));
 });
 
 pages.get('/author/:handle', async (c) => {

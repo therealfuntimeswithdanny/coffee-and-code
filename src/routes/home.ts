@@ -24,6 +24,22 @@ function articleMeta(post: StandardDocument) {
   return `<span class="article-meta">${formatDate(post.publishedAt)}</span>`;
 }
 
+function heroArticleMeta(post: StandardDocument) {
+  if (!post.author) return articleMeta(post);
+  const authorName = post.author.displayName || post.author.handle;
+  const authorLink = `/author/${encodeURIComponent(post.author.handle)}`;
+  return `<span class="article-meta article-meta--byline">Written by <a href="${authorLink}">${authorName}</a> on ${formatDate(post.publishedAt)}</span>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 home.get('/', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
   const posts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
@@ -45,7 +61,7 @@ home.get('/', async (c) => {
           <p class="eyebrow">Most recent</p>
           <h2><a href="${heroPost.path}">${heroPost.title || 'Untitled'}</a></h2>
           ${excerpt(heroPost, 260) ? `<p class="lead-story__summary">${excerpt(heroPost, 260)}</p>` : ''}
-          <div class="story-footer">${articleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+          <div class="story-footer">${heroArticleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </div>
       </article>`
     : '<p class="empty-state">No stories have been published yet. Please check back soon.</p>';
@@ -95,6 +111,15 @@ home.get('/', async (c) => {
       </div>
     </section>
 
+    <section class="writers-callout" aria-labelledby="writers-callout-title">
+      <div>
+        <p class="eyebrow">Contribute</p>
+        <h2 id="writers-callout-title">We're looking for writers</h2>
+        <p>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</p>
+      </div>
+      <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay/post/3mvi7s2lz2c2j" class="read-link" target="_blank" rel="noopener">Learn more <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+    </section>
+
     ${
       archivePosts.length
         ? `<section class="archive-section" aria-label="Earlier stories">
@@ -108,13 +133,6 @@ home.get('/', async (c) => {
 
   // Open Graph tags for the publication
   const pageUrl = new URL(c.req.url).toString();
-  const escapeHtml = (str: string) => str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
   const metaTags = `
     <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
