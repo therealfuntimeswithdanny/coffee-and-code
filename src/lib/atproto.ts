@@ -119,12 +119,14 @@ export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<
   }
 }
 
-export async function fetchArticles(did: string, pdsUrl: string, publicationRkey?: string): Promise<StandardDocument[]> {
+export async function fetchArticles(did: string, pdsUrl: string, publicationRkeys?: string[]): Promise<StandardDocument[]> {
   const articles: StandardDocument[] = [];
   try {
     // If a publication rkey is provided, fetch documents from that publication
-    if (publicationRkey) {
-      const publicationUri = `at://${did}/site.standard.publication/${publicationRkey}`;
+    if (publicationRkeys?.length) {
+      const publicationUris = new Set(
+        publicationRkeys.map((rkey) => `at://${did}/site.standard.publication/${rkey}`)
+      );
       try {
         // Fetch all site.standard.document records
         const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=site.standard.document&limit=100`;
@@ -133,7 +135,7 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
         if (stdRes.ok) {
           const data: any = await stdRes.json();
           for (const rec of data.records || []) {
-            if (!rec?.value || rec.value.site !== publicationUri) continue;
+            if (!rec?.value || !publicationUris.has(rec.value.site)) continue;
             const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
             const { content, format, mimeType } = extractDocumentContent(rec.value);
 

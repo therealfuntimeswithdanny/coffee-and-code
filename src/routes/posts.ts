@@ -21,7 +21,7 @@ posts.get('/', (c) => c.redirect('/'));
 posts.get('/:rkey', async (c) => {
   const rkey = c.req.param('rkey');
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
+  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEYS);
   const post = allPosts.find((p) => p.rkey === rkey || p.path === `/post/${rkey}`);
 
   if (!post) {
