@@ -60,7 +60,7 @@ pages.get('/about', (c) => {
 
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds);
+  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEY);
   const query = c.req.query('q') || '';
 
   // Filter posts based on search query
