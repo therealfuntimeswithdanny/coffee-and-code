@@ -21,7 +21,7 @@ posts.get('/', (c) => c.redirect('/'));
 posts.get('/:rkey', async (c) => {
   const rkey = c.req.param('rkey');
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEYS);
+  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
   const post = allPosts.find((p) => p.rkey === rkey || p.path === `/post/${rkey}`);
 
   if (!post) {
@@ -47,7 +47,9 @@ posts.get('/:rkey', async (c) => {
   const processImageSource = (source: string) => {
     if (source.startsWith('/api/blob/')) {
       const cid = source.replace(/^\/api\/blob\//, '');
-      const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(c.env.AUTHOR_DID)}&cid=${encodeURIComponent(cid)}`;
+      const sourceDid = post.repoDid || c.env.AUTHOR_DID;
+      const sourcePds = post.pdsUrl || pds;
+      const blobUrl = `${sourcePds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(sourceDid)}&cid=${encodeURIComponent(cid)}`;
       return proxyImageUrl(blobUrl, requestOrigin);
     }
 
@@ -82,6 +84,9 @@ posts.get('/:rkey', async (c) => {
 
   const articleDescription = getDescription();
   const articleSubtitle = articleDescription?.trim() || '';
+  const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
+  const authorName = post.author?.displayName || post.author?.handle || '';
+  const authorAvatar = post.author?.avatar ? proxyImageUrl(post.author.avatar, requestOrigin) : '';
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleDescription);
   const previewImage = getImage();
@@ -92,7 +97,7 @@ posts.get('/:rkey', async (c) => {
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
-    <meta name="atproto:repo" content="${c.env.AUTHOR_DID}">
+    <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.AUTHOR_DID)}">
     <meta property="og:title" content="${safeTitle}">
     <meta property="og:description" content="${safeDescription}">
     <meta property="og:type" content="article">
@@ -113,6 +118,7 @@ posts.get('/:rkey', async (c) => {
         <p class="eyebrow">${formatDate(post.publishedAt)}</p>
         <h1>${post.title}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
+        ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>${escapeHtml(authorName)}</span></a>` : ''}
       </header>
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image"></figure>` : ''}
       <div class="prose">${htmlContent}</div>

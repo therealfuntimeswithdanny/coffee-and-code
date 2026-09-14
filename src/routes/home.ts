@@ -26,7 +26,7 @@ function articleMeta(post: StandardDocument) {
 
 home.get('/', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEYS);
+  const posts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
   const latestPosts = posts.slice(0, 11);
   const [heroPost, ...otherPosts] = latestPosts;
   const sidePosts = otherPosts.slice(0, 4);

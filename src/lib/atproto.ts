@@ -1,4 +1,4 @@
-import { StandardDocument } from '../types';
+import { AuthorProfile, StandardDocument } from '../types';
 
 const imageCdnUrl = 'https://cdn.coffeencode.cc/';
 
@@ -119,23 +119,50 @@ export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<
   }
 }
 
-export async function fetchArticles(did: string, pdsUrl: string, publicationRkeys?: string[]): Promise<StandardDocument[]> {
-  const articles: StandardDocument[] = [];
+async function fetchAuthorProfile(did: string): Promise<AuthorProfile | undefined> {
   try {
-    // If a publication rkey is provided, fetch documents from that publication
-    if (publicationRkeys?.length) {
-      const publicationUris = new Set(
-        publicationRkeys.map((rkey) => `at://${did}/site.standard.publication/${rkey}`)
-      );
-      try {
-        // Fetch all site.standard.document records
-        const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=site.standard.document&limit=100`;
-        const stdRes = await fetchWithRetry(stdUrl);
+    const response = await fetchWithRetry(
+      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`
+    );
+    if (!response.ok) return undefined;
 
-        if (stdRes.ok) {
+    const profile: any = await response.json();
+    if (typeof profile.handle !== 'string') return undefined;
+
+    return {
+      did,
+      handle: profile.handle,
+      displayName: typeof profile.displayName === 'string' ? profile.displayName : undefined,
+      avatar: typeof profile.avatar === 'string' ? profile.avatar : undefined,
+    };
+  } catch (error) {
+    console.error('Error fetching author profile:', error);
+    return undefined;
+  }
+}
+
+export async function fetchArticles(publicationUris: string[], fallbackPds: string, fallbackDid: string): Promise<StandardDocument[]> {
+  const articles: StandardDocument[] = [];
+  const did = fallbackDid;
+  const pdsUrl = fallbackPds;
+  try {
+    // Fetch documents from each configured publication's repository.
+    if (publicationUris.length) {
+      try {
+        for (const publicationUri of publicationUris) {
+          const match = publicationUri.match(/^at:\/\/([^/]+)\/site\.standard\.publication\/([^/]+)$/);
+          if (!match) continue;
+
+          const [, did] = match;
+          const pdsUrl = await getPdsEndpoint(did, fallbackPds);
+          const author = await fetchAuthorProfile(did);
+          const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${encodeURIComponent(did)}&collection=site.standard.document&limit=100`;
+          const stdRes = await fetchWithRetry(stdUrl);
+          if (!stdRes.ok) continue;
+
           const data: any = await stdRes.json();
           for (const rec of data.records || []) {
-            if (!rec?.value || !publicationUris.has(rec.value.site)) continue;
+            if (!rec?.value || rec.value.site !== publicationUri) continue;
             const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
             const { content, format, mimeType } = extractDocumentContent(rec.value);
 
@@ -151,6 +178,9 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
               mimeType,
+              repoDid: did,
+              pdsUrl,
+              author,
             });
           }
         }
@@ -165,7 +195,7 @@ export async function fetchArticles(did: string, pdsUrl: string, publicationRkey
       });
     }
 
-    // 1. Fetch site.standard.document records (if no publication rkey specified)
+    // 1. Fetch site.standard.document records (if no publications are configured)
     try {
       const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=site.standard.document&limit=50`;
       const stdRes = await fetchWithRetry(stdUrl);

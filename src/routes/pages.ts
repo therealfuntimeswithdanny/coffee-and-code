@@ -58,9 +58,57 @@ pages.get('/about', (c) => {
   return c.html(renderLayout(c, 'About', body, metaTags));
 });
 
+pages.get('/author/:handle', async (c) => {
+  const handle = c.req.param('handle').toLowerCase();
+  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
+  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const authorPosts = allPosts.filter((post) => post.author?.handle.toLowerCase() === handle);
+  const author = authorPosts[0]?.author;
+
+  if (!author) {
+    return c.html(renderLayout(c, 'Author Not Found', '<section class="not-found"><p class="eyebrow">404</p><h1>Author not found</h1><p>This author has not published in this publication.</p><a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
+  }
+
+  const escapeHtml = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const authorName = author.displayName || author.handle;
+  const authorAvatar = author.avatar ? proxyImageUrl(author.avatar, new URL(c.req.url).origin) : '';
+  const archiveItems = authorPosts
+    .map((post) => `
+      <article class="archive-story">
+        <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
+          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds)}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+        </a>
+        <div>
+          <p class="eyebrow">${formatDate(post.publishedAt)}</p>
+          <h3><a href="${post.path}">${escapeHtml(post.title || 'Untitled')}</a></h3>
+          ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
+        </div>
+        <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+      </article>`)
+    .join('');
+
+  const body = `
+    <section class="author-page" aria-labelledby="author-title">
+      <header class="author-page__header">
+        ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar">` : ''}
+        <div><p class="eyebrow">Author</p><h1 id="author-title">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}</p></div>
+      </header>
+      <div class="section-heading"><span>Stories</span><span>${authorPosts.length}</span></div>
+      <div class="archive-grid">${archiveItems}</div>
+    </section>
+  `;
+
+  return c.html(renderLayout(c, authorName, body));
+});
+
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.AUTHOR_DID, pds, c.env.PUBLICATION_RKEYS);
+  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
   const query = c.req.query('q') || '';
 
   // Filter posts based on search query
