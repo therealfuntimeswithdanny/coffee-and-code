@@ -154,6 +154,12 @@ export function renderLeaflet(content: string): string {
                 return `<p class="prose-paragraph">${escapeHtml(text)}</p>`;
               }
 
+              // Handle Leaflet blockquote blocks
+              if (blockType === 'pub.leaflet.blocks.blockquote') {
+                const text = block.plaintext || block.text || '';
+                return `<blockquote>${escapeHtml(text).replace(/\n/g, '<br>')}</blockquote>`;
+              }
+
               // Handle Leaflet image blocks
               if (blockType === 'pub.leaflet.blocks.image') {
                 const imageRef = block.image?.ref?.$link;
