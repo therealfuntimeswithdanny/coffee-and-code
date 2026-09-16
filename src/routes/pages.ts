@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, searchArticles, proxyImageUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, searchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
@@ -47,7 +47,7 @@ pages.get('/authors', async (c) => {
     .sort((a, b) => (a.author.displayName || a.author.handle).localeCompare(b.author.displayName || b.author.handle))
     .map(({ author, postCount }) => {
       const name = author.displayName || author.handle;
-      const avatar = author.avatar ? proxyImageUrl(author.avatar, origin) : '';
+      const avatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
       return `<a class="author-card" href="/author/${encodeURIComponent(author.handle)}">
         ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
         <span class="author-card__details"><strong>${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
@@ -86,7 +86,7 @@ pages.get('/author/:handle', async (c) => {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
   const authorName = author.displayName || author.handle;
-  const authorAvatar = author.avatar ? proxyImageUrl(author.avatar, new URL(c.req.url).origin) : '';
+  const authorAvatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
   const archiveItems = authorPosts
     .map((post) => `
       <article class="archive-story">

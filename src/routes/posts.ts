@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env } from '../types';
-import { getPdsEndpoint, fetchArticles, proxyImageUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 import { renderContent, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 
@@ -86,7 +86,7 @@ posts.get('/:rkey', async (c) => {
   const articleSubtitle = articleDescription?.trim() || '';
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
-  const authorAvatar = post.author?.avatar ? proxyImageUrl(post.author.avatar, requestOrigin) : '';
+  const authorAvatar = post.author?.avatar ? proxyAvatarUrl(post.author.avatar) : '';
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleDescription);
   const previewImage = getImage();

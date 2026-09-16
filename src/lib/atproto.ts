@@ -1,6 +1,7 @@
 import { AuthorProfile, StandardDocument } from '../types';
 
 const imageCdnUrl = 'https://cdn.coffeencode.cc/';
+const avatarCdnHost = 'avatars.coffeencode.cc';
 
 // Retry helper with exponential backoff
 async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): Promise<Response> {
@@ -37,6 +38,17 @@ export function proxyImageUrl(imageUrl: string, baseUrl?: string): string {
   }
 
   return `${imageCdnUrl}${encodeURIComponent(absoluteUrl)}`;
+}
+
+export function proxyAvatarUrl(avatarUrl: string): string {
+  try {
+    const url = new URL(avatarUrl);
+    url.protocol = 'https:';
+    url.host = avatarCdnHost;
+    return url.toString();
+  } catch {
+    return avatarUrl;
+  }
 }
 
 function extractDocumentContent(value: any): { content: string; format?: string; mimeType?: string } {

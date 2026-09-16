@@ -17,7 +17,20 @@ const styles = `
 .handle, .time { color: var(--sequoia-secondary-color, #6b7280); font-size: .875rem; }
 .time { text-decoration: none; }
 .comment-text { margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
-`; 
+`;
+
+const avatarCdnHost = 'avatars.coffeencode.cc';
+
+function avatarUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.protocol = 'https:';
+    parsed.host = avatarCdnHost;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
 function escapeHtml(value) {
   const element = document.createElement('div');
@@ -118,7 +131,7 @@ class SequoiaComments extends HTMLElement {
   renderReply(reply) {
     const author = reply.post.author;
     const name = author.displayName || author.handle;
-    const avatar = author.avatar ? `<img class="avatar" src="${escapeHtml(author.avatar)}" alt="${escapeHtml(name)}" loading="lazy">` : `<div class="avatar-placeholder">${escapeHtml(initials(name))}</div>`;
+    const avatar = author.avatar ? `<img class="avatar" src="${escapeHtml(avatarUrl(author.avatar))}" alt="${escapeHtml(name)}" loading="lazy">` : `<div class="avatar-placeholder">${escapeHtml(initials(name))}</div>`;
     const text = escapeHtml(reply.post.record?.text || '');
     const nested = (reply.replies || []).filter((item) => item?.$type === 'app.bsky.feed.defs#threadViewPost').map((item) => this.renderReply(item)).join('');
     return `<article class="comment">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" href="https://bsky.app/profile/${encodeURIComponent(author.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(author.handle)}</span><a class="time" href="${appUrl(reply.post.uri)}" target="_blank" rel="noopener noreferrer">${formatTime(reply.post.record?.createdAt)}</a></div><p class="comment-text">${text}</p>${nested ? `<div class="comments-list">${nested}</div>` : ''}</div></article>`;
