@@ -1,10 +1,6 @@
 import { Context } from 'hono';
 import { Env } from '../types';
 
-export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
-  const requestUrl = new URL(c.req.url);
-  return `https://browser-render.coffeencode.cc/?url=https://coffeencode.cc${requestUrl.pathname}${requestUrl.search}`;
-}
 
 export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '') {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
@@ -78,7 +74,8 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       const query = paths.length === 1
         ? 'path=' + encodeURIComponent(paths[0])
         : 'paths=' + encodeURIComponent(JSON.stringify(paths));
-      fetch(viewCounterEndpoint + '?' + query + '&update-db=true')
+      const updateDb = elements[0].dataset.updateDb === 'true';
+      fetch(viewCounterEndpoint + '?' + query + '&update-db=' + updateDb)
         .then((response) => response.ok ? response.json() : Promise.reject(new Error('View counter request failed')))
         .then((result) => {
           if (!result.success) return;
