@@ -1,6 +1,10 @@
 import { Context } from 'hono';
 import { Env } from '../types';
 
+export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
+  const requestUrl = new URL(c.req.url);
+  return `https://browser-render.coffeencode.cc/?url=https://coffeencode.cc${requestUrl.pathname}${requestUrl.search}`;
+}
 
 export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '') {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
@@ -49,7 +53,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .back-to-top { position: fixed; bottom: 32px; right: 32px; width: 48px; height: 48px; background: var(--accent); color: var(--paper); border: none; border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 20px; z-index: 50; transition: opacity 200ms; }.back-to-top.show { display: flex; }.back-to-top:hover { background: var(--ink); }
     .site-footer { background: var(--paper-deep); border-top: 1px solid var(--line-strong); color: var(--ink); flex-shrink: 0; padding: 54px 0 32px; }.footer-inner { display: grid; gap: 38px; grid-template-columns: 1.5fr 1fr 1fr; }.footer-brand { font-family: Lora, serif; font-size: clamp(1.7rem, 3vw, 2.5rem); font-weight: 600; letter-spacing: -.05em; margin: 0 0 8px; }.footer-tagline { color: var(--muted); margin: 0; max-width: 420px; }.footer-heading { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .1em; margin: 5px 0 12px; text-transform: uppercase; }.footer-links { display: grid; gap: 8px; }.footer-links a { color: var(--ink); width: fit-content; }.footer-social { display: flex; gap: 16px; margin-top: 16px; }.footer-social a { color: var(--accent); font-size: 18px; transition: color 200ms; }.footer-social a:hover { color: var(--ink); }.footer-meta { color: var(--muted); font-size: 14px; grid-column: 1 / -1; margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
     @media (max-width: 760px) { .header-inner { grid-template-columns: 1fr 1fr auto; min-height: 76px; gap: 12px; }.site-header.is-compact .header-inner { min-height: 56px; }.site-nav { display: none; }.hamburger-button { display: flex; }.header-links { gap: 8px; }.header-links .pds-link { display: none; }.page-content { padding-top: 32px; }.front-page__grid { grid-template-columns: 1fr; gap: 38px; }.archive-grid { grid-template-columns: 1fr; gap: 0; }.archive-story { min-height: 0; }.archive-story__image { aspect-ratio: 1.8 / 1; }.footer-inner { grid-template-columns: 1fr 1fr; }.footer-brand-block { grid-column: 1 / -1; }.article__footer { flex-direction: column; gap: 12px; }.search-form { grid-template-columns: 1fr; }.back-to-top { width: 44px; height: 44px; right: 16px; bottom: 16px; font-size: 18px; } } @media (max-width: 480px) { .header-inner, .page-content, .footer-inner { width: min(100% - 32px, var(--page-width)); }.site-brand { font-size: 1.35rem; }.header-links { font-size: 11px; }.side-story { grid-template-columns: 88px minmax(0, 1fr); }.footer-inner { grid-template-columns: 1fr; gap: 24px; }.footer-brand-block { grid-column: auto; } }
-    .article__author { align-items: center; color: var(--accent); display: inline-flex; font-size: 16px; font-weight: 600; gap: 10px; margin-top: 20px; }.article__author:hover { color: var(--ink); }.article__author-avatar { border-radius: 50%; height: 36px; object-fit: cover; width: 36px; }.article__author-avatar--placeholder { background: var(--accent); display: block; }
+    .article__author { align-items: center; color: var(--accent); display: inline-flex; font-size: 16px; font-weight: 600; gap: 10px; margin-top: 20px; }.article__author:hover { color: var(--ink); }.article__author-avatar { border-radius: 50%; height: 36px; object-fit: cover; width: 36px; }.article__author-avatar--placeholder { background: var(--accent); display: block; }.view-counter { color: var(--muted); font-size: 12px; white-space: nowrap; }.article-meta { align-items: center; display: inline-flex; flex-wrap: wrap; gap: 8px; }.article-view-counter { display: block; margin-top: 18px; }
     .author-page__header { align-items: center; display: flex; gap: 20px; margin-bottom: 36px; }.author-page__header h1 { margin: 0; }.author-page__header p:last-child { color: var(--muted); margin: 6px 0 0; }.author-page__avatar { border-radius: 50%; height: 88px; object-fit: cover; width: 88px; }
     .authors-page__header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 20px; }.authors-page__header .eyebrow { margin: 0 0 8px; }.authors-page__header h1 { margin: 0; }.author-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }.author-card { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); display: flex; gap: 14px; padding: 16px; }.author-card:hover { border-color: var(--accent); }.author-card__avatar { border-radius: 50%; flex: 0 0 64px; height: 64px; object-fit: cover; width: 64px; }.author-card__avatar--placeholder { background: var(--accent); }.author-card__details { display: grid; gap: 2px; }.author-card__details strong { color: var(--ink); font-family: Lora, serif; font-size: 20px; }.author-card__details span { color: var(--muted); font-size: 14px; }.author-card__details span:last-child { color: var(--accent); margin-top: 4px; }
     @media (max-width: 760px) { .writers-callout { align-items: flex-start; flex-direction: column; } }
@@ -62,6 +66,42 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
   <footer class="site-footer"><div class="footer-inner"><div class="footer-brand-block"><p class="footer-brand">${pubName}</p><p class="footer-tagline">${pubDescription}</p><div class="footer-social"><a href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/rss.xml" aria-label="RSS feed" title="RSS feed"><i class="fas fa-rss" aria-hidden="true"></i></a><a href="/sitemap.xml" aria-label="Sitemap" title="Sitemap"><i class="fas fa-sitemap" aria-hidden="true"></i></a><a href="/privacy" aria-label="Privacy policy" title="Privacy policy"><i class="fas fa-shield-halved" aria-hidden="true"></i></a></div></div><p class="footer-meta">© ${new Date().getFullYear()} ${pubName} an MBD Company</p></div></footer>
   <script>
+    // Load view counts without blocking the page.
+    const viewCounterEndpoint = 'https://reads.coffeencode.cc/';
+    const viewCounters = [...document.querySelectorAll('[data-view-counter][data-path]')];
+    const renderViewCount = (element, views) => {
+      element.textContent = Number(views).toLocaleString() + ' views';
+    };
+    const loadViewCounters = (elements) => {
+      if (!elements.length) return;
+      const paths = elements.map((element) => element.dataset.path);
+      const query = paths.length === 1
+        ? 'path=' + encodeURIComponent(paths[0])
+        : 'paths=' + encodeURIComponent(JSON.stringify(paths));
+      fetch(viewCounterEndpoint + '?' + query + '&update-db=true')
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error('View counter request failed')))
+        .then((result) => {
+          if (!result.success) return;
+          result.data.forEach((item) => {
+            elements.filter((element) => element.dataset.path === item.path).forEach((element) => renderViewCount(element, item.views));
+          });
+        })
+        .catch(() => {});
+    };
+    loadViewCounters(viewCounters.slice(0, 10));
+    const lazyViewCounters = viewCounters.slice(10);
+    if (lazyViewCounters.length && 'IntersectionObserver' in window) {
+      const viewCounterObserver = new IntersectionObserver((entries) => {
+        entries.filter((entry) => entry.isIntersecting).forEach((entry) => {
+          viewCounterObserver.unobserve(entry.target);
+          loadViewCounters([entry.target]);
+        });
+      }, { threshold: 0.1 });
+      lazyViewCounters.forEach((element) => viewCounterObserver.observe(element));
+    } else {
+      loadViewCounters(lazyViewCounters);
+    }
+
     // Back to top button
     const siteHeader = document.querySelector('.site-header');
     const backToTopBtn = document.getElementById('backToTop');

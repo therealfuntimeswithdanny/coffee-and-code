@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { getPdsEndpoint, fetchArticles, searchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
-import { renderLayout } from '../templates/layout';
+import { renderLayout, browserRenderOgImage } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
 
@@ -65,7 +65,22 @@ pages.get('/authors', async (c) => {
     </section>
   `;
 
-  return c.html(renderLayout(c, 'Authors', body));
+  const pageUrl = new URL(c.req.url).toString();
+  const metaTags = `
+    <meta property="og:title" content="Authors | Coffee and Code.">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Authors | Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta name="twitter:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'Authors', body, metaTags));
 });
 
 pages.get('/author/:handle', async (c) => {
@@ -97,6 +112,7 @@ pages.get('/author/:handle', async (c) => {
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
           <h3><a href="${post.path}">${escapeHtml(post.title || 'Untitled')}</a></h3>
           ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
+            <span class="view-counter" data-view-counter data-path="${post.path}">Loading views...</span>
         </div>
         <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </article>`)
@@ -113,7 +129,22 @@ pages.get('/author/:handle', async (c) => {
     </section>
   `;
 
-  return c.html(renderLayout(c, authorName, body));
+  const pageUrl = new URL(c.req.url).toString();
+  const metaTags = `
+    <meta property="og:title" content="${escapeHtml(authorName)} | Coffee and Code.">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${escapeHtml(authorName)} | Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta name="twitter:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, authorName, body, metaTags));
 });
 
 pages.get('/archive', async (c) => {
@@ -138,6 +169,7 @@ pages.get('/archive', async (c) => {
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             ${excerpt(post) ? `<p>${excerpt(post)}</p>` : ''}
+            <span class="view-counter" data-view-counter data-path="${post.path}">Loading views...</span>
           </div>
           <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </article>`
@@ -186,9 +218,12 @@ pages.get('/archive', async (c) => {
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <meta property="og:image:type" content="image/png">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Coffee and Code.">
     <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta name="twitter:image" content="${escapeHtml(browserRenderOgImage(c))}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
@@ -211,9 +246,12 @@ pages.get('/privacy', (c) => {
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <meta property="og:image:type" content="image/png">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Coffee and Code.">
     <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta name="twitter:image" content="${escapeHtml(browserRenderOgImage(c))}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 

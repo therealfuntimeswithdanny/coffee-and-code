@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
-import { renderLayout } from '../templates/layout';
+import { renderLayout, browserRenderOgImage } from '../templates/layout';
 import { renderContent, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 
 const posts = new Hono<{ Bindings: Env }>();
@@ -92,7 +92,7 @@ posts.get('/:rkey', async (c) => {
   const previewImage = getImage();
   const pageOrigin = new URL(pageUrl).origin;
   const proxiedPreviewImage = previewImage ? proxyImageUrl(previewImage, pageOrigin) : undefined;
-  const ogImage = proxiedPreviewImage || `${pageOrigin}/og.png`;
+  const ogImage = proxiedPreviewImage || browserRenderOgImage(c);
   const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
@@ -118,6 +118,7 @@ posts.get('/:rkey', async (c) => {
         <h1>${post.title}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
+        <span class="view-counter article-view-counter" data-view-counter data-path="${escapeHtml(post.path)}">Loading views...</span>
       </header>
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image"></figure>` : ''}
       <div class="prose">${htmlContent}</div>

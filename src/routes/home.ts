@@ -21,14 +21,14 @@ function excerpt(post: StandardDocument, length = 180) {
 }
 
 function articleMeta(post: StandardDocument) {
-  return `<span class="article-meta">${formatDate(post.publishedAt)}</span>`;
+  return `<span class="article-meta"><span>${formatDate(post.publishedAt)}</span><span class="view-counter" data-view-counter data-path="${escapeHtml(post.path)}" data-lazy="true">Loading views...</span></span>`;
 }
 
 function heroArticleMeta(post: StandardDocument) {
   if (!post.author) return articleMeta(post);
   const authorName = post.author.displayName || post.author.handle;
   const authorLink = `/author/${encodeURIComponent(post.author.handle)}`;
-  return `<span class="article-meta article-meta--byline">Written by <a href="${authorLink}">${authorName}</a> on ${formatDate(post.publishedAt)}</span>`;
+  return `<span class="article-meta article-meta--byline"><span>Written by <a href="${authorLink}">${authorName}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter" data-view-counter data-path="${escapeHtml(post.path)}">Loading views...</span></span>`;
 }
 
 function escapeHtml(value: string) {
