@@ -2,6 +2,10 @@ import { Context } from 'hono';
 import { Env } from '../types';
 
 
+export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
+  return new URL('/og.png', c.req.url).toString();
+}
+
 export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '') {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
   const pubDescription = c.env.PUB_DESCRIPTION || 'A small tech publication by Daniel Morrisey.';
