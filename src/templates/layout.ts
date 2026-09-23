@@ -10,6 +10,15 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
   const pubDescription = c.env.PUB_DESCRIPTION || 'A small tech publication by Daniel Morrisey.';
   const did = c.env.AUTHOR_DID || '';
+  const escapeHtml = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const descriptionTag = metaTags.includes('name="description"')
+    ? ''
+    : `<meta name="description" content="${escapeHtml(pubDescription)}">`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -17,6 +26,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} | ${pubName}</title>
+  ${descriptionTag}
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   ${metaTags}

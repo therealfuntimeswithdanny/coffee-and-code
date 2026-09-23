@@ -117,7 +117,7 @@ home.get('/', async (c) => {
         <h2 id="writers-callout-title">We're looking for writers</h2>
         <p>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</p>
       </div>
-      <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay/post/3mvi7s2lz2c2j" class="read-link" target="_blank" rel="noopener">Learn more <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+      <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay/post/3mvi7s2lz2c2j" class="read-link" target="_blank" rel="noopener">Learn how to contribute as a writer <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
     </section>
 
     ${

@@ -87,21 +87,48 @@ posts.get('/:rkey', async (c) => {
     ? proxyImageUrl(post.cover, pageOrigin)
     : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}`)}`;
   const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'NewsArticle',
+    headline: post.title,
+    description: articleDescription || undefined,
+    datePublished: post.publishedAt,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl },
+    image: [ogImage],
+    author: post.author
+      ? {
+          '@type': 'Person',
+          name: authorName,
+          url: `${pageOrigin}/author/${encodeURIComponent(post.author.handle)}`,
+        }
+      : { '@type': 'Organization', name: c.env.PUB_NAME },
+    publisher: {
+      '@type': 'Organization',
+      name: c.env.PUB_NAME,
+      url: pageOrigin,
+      logo: { '@type': 'ImageObject', url: `${pageOrigin}/favicon.png` },
+    },
+  };
+  const structuredDataJson = JSON.stringify(structuredData).replace(/</g, '\\u003c');
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
     <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.AUTHOR_DID)}">
     <meta property="og:title" content="${safeTitle}">
     <meta property="og:description" content="${safeDescription}">
+    <meta name="description" content="${safeDescription}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     <meta property="og:image" content="${escapeHtml(ogImage)}">
     <meta property="og:image:type" content="${post.cover ? 'image/jpeg' : 'image/png'}">
+    <meta property="article:published_time" content="${escapeHtml(post.publishedAt)}">
+    <meta property="article:author" content="${escapeHtml(authorName || c.env.PUB_NAME)}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${safeTitle}">
     <meta name="twitter:description" content="${safeDescription}">
     <meta name="twitter:image" content="${escapeHtml(ogImage)}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
+    <script type="application/ld+json">${structuredDataJson}</script>
   `;
 
   const body = `

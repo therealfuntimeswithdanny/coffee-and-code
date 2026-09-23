@@ -4,6 +4,15 @@ import { getPdsEndpoint, fetchArticles } from '../lib/atproto';
 
 const meta = new Hono<{ Bindings: Env }>();
 
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 // AT Protocol domain-to-DID verification record.
 meta.get('/.well-known/atproto-did', (c) => {
   return c.text('did:plc:ofkstpvgn3okv2mllx4ezkod', 200, {
@@ -30,7 +39,7 @@ meta.get('/.well-known/site.standard.publication', (c) => {
 // RSS 2.0 Feed
 meta.get('/rss.xml', async (c) => {
   const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const posts = (await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID)).slice(0, 10);
   const baseUrl = new URL(c.req.url).origin;
 
   const rssItems = posts
@@ -59,6 +68,51 @@ meta.get('/rss.xml', async (c) => {
 </rss>`;
 
   return c.text(rssXml, 200, { 'Content-Type': 'application/xml' });
+});
+
+// Google News sitemap. Google recommends including only articles published in
+// the last two days in a News sitemap.
+meta.get('/news-sitemap.xml', async (c) => {
+  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
+  const posts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const baseUrl = new URL(c.req.url).origin;
+  const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  const recentPosts = posts.filter((post) => {
+    const publishedAt = new Date(post.publishedAt).getTime();
+    return Number.isFinite(publishedAt) && publishedAt >= cutoff;
+  });
+
+  const urls = recentPosts
+    .map((post) => `
+  <url>
+    <loc>${escapeXml(`${baseUrl}${post.path}`)}</loc>
+    <news:news>
+      <news:publication>
+        <news:name>${escapeXml(c.env.PUB_NAME)}</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>${escapeXml(new Date(post.publishedAt).toISOString())}</news:publication_date>
+      <news:title>${escapeXml(post.title)}</news:title>
+    </news:news>
+  </url>`)
+    .join('');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">${urls}
+</urlset>`;
+
+  return c.text(xml, 200, { 'Content-Type': 'application/xml' });
+});
+
+meta.get('/robots.txt', (c) => {
+  const baseUrl = new URL(c.req.url).origin;
+  return c.text(`User-agent: *
+Allow: /
+Disallow: /search
+
+Sitemap: ${baseUrl}/sitemap.xml
+Sitemap: ${baseUrl}/news-sitemap.xml
+`, 200, { 'Content-Type': 'text/plain; charset=utf-8' });
 });
 
 // Sitemap XML
