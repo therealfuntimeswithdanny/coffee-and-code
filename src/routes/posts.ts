@@ -137,10 +137,10 @@ posts.get('/:rkey', async (c) => {
       <header class="article__header">
         <h1>${post.title}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
-        ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
+        ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
         <span class="view-counter article-view-counter" data-view-counter data-path="${escapeHtml(post.path)}" data-update-db="true">Loading views...</span>
       </header>
-      ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image"></figure>` : ''}
+      ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image" width="1200" height="667" fetchpriority="high" decoding="async"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
       <section class="article__comments">
         <sequoia-comments style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>

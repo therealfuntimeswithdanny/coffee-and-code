@@ -49,7 +49,7 @@ pages.get('/authors', async (c) => {
       const name = author.displayName || author.handle;
       const avatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
       return `<a class="author-card" href="/author/${encodeURIComponent(author.handle)}">
-        ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
+        ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar" width="64" height="64" loading="lazy" decoding="async">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
         <span class="author-card__details"><strong>${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
       </a>`;
     })
@@ -91,7 +91,7 @@ pages.get('/author/:handle', async (c) => {
     .map((post) => `
       <article class="archive-story">
         <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
-          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds)}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds)}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
         </a>
         <div>
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
@@ -106,7 +106,7 @@ pages.get('/author/:handle', async (c) => {
   const body = `
     <section class="author-page" aria-labelledby="author-title">
       <header class="author-page__header">
-        ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar">` : ''}
+        ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar" width="88" height="88" decoding="async">` : ''}
         <div><p class="eyebrow">Author</p><h1 id="author-title">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}</p></div>
       </header>
       <div class="section-heading"><span>Stories</span><span>${authorPosts.length}</span></div>

@@ -328,8 +328,15 @@ export async function renderContent(
  * Process images in rendered content (proxy URLs, add alt text, etc.)
  */
 export function processImages(html: string, proxyImageUrl: (url: string) => string): string {
-  return html.replace(/(<img\b[^>]*\bsrc=")([^"]+)(")/gi, (_match: string, before: string, source: string, after: string) => {
-    return `${before}${proxyImageUrl(source)}${after}`;
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const sourceMatch = tag.match(/\bsrc="([^"]+)"/i);
+    if (!sourceMatch) return tag;
+
+    const proxiedTag = tag.replace(sourceMatch[1], proxyImageUrl(sourceMatch[1]));
+    const attributes = /\bloading=|\bdecoding=/i.test(proxiedTag)
+      ? ''
+      : ' loading="lazy" decoding="async"';
+    return proxiedTag.replace(/\s*\/?>$/, `${attributes}>`);
   });
 }
 
