@@ -75,13 +75,6 @@ posts.get('/:rkey', async (c) => {
     return post.description?.trim() || '';
   };
 
-  // Extract first image from content or use cover
-  const getImage = () => {
-    if (post.cover) return post.cover;
-    const match = post.content.match(/!\[.*?\]\((https?:\/\/[^)\s]+)/);
-    return match ? match[1] : undefined;
-  };
-
   const articleDescription = getDescription();
   const articleSubtitle = articleDescription?.trim() || '';
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
@@ -89,10 +82,10 @@ posts.get('/:rkey', async (c) => {
   const authorAvatar = post.author?.avatar ? proxyAvatarUrl(post.author.avatar) : '';
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleDescription);
-  const previewImage = getImage();
   const pageOrigin = new URL(pageUrl).origin;
-  const proxiedPreviewImage = previewImage ? proxyImageUrl(previewImage, pageOrigin) : undefined;
-  const ogImage = proxiedPreviewImage || `${pageOrigin}/og.png`;
+  const ogImage = post.cover
+    ? proxyImageUrl(post.cover, pageOrigin)
+    : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}`)}`;
   const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
@@ -103,7 +96,7 @@ posts.get('/:rkey', async (c) => {
     <meta property="og:type" content="article">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     <meta property="og:image" content="${escapeHtml(ogImage)}">
-    <meta property="og:image:type" content="${previewImage ? 'image/jpeg' : 'image/png'}">
+    <meta property="og:image:type" content="${post.cover ? 'image/jpeg' : 'image/png'}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${safeTitle}">
     <meta name="twitter:description" content="${safeDescription}">
