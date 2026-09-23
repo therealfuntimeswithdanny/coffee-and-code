@@ -53,6 +53,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .author-page__header { align-items: center; display: flex; gap: 20px; margin-bottom: 36px; }.author-page__header h1 { margin: 0; }.author-page__header p:last-child { color: var(--muted); margin: 6px 0 0; }.author-page__avatar { border-radius: 50%; height: 88px; object-fit: cover; width: 88px; }
     .authors-page__header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 20px; }.authors-page__header .eyebrow { margin: 0 0 8px; }.authors-page__header h1 { margin: 0; }.author-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }.author-card { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); display: flex; gap: 14px; padding: 16px; }.author-card:hover { border-color: var(--accent); }.author-card__avatar { border-radius: 50%; flex: 0 0 64px; height: 64px; object-fit: cover; width: 64px; }.author-card__avatar--placeholder { background: var(--accent); }.author-card__details { display: grid; gap: 2px; }.author-card__details strong { color: var(--ink); font-family: Lora, serif; font-size: 20px; }.author-card__details span { color: var(--muted); font-size: 14px; }.author-card__details span:last-child { color: var(--accent); margin-top: 4px; }
     @media (max-width: 760px) { .writers-callout { align-items: flex-start; flex-direction: column; } }
+    .archive-story { content-visibility: auto; contain-intrinsic-size: 0 360px; }
   </style>
 </head>
 <body>

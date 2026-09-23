@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { getPdsEndpoint, fetchArticles, searchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
-import { renderLayout } from '../templates/layout';
+import { renderLayout, browserRenderOgImage } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
 
@@ -114,7 +114,22 @@ pages.get('/author/:handle', async (c) => {
     </section>
   `;
 
-  return c.html(renderLayout(c, authorName, body));
+  const pageUrl = new URL(c.req.url).toString();
+  const metaTags = `
+    <meta property="og:title" content="${escapeHtml(authorName)} | Coffee and Code.">
+    <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta property="og:type" content="profile">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${escapeHtml(authorName)} | Coffee and Code.">
+    <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
+    <meta name="twitter:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, authorName, body, metaTags));
 });
 
 pages.get('/archive', async (c) => {
@@ -133,7 +148,7 @@ pages.get('/archive', async (c) => {
       (post) => `
         <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image">` : '<span aria-hidden="true">C&amp;C</span>'}
+            ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>
