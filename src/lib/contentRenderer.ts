@@ -111,6 +111,68 @@ export function renderHtml(content: string): string {
   return sanitized;
 }
 
+function safeLinkUrl(uri: unknown): string | undefined {
+  if (typeof uri !== 'string') return undefined;
+
+  try {
+    const url = new URL(uri);
+    if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:') {
+      return url.toString();
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function renderLeafletText(text: string, facets: any[] = []): string {
+  const linkRanges = facets
+    .map(facet => {
+      const feature = facet?.features?.find(
+        (candidate: any) => candidate?.$type === 'pub.leaflet.richtext.facet#link'
+      );
+      const href = safeLinkUrl(feature?.uri);
+      const byteStart = facet?.index?.byteStart;
+      const byteEnd = facet?.index?.byteEnd;
+
+      if (!href || !Number.isInteger(byteStart) || !Number.isInteger(byteEnd) || byteStart < 0 || byteEnd <= byteStart) {
+        return undefined;
+      }
+
+      return { byteStart, byteEnd, href };
+    })
+    .filter((range): range is { byteStart: number; byteEnd: number; href: string } => Boolean(range))
+    .sort((left, right) => left.byteStart - right.byteStart);
+
+  if (!linkRanges.length) return escapeHtml(text);
+
+  const characters = Array.from(text);
+  const byteOffsets = [0];
+  for (const character of characters) {
+    byteOffsets.push(byteOffsets[byteOffsets.length - 1] + new TextEncoder().encode(character).length);
+  }
+
+  const indexForByteOffset = (offset: number): number => {
+    const index = byteOffsets.indexOf(offset);
+    return index >= 0 ? index : characters.length;
+  };
+
+  let rendered = '';
+  let characterIndex = 0;
+  for (const range of linkRanges) {
+    const start = Math.max(characterIndex, indexForByteOffset(range.byteStart));
+    const end = Math.max(start, indexForByteOffset(range.byteEnd));
+    if (start > characterIndex) rendered += escapeHtml(characters.slice(characterIndex, start).join(''));
+    if (end > start) {
+      rendered += `<a href="${escapeHtml(range.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(characters.slice(start, end).join(''))}</a>`;
+      characterIndex = end;
+    }
+  }
+
+  return rendered + escapeHtml(characters.slice(characterIndex).join(''));
+}
+
 /**
  * Renders markdown content to HTML
  */
@@ -151,7 +213,7 @@ export function renderLeaflet(content: string): string {
               // Handle Leaflet text blocks
               if (blockType === 'pub.leaflet.blocks.text') {
                 const text = block.plaintext || block.text || '';
-                return `<p class="prose-paragraph">${escapeHtml(text)}</p>`;
+                return `<p class="prose-paragraph">${renderLeafletText(text, block.facets)}</p>`;
               }
 
               // Handle Leaflet blockquote blocks
