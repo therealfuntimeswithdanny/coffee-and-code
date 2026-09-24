@@ -27,7 +27,7 @@ meta.get('/.well-known/site.standard.publication', (c) => {
     name: c.env.PUB_NAME,
     description: c.env.PUB_DESCRIPTION,
     url: new URL(c.req.url).origin,
-    did: c.env.AUTHOR_DID,
+    did: c.env.OWNER_DID,
   };
 
   return c.json(pubRecord, 200, {
@@ -38,8 +38,8 @@ meta.get('/.well-known/site.standard.publication', (c) => {
 
 // RSS 2.0 Feed
 meta.get('/rss.xml', async (c) => {
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = (await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID)).slice(0, 10);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const posts = (await fetchArticles(pds, c.env.OWNER_DID)).slice(0, 10);
   const baseUrl = new URL(c.req.url).origin;
 
   const rssItems = posts
@@ -73,8 +73,8 @@ meta.get('/rss.xml', async (c) => {
 // Google News sitemap. Google recommends including only articles published in
 // the last two days in a News sitemap.
 meta.get('/news-sitemap.xml', async (c) => {
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const posts = await fetchArticles(pds, c.env.OWNER_DID);
   const baseUrl = new URL(c.req.url).origin;
   const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
   const recentPosts = posts.filter((post) => {
@@ -117,8 +117,8 @@ Sitemap: ${baseUrl}/news-sitemap.xml
 
 // Sitemap XML
 meta.get('/sitemap.xml', async (c) => {
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const posts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const posts = await fetchArticles(pds, c.env.OWNER_DID);
   const baseUrl = new URL(c.req.url).origin;
 
   const urls = posts

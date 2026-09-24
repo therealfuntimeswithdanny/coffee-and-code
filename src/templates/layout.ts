@@ -9,7 +9,7 @@ export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
 export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '') {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
   const pubDescription = c.env.PUB_DESCRIPTION || 'A small tech publication by Daniel Morrisey.';
-  const did = c.env.AUTHOR_DID || '';
+  const did = c.env.OWNER_DID || '';
   const escapeHtml = (value: string) => value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

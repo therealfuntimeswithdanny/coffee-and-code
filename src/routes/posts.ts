@@ -20,8 +20,8 @@ posts.get('/', (c) => c.redirect('/'));
 
 posts.get('/:rkey', async (c) => {
   const rkey = c.req.param('rkey');
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
   const post = allPosts.find((p) => p.rkey === rkey || p.path === `/post/${rkey}`);
 
   if (!post) {
@@ -47,7 +47,7 @@ posts.get('/:rkey', async (c) => {
   const processImageSource = (source: string) => {
     if (source.startsWith('/api/blob/')) {
       const cid = source.replace(/^\/api\/blob\//, '');
-      const sourceDid = post.repoDid || c.env.AUTHOR_DID;
+      const sourceDid = post.repoDid || c.env.OWNER_DID;
       const sourcePds = post.pdsUrl || pds;
       const blobUrl = `${sourcePds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(sourceDid)}&cid=${encodeURIComponent(cid)}`;
       return proxyImageUrl(blobUrl, requestOrigin);
@@ -113,7 +113,7 @@ posts.get('/:rkey', async (c) => {
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
-    <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.AUTHOR_DID)}">
+    <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.OWNER_DID)}">
     <meta property="og:title" content="${safeTitle}">
     <meta property="og:description" content="${safeDescription}">
     <meta name="description" content="${safeDescription}">

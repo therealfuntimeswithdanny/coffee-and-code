@@ -153,11 +153,51 @@ async function fetchAuthorProfile(did: string): Promise<AuthorProfile | undefine
   }
 }
 
-export async function fetchArticles(publicationUris: string[], fallbackPds: string, fallbackDid: string): Promise<StandardDocument[]> {
+async function fetchRecord(pdsUrl: string, repo: string, collection: string, rkey: string): Promise<any | undefined> {
+  try {
+    const url = new URL(`${pdsUrl}/xrpc/com.atproto.repo.getRecord`);
+    url.searchParams.set('repo', repo);
+    url.searchParams.set('collection', collection);
+    url.searchParams.set('rkey', rkey);
+    const response = await fetchWithRetry(url.toString());
+    if (!response.ok) return undefined;
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching ${collection}/${rkey}:`, error);
+    return undefined;
+  }
+}
+
+async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[]; authorDids: string[] }> {
+  const [publicationsRecord, authorsRecord] = await Promise.all([
+    fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self'),
+    fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.authors', 'self'),
+  ]);
+
+  return {
+    publicationUris: Array.isArray(publicationsRecord?.value?.publications)
+      ? publicationsRecord.value.publications.filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
+      : [],
+    authorDids: Array.isArray(authorsRecord?.value?.authors)
+      ? authorsRecord.value.authors.filter((did: unknown): did is string => typeof did === 'string' && did.startsWith('did:'))
+      : [],
+  };
+}
+
+export async function fetchArticles(fallbackPds: string, fallbackDid: string): Promise<StandardDocument[]> {
   const articles: StandardDocument[] = [];
   const did = fallbackDid;
   const pdsUrl = fallbackPds;
   try {
+    const configuredLists = await fetchConfiguredLists(pdsUrl, fallbackDid);
+    const publicationUris = configuredLists.publicationUris;
+    const authorDids = configuredLists.authorDids.length ? configuredLists.authorDids : [fallbackDid];
+    const authors = new Map<string, AuthorProfile | undefined>();
+
+    for (const authorDid of authorDids) {
+      authors.set(authorDid, await fetchAuthorProfile(authorDid));
+    }
+
     // Fetch documents from each configured publication's repository.
     if (publicationUris.length) {
       try {
@@ -167,7 +207,6 @@ export async function fetchArticles(publicationUris: string[], fallbackPds: stri
 
           const [, did] = match;
           const pdsUrl = await getPdsEndpoint(did, fallbackPds);
-          const author = await fetchAuthorProfile(did);
           const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${encodeURIComponent(did)}&collection=site.standard.document&limit=100`;
           const stdRes = await fetchWithRetry(stdUrl);
           if (!stdRes.ok) continue;
@@ -177,6 +216,14 @@ export async function fetchArticles(publicationUris: string[], fallbackPds: stri
             if (!rec?.value || rec.value.site !== publicationUri) continue;
             const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
             const { content, format, mimeType } = extractDocumentContent(rec.value);
+            const articleAuthorDid = typeof rec.value.author === 'string'
+              ? rec.value.author
+              : typeof rec.value.author?.did === 'string'
+                ? rec.value.author.did
+                : did;
+            if (!authors.has(articleAuthorDid)) {
+              authors.set(articleAuthorDid, await fetchAuthorProfile(articleAuthorDid));
+            }
 
             articles.push({
               uri: rec.uri || '',
@@ -192,7 +239,7 @@ export async function fetchArticles(publicationUris: string[], fallbackPds: stri
               mimeType,
               repoDid: did,
               pdsUrl,
-              author,
+              author: authors.get(articleAuthorDid),
             });
           }
         }

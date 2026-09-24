@@ -21,8 +21,8 @@ function excerpt(post: StandardDocument) {
 }
 
 pages.get('/authors', async (c) => {
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
   const authors = new Map<string, { author: NonNullable<StandardDocument['author']>; postCount: number }>();
 
   allPosts.forEach((post) => {
@@ -70,8 +70,8 @@ pages.get('/authors', async (c) => {
 
 pages.get('/author/:handle', async (c) => {
   const handle = c.req.param('handle').toLowerCase();
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
   const authorPosts = allPosts.filter((post) => post.author?.handle.toLowerCase() === handle);
   const author = authorPosts[0]?.author;
 
@@ -133,8 +133,8 @@ pages.get('/author/:handle', async (c) => {
 });
 
 pages.get('/archive', async (c) => {
-  const pds = await getPdsEndpoint(c.env.AUTHOR_DID, c.env.DEFAULT_PDS);
-  const allPosts = await fetchArticles(c.env.PUBLICATION_URIS, pds, c.env.AUTHOR_DID);
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
   const query = c.req.query('q') || '';
 
   // Filter posts based on search query
