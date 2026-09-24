@@ -168,18 +168,12 @@ async function fetchRecord(pdsUrl: string, repo: string, collection: string, rke
   }
 }
 
-async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[]; authorDids: string[] }> {
-  const [publicationsRecord, authorsRecord] = await Promise.all([
-    fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self'),
-    fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.authors', 'self'),
-  ]);
+async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[] }> {
+  const publicationsRecord = await fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self');
 
   return {
     publicationUris: Array.isArray(publicationsRecord?.value?.publications)
       ? publicationsRecord.value.publications.filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
-      : [],
-    authorDids: Array.isArray(authorsRecord?.value?.authors)
-      ? authorsRecord.value.authors.filter((did: unknown): did is string => typeof did === 'string' && did.startsWith('did:'))
       : [],
   };
 }
@@ -191,12 +185,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
   try {
     const configuredLists = await fetchConfiguredLists(pdsUrl, fallbackDid);
     const publicationUris = configuredLists.publicationUris;
-    const authorDids = configuredLists.authorDids.length ? configuredLists.authorDids : [fallbackDid];
     const authors = new Map<string, AuthorProfile | undefined>();
-
-    for (const authorDid of authorDids) {
-      authors.set(authorDid, await fetchAuthorProfile(authorDid));
-    }
 
     // Fetch documents from each configured publication's repository.
     if (publicationUris.length) {
