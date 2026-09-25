@@ -15,6 +15,6 @@ enabled = true
 
 [vars]
 PUB_NAME = "Coffee and Code"
-PUB_DESCRIPTION = "A small tech publication by Daniel Morrisey."
+PUB_DESCRIPTION = "The latest from Apple, Google, Proton, Microsoft & more by Daniel Morrisey"
 OWNER_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
 OWNER_PDS = "https://eurosky.social"

@@ -148,7 +148,7 @@ home.get('/', async (c) => {
     <link rel="site.standard.document" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
   `;
 
-  return c.html(renderLayout(c, 'Home', body, metaTags));
+  return c.html(renderLayout(c, 'Tech News & Analysis', body, metaTags));
 });
 
 export default home;
