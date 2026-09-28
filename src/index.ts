@@ -5,6 +5,7 @@ import postsRouter from './routes/posts';
 import pagesRouter from './routes/pages';
 import metaRouter from './routes/meta';
 import searchRouter from './routes/search';
+import exportRouter from './routes/export';
 import { renderLayout } from './templates/layout';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -15,6 +16,7 @@ app.route('/', pagesRouter);
 app.route('/post', postsRouter);
 app.route('/', metaRouter);
 app.route('/search', searchRouter);
+app.route('/export', exportRouter);
 
 // Catch-all 404 handler
 app.all('*', (c) => {
