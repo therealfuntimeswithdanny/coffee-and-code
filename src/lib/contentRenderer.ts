@@ -228,9 +228,6 @@ export function renderLeaflet(content: string): string {
                 if (!imageRef) return '';
 
                 const aspectRatio = block.aspectRatio;
-                const paddingBottom = aspectRatio
-                  ? `${(aspectRatio.height / aspectRatio.width) * 100}%`
-                  : '66.67%';
 
                 return `
                   <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
@@ -242,6 +239,32 @@ export function renderLeaflet(content: string): string {
                     />
                   </figure>
                 `;
+              }
+
+              if (blockType === 'pub.leaflet.blocks.imageGallery') {
+                const images = (block.images || [])
+                  .map((item: any) => {
+                    const imageRef = item.image?.ref?.$link;
+                    if (!imageRef) return '';
+
+                    const aspectRatio = item.aspectRatio;
+                    return `
+                      <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
+                        <img
+                          src="/api/blob/${escapeHtml(imageRef)}"
+                          alt="Article image"
+                          class="prose-image"
+                          loading="lazy"
+                        />
+                      </figure>
+                    `;
+                  })
+                  .filter(Boolean)
+                  .join('');
+
+                return images
+                  ? `<div class="prose-image-gallery" role="group" aria-label="Image gallery" tabindex="0">${images}</div>`
+                  : '';
               }
 
               return '';
