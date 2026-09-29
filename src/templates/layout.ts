@@ -6,10 +6,11 @@ export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
   return new URL('/og.png', c.req.url).toString();
 }
 
-export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '') {
+export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '', documentTitle?: string) {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
   const pubDescription = c.env.PUB_DESCRIPTION || 'A small tech publication by Daniel Morrisey.';
   const did = c.env.OWNER_DID || '';
+  const pageTitle = documentTitle || `${title} | ${pubName}`;
   const escapeHtml = (value: string) => value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -25,7 +26,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} | ${pubName}</title>
+  <title>${pageTitle}</title>
   ${descriptionTag}
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
