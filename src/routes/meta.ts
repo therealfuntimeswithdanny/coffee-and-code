@@ -15,7 +15,7 @@ function escapeXml(value: string) {
 
 // AT Protocol domain-to-DID verification record.
 meta.get('/.well-known/atproto-did', (c) => {
-  return c.text('did:plc:ofkstpvgn3okv2mllx4ezkod', 200, {
+  return c.text('did:plc:z7hzwpuv5ytin56wecfxa4mx', 200, {
     'Content-Type': 'text/plain; charset=utf-8',
   });
 });
