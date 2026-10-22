@@ -183,6 +183,7 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     const rkey = await recordKey(subject);
     buttons.forEach((item) => { item.disabled = true; });
     if (status) status.textContent = 'Saving your reaction…';
+    let recommendFailed = false;
     try {
       const wasSelected = await recordExists(collections[kind], rkey);
       const oppositeSelected = await recordExists(collections[other], rkey);
@@ -194,11 +195,27 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
           const response = await repoRequest('com.atproto.repo.deleteRecord', { repo, collection: collections[other], rkey });
           if (!response.ok) throw new Error(`Could not update reaction (${response.status}).`);
         }
+        const createdAt = new Date().toISOString();
         const response = await repoRequest('com.atproto.repo.createRecord', {
           repo, collection: collections[kind], rkey,
-          record: { $type: collections[kind], document: subject, createdAt: new Date().toISOString() },
+          record: { $type: collections[kind], document: subject, createdAt },
         });
         if (!response.ok) throw new Error(`Could not save reaction (${response.status}).`);
+
+        if (kind === 'like') {
+          const recommendResponse = await repoRequest('com.atproto.repo.createRecord', {
+            repo,
+            collection: 'site.standard.graph.recommend',
+            record: {
+              $type: 'site.standard.graph.recommend',
+              document: subject,
+              createdAt,
+            },
+          });
+          if (!recommendResponse.ok) {
+            recommendFailed = true;
+          }
+        }
       }
       await updateState();
       const response = await fetch(`/api/reactions?subject=${encodeURIComponent(subject)}`);
@@ -209,7 +226,11 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
           if (count) count.textContent = Number(counts[reaction] || 0).toLocaleString();
         });
       }
-      if (status) status.textContent = wasSelected ? 'Reaction removed.' : 'Your reaction was recorded.';
+      if (status) {
+        status.textContent = recommendFailed
+          ? 'Your like was saved, but its recommendation could not be created. Log out and sign in again if you need to grant the new permission.'
+          : wasSelected ? 'Reaction removed.' : 'Your reaction was recorded.';
+      }
     } catch (error) {
       if (status) status.textContent = error instanceof Error ? error.message : 'Could not save your reaction. Please try again.';
     } finally {

@@ -27,4 +27,8 @@ export interface AuthorProfile {
   handle: string;
   displayName?: string;
   avatar?: string;
+  banner?: string;
+  description?: string;
+  pronouns?: string;
+  pinnedPosts?: string[];
 }

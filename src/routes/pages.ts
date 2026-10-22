@@ -20,7 +20,7 @@ pages.get('/auth', (c) => {
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove like and dislike records in your repository (account). You will be redirected to your account provider's site.</p>
+      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove like and dislike records, create view records, and create Standard.site recommendations when you like a story in your repository (account). You will be redirected to your account provider's site.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;
@@ -110,6 +110,7 @@ pages.get('/author/:handle', async (c) => {
     .replace(/'/g, '&#39;');
   const authorName = author.displayName || author.handle;
   const authorAvatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
+  const authorBanner = author.banner ? proxyImageUrl(author.banner, pds, 'feed_fullsize') : '';
   const archiveItems = authorPosts
     .map((post) => `
       <article class="archive-story">
@@ -125,13 +126,21 @@ pages.get('/author/:handle', async (c) => {
         <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </article>`)
     .join('');
+  const pinnedPosts = new Set(author.pinnedPosts || []);
+  const pinnedItems = authorPosts
+    .filter((post) => pinnedPosts.has(post.uri))
+    .map((post) => `<li><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></li>`)
+    .join('');
 
   const body = `
     <section class="author-page" aria-labelledby="author-title">
+      ${authorBanner ? `<img src="${escapeHtml(authorBanner)}" alt="" class="author-page__banner" width="1200" height="400" decoding="async">` : ''}
       <header class="author-page__header">
         ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar" width="88" height="88" decoding="async">` : ''}
-        <div><p class="eyebrow">Author</p><h1 id="author-title">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}</p></div>
+        <div><p class="eyebrow">Author</p><h1 id="author-title">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
       </header>
+      ${author.description ? `<p class="author-page__description">${escapeHtml(author.description)}</p>` : ''}
+      ${pinnedItems ? `<section class="author-page__pinned" aria-label="Pinned stories"><div class="section-heading"><span>Pinned stories</span></div><ul>${pinnedItems}</ul></section>` : ''}
       <div class="section-heading"><span>Stories</span><span>${authorPosts.length}</span></div>
       <div class="archive-grid">${archiveItems}</div>
     </section>

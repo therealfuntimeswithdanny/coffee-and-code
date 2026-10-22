@@ -150,21 +150,58 @@ export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<
   }
 }
 
-async function fetchAuthorProfile(did: string): Promise<AuthorProfile | undefined> {
-  try {
-    const response = await fetchWithRetry(
-      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`
-    );
-    if (!response.ok) return undefined;
+function profileBlobUrl(blob: any, did: string, pdsUrl: string): string | undefined {
+  const cid = blob?.ref?.$link;
+  if (typeof cid !== 'string') return undefined;
 
-    const profile: any = await response.json();
-    if (typeof profile.handle !== 'string') return undefined;
+  return `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function fetchAuthorProfile(did: string, fallbackPds: string): Promise<AuthorProfile | undefined> {
+  try {
+    const pdsUrl = await getPdsEndpoint(did, fallbackPds);
+    const [record, response] = await Promise.all([
+      fetchRecord(pdsUrl, did, 'cc.coffeencode.author.profile', 'self'),
+      fetchWithRetry(
+        `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`
+      ).catch((error) => {
+        console.error('Error fetching author profile from Bluesky:', error);
+        return undefined;
+      }),
+    ]);
+
+    const profileData: unknown = response?.ok ? await response.json() : undefined;
+    const profile = isRecord(profileData) ? profileData : {};
+    const custom = isRecord(record?.value) && record.value.$type === 'cc.coffeencode.author.profile'
+      ? record.value
+      : undefined;
+    if (!custom && typeof profile.handle !== 'string') return undefined;
 
     return {
       did,
-      handle: profile.handle,
-      displayName: typeof profile.displayName === 'string' ? profile.displayName : undefined,
-      avatar: typeof profile.avatar === 'string' ? profile.avatar : undefined,
+      handle: typeof profile.handle === 'string' ? profile.handle : did,
+      displayName: typeof custom?.displayName === 'string'
+        ? custom.displayName
+        : typeof profile.displayName === 'string'
+          ? profile.displayName
+          : undefined,
+      avatar: profileBlobUrl(custom?.avatar, did, pdsUrl) ||
+        (typeof profile.avatar === 'string' ? profile.avatar : undefined),
+      banner: profileBlobUrl(custom?.banner, did, pdsUrl) ||
+        (typeof profile.banner === 'string' ? profile.banner : undefined),
+      description: typeof custom?.description === 'string'
+        ? custom.description
+        : typeof profile.description === 'string'
+          ? profile.description
+          : undefined,
+      pronouns: typeof custom?.pronouns === 'string' ? custom.pronouns : undefined,
+      pinnedPosts: Array.isArray(custom?.pinnedPosts)
+        ? custom.pinnedPosts.filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
+        : undefined,
     };
   } catch (error) {
     console.error('Error fetching author profile:', error);
@@ -230,7 +267,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
                 ? rec.value.author.did
                 : did;
             if (!authors.has(articleAuthorDid)) {
-              authors.set(articleAuthorDid, await fetchAuthorProfile(articleAuthorDid));
+              authors.set(articleAuthorDid, await fetchAuthorProfile(articleAuthorDid, fallbackPds));
             }
 
             articles.push({
