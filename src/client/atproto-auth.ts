@@ -176,11 +176,12 @@ async function repoRequest(path: string, body?: unknown) {
   });
 
   if (response.ok) return response;
-  const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+  const payload = await response.clone().json().catch(() => null) as { error?: string; message?: string } | null;
   if (response.status === 401 || response.status === 403) {
     throw new Error('Your account has not granted this permission yet. Log out and sign in again to approve the updated permissions.');
   }
-  throw new Error(payload?.message || payload?.error || `AT Protocol request failed (${response.status}).`);
+  const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
+  throw new Error(detail || `AT Protocol request failed (${response.status}).`);
 }
 
 function recordQuery(collection: string, rkey: string) {
@@ -198,11 +199,14 @@ async function recordExists(collection: string, rkey: string) {
   if (response.ok) return true;
 
   const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
-  if (response.status === 400 && payload?.error === 'RecordNotFound') return false;
+  const detail = `${payload?.error || ''} ${payload?.message || ''}`.toLowerCase();
+  // PDS implementations commonly return HTTP 400 with RecordNotFound when
+  // getRecord is used to check whether the reader has reacted yet.
+  if (response.status === 400 && (payload?.error === 'RecordNotFound' || /record\s+(was\s+)?not found|could not locate record/.test(detail))) return false;
   if (response.status === 401 || response.status === 403) {
     throw new Error('Your account has not granted this permission yet. Log out and sign in again to approve the updated permissions.');
   }
-  throw new Error(payload?.message || payload?.error || `Could not read your reaction (${response.status}).`);
+  throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Could not read your reaction (${response.status}).`);
 }
 
 document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
