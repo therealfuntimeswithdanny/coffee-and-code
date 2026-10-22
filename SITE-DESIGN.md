@@ -84,12 +84,12 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 
 ## Components and interaction
 
-- **Section bars:** Strong dark top rule, lighter lower rule, compact uppercase label, optional count aligned to the opposite edge.
+- **Section bars:** Compact uppercase label and optional opposite-aligned count, with top and bottom rules using the same restrained sage/stone color.
 - **Story entries:** Image-led but restrained, minimal rounding, consistent image ratios, fine separators, and clear headline hierarchy. Keep thumbnail crops, headline spacing, and metadata placement consistent across home, archive, and recommendations.
 - **Links:** Inherit text color by default; use the sage/stone accent for reading actions and interactive emphasis. Keep keyboard focus clearly visible.
 - **Search:** Provide a site-wide search action in the header and a direct text-search form on the archive page.
 - **Account:** The header’s **Log in** action opens a focused AT Protocol sign-in page. Explain that sign-in happens with the visitor’s account provider and state the record permissions requested.
-- **Article reactions:** Place like and dislike controls after the story with public totals and a short status message. Signed-out readers go through sign-in and return to the story; signed-in readers can add, switch, or remove their reaction.
+- **Article engagement:** Place the view total and like/dislike controls together beneath the article byline. Signed-in readers create a public view record whenever they load an article and can add, switch, or remove their reaction; signed-out readers can still see public totals.
 - **Mobile menu:** Toggle open/closed from the menu button; close it when a navigation link is selected.
 - **Back to top:** Reveal on scroll and return smoothly to the top when activated.
 - **Images:** Use AT Protocol blob URLs through `cdn.coffeencode.cc/blob/{did}/{cid}[@ext]/{preset}`, choosing a feed preset for story imagery and an avatar preset for profiles. Do not rewrite profile images to `avatars.coffeencode.cc`. Give content-bearing images useful alternative text; mark decorative covers empty. Lazy-load below-the-fold images and preserve dimensions to reduce layout shift.
@@ -98,8 +98,8 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 ## Responsive behavior
 
 - Below roughly 900px, hide the article-side latest-story rail.
-- Below roughly 760px, stack the home lead story and recent rail, switch archive grids to one column, simplify footer columns, and reduce article headline scale.
-- Below roughly 520px, tighten outer gutters, reduce the wordmark size, and collapse recommendation cards into thumbnail-and-text rows.
+- Below roughly 760px, stack the home lead story and recent rail, switch archive grids to one column, simplify footer columns, provide larger touch targets, and reduce article headline scale.
+- Below roughly 520px, tighten outer gutters, reduce the wordmark size, collapse recommendation cards into thumbnail-and-text rows, and allow wide article tables to scroll horizontally.
 - Preserve content order across breakpoints: lead story first, supporting stories next, then contribution and archive content.
 - Keep article text, buttons, navigation, and images within the viewport; allow long titles and links to wrap naturally.
 

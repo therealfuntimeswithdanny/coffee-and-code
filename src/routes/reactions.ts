@@ -4,7 +4,7 @@ import { Env } from '../types';
 const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
 
-async function countBacklinks(subject: string, collection: 'like' | 'dislike') {
+async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view') {
   const url = new URL(constellationEndpoint);
   url.searchParams.set('subject', subject);
   url.searchParams.set('source', `cc.coffeencode.interact.${collection}:subject.uri`);
@@ -22,11 +22,12 @@ reactions.get('/', async (c) => {
   }
 
   try {
-    const [likes, dislikes] = await Promise.all([
+    const [likes, dislikes, views] = await Promise.all([
       countBacklinks(subject, 'like'),
       countBacklinks(subject, 'dislike'),
+      countBacklinks(subject, 'view'),
     ]);
-    return c.json({ likes, dislikes }, 200, { 'Cache-Control': 'public, max-age=30, s-maxage=30' });
+    return c.json({ likes, dislikes, views }, 200, { 'Cache-Control': 'public, max-age=30, s-maxage=30' });
   } catch (error) {
     console.error('Failed to load reaction counts:', error);
     return c.json({ error: 'Reaction counts are temporarily unavailable.' }, 502);

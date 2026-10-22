@@ -1,9 +1,21 @@
 import { BrowserOAuthClient } from '@atproto/oauth-client-browser';
 
 const clientId = `${window.location.origin}/oauth-client-metadata.json`;
-const client = await BrowserOAuthClient.load({ clientId });
-const initialized = await client.init();
-let session = initialized?.session;
+let client: BrowserOAuthClient | undefined;
+let initialized: Awaited<ReturnType<BrowserOAuthClient['init']>>;
+let session: Awaited<ReturnType<BrowserOAuthClient['init']>> extends { session: infer T } ? T | undefined : never;
+let initializationError: unknown;
+
+try {
+  client = await BrowserOAuthClient.load({
+    clientId,
+    handleResolver: 'https://bsky.social',
+  });
+  initialized = await client.init();
+  session = initialized?.session;
+} catch (error) {
+  initializationError = error;
+}
 
 function safeReturnPath(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//') || value === '/auth') return '/';
@@ -46,6 +58,10 @@ const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
 
 if (authForm) {
+  if (initializationError && authError) {
+    authError.hidden = false;
+    authError.textContent = `Sign-in could not initialize: ${initializationError instanceof Error ? initializationError.message : String(initializationError)}`;
+  }
   if (session) {
     authForm.hidden = true;
     if (authAccount) authAccount.hidden = false;
@@ -53,6 +69,13 @@ if (authForm) {
   }
   authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!client) {
+      if (authError) {
+        authError.hidden = false;
+        authError.textContent = `Sign-in could not initialize: ${initializationError instanceof Error ? initializationError.message : 'Please refresh and try again.'}`;
+      }
+      return;
+    }
     const handle = new FormData(authForm).get('handle')?.toString().trim();
     if (!handle) return;
     const submit = authForm.querySelector<HTMLButtonElement>('button[type="submit"]');
@@ -79,6 +102,42 @@ document.querySelectorAll<HTMLAnchorElement>('.login-button').forEach((link) => 
   if (!session) return;
   link.textContent = 'Account';
   link.setAttribute('aria-label', `Signed in as ${session.sub}`);
+});
+
+document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
+  const subject = container.dataset.viewSubject;
+  if (!subject || !session) return;
+
+  void repoRequest('com.atproto.repo.createRecord', {
+    repo: session.did,
+    collection: 'cc.coffeencode.interact.view',
+    record: {
+      $type: 'cc.coffeencode.interact.view',
+      document: subject,
+      createdAt: new Date().toISOString(),
+    },
+  }).then((response) => {
+    if (!response.ok) {
+      throw new Error(`View record was rejected (${response.status}).`);
+    }
+    // Allow Constellation time to index the new record, then refresh the count.
+    window.setTimeout(async () => {
+      try {
+        const countResponse = await fetch(`/api/reactions?subject=${encodeURIComponent(subject)}&_=${Date.now()}`);
+        if (!countResponse.ok) return;
+        const counts = await countResponse.json() as { views: number };
+        const viewCount = container.querySelector<HTMLElement>('[data-at-view-count]');
+        if (viewCount) viewCount.textContent = `${Number(counts.views || 0).toLocaleString()} views`;
+      } catch {
+        // The normal count loader will retry on the next page view.
+      }
+    }, 2000);
+  }).catch((error) => {
+    const status = container.querySelector<HTMLElement>('.article-reactions__status');
+    if (status) status.textContent = error instanceof Error && /403|401/.test(error.message)
+      ? 'Log out and sign in again to grant permission for view records.'
+      : 'This view could not be recorded.';
+  });
 });
 
 if (initialized?.state !== undefined) {

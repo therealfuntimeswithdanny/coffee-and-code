@@ -126,12 +126,10 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .prose code, .prose-code, .prose pre, .prose-pre { background: var(--paper-deep); color: var(--ink); }
     .prose table tr:nth-child(even), .prose-table tr:nth-child(even) { background: rgba(40,25,20,.3); }
     .article-rail { border-top: 3px solid var(--ink); padding-top: 12px; position: sticky; top: 105px; }
-    .article-rail > .eyebrow { margin: 0 0 8px; }
     .article-rail h2 { font-size: 23px; margin: 0 0 14px; }
-    .article-rail ol { border-top: 1px solid var(--line); list-style: none; margin: 0 0 18px; padding: 0; }
-    .article-rail li { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: 24px 1fr; padding: 14px 0; }
+    .article-rail ul { border-top: 1px solid var(--line); list-style: none; margin: 0 0 18px; padding: 0; }
+    .article-rail li { border-bottom: 1px solid var(--line); padding: 14px 0; }
     .article-rail li a { font-family: Lora, serif; font-size: 15px; font-weight: 600; line-height: 1.4; }
-    .article-rail__number { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .08em; padding-top: 3px; }
     .recommendations { margin: 70px auto 0; max-width: 1180px; }
     .recommendations .section-heading a { color: var(--accent); font-size: 11px; }
     .recommendations__grid { display: grid; gap: 24px; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: 22px; }
@@ -213,14 +211,14 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .recommendation-card h3 { font-size: 20px; letter-spacing: -.025em; }
     .recommendation-card__body > p:not(.eyebrow) { color: #d2cbb9; }
     .recommendation-card__date { display: inline-block; margin-top: 5px; }
-    .article-reactions { border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); margin: 42px 0 32px; padding: 18px 0; }
-    .article-reactions__label { color: var(--muted); display: block; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
-    .article-reactions__buttons { display: flex; flex-wrap: wrap; gap: 10px; }
-    .reaction-button { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); cursor: pointer; display: inline-flex; font: 600 14px 'Source Sans 3', sans-serif; gap: 9px; min-height: 42px; padding: 8px 14px; transition: background 160ms, border-color 160ms, color 160ms; }
+    .article-engagement { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .article-view-counter { margin-top: 0; }
+    .article-reactions__buttons { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+    .reaction-button { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); cursor: pointer; display: inline-flex; font: 600 13px 'Source Sans 3', sans-serif; gap: 6px; min-height: 32px; padding: 4px 8px; transition: background 160ms, border-color 160ms, color 160ms; }
     .reaction-button:hover, .reaction-button[aria-pressed="true"] { background: rgba(178,172,136,.16); border-color: var(--accent); color: var(--ink); }
     .reaction-button:disabled { cursor: wait; opacity: .65; }
     .reaction-count { color: var(--accent); font-variant-numeric: tabular-nums; }
-    .article-reactions__status { color: var(--muted); display: block; font-size: 12px; min-height: 18px; margin-top: 8px; }
+    .article-reactions__status { color: var(--muted); flex-basis: 100%; font-size: 12px; min-height: 18px; }
     .auth-page { margin: 24px auto 60px; max-width: 620px; }
     .auth-page h1 { font-size: clamp(2.4rem, 6vw, 3.7rem); margin: 0; }
     .auth-page__intro { color: #eee9dc; font-size: 18px; line-height: 1.6; margin: 16px 0 28px; }
@@ -237,7 +235,55 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .footer-tagline { color: #d2cbb9; }
     .footer-social a { background: rgba(178,172,136,.1); border: 1px solid var(--line); border-radius: 50%; display: inline-grid; height: 38px; place-items: center; width: 38px; }
     @media (max-width: 760px) { .header-inner { grid-template-columns: auto minmax(0,1fr) auto; min-height: 76px; }.hamburger-button { grid-column: 1; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 2; grid-row: 1; justify-self: center; }.header-links { grid-column: 3; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; } }
-    @media (max-width: 480px) { .site-brand { font-size: 1.24rem; }.site-brand::after { font-size: 6px; }.section-heading { letter-spacing: .1em; }.lead-story h2 { font-size: clamp(2.15rem, 10vw, 3rem); }.recommendations { margin-top: 56px; }.recommendation-card { border-top: 1px solid var(--line); }.recommendation-card__image { margin-top: 0; } }
+    .section-heading { border-top-color: var(--line); }
+    .recent-stories { border-top-color: var(--line); }
+    @media (max-width: 760px) {
+      .header-inner { gap: 8px; width: calc(100% - 32px); }
+      .site-brand { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+      .header-links { gap: 6px; }
+      .search-button-icon, .login-button { min-height: 44px; }
+      .login-button { padding-left: 10px; padding-right: 10px; }
+      .mobile-nav a { display: flex; align-items: center; min-height: 48px; }
+      .mobile-nav .search-button-icon { min-height: 48px; text-align: left; }
+      .page-content { padding-top: 24px; padding-bottom: 48px; }
+      .front-page__grid { gap: 28px; padding-top: 24px; }
+      .recent-stories__heading { padding: 10px 0; }
+      .side-story { gap: 12px; grid-template-columns: 84px minmax(0, 1fr); padding: 14px 0; }
+      .side-story__image { width: 84px; }
+      .side-story h3 { font-size: 16px; line-height: 1.32; }
+      .story-footer { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .article__back { align-items: center; display: inline-flex; min-height: 44px; }
+      .article-engagement { gap: 8px; }
+      .article-view-counter { align-items: center; display: inline-flex; min-height: 44px; }
+      .reaction-button { min-height: 44px; padding: 8px 12px; }
+      .writers-callout { gap: 18px; padding: 22px; }
+      .writers-callout .read-link { white-space: normal; }
+    }
+    @media (max-width: 480px) {
+      .header-inner, .page-content, .footer-inner { width: calc(100% - 32px); }
+      .site-brand { font-size: 1.24rem; }
+      .section-heading { letter-spacing: .1em; padding: 11px 0 9px; }
+      .section-heading span:last-child { font-size: 10px; }
+      .lead-story h2 { font-size: clamp(2.15rem, 10vw, 3rem); }
+      .lead-story__summary { font-size: 18px; }
+      .writers-callout { margin-top: 38px; padding: 20px; }
+      .archive-section { margin-top: 52px; }
+      .archive-story { padding-bottom: 14px; margin-bottom: 14px; }
+      .archive-story h3 { font-size: 19px; }
+      .archive-search { margin-bottom: 28px; }
+      .recommendations { margin-top: 48px; }
+      .recommendation-card { border-top: 1px solid var(--line); }
+      .recommendation-card__image { margin-top: 0; }
+      .article__header { padding-bottom: 22px; margin-bottom: 22px; }
+      .article__header h1 { font-size: clamp(2.25rem, 10vw, 3.25rem); line-height: 1.05; }
+      .article__dek { font-size: 19px; }
+      .article-engagement { gap: 4px 8px; }
+      .reaction-button { font-size: 12px; padding: 7px 9px; }
+      .prose p, .prose li, .prose-paragraph { font-size: 18px; line-height: 1.75; }
+      .prose table { display: block; max-width: 100%; overflow-x: auto; }
+      .article__cover { margin: 20px 0; }
+      .mobile-nav .login-button { margin-left: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -295,9 +341,13 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
             const count = container.querySelector('[data-reaction-count="' + kind + '"]');
             if (count) count.textContent = Number(counts[kind] || 0).toLocaleString();
           });
+          const viewCount = container.querySelector('[data-at-view-count]');
+          if (viewCount) viewCount.textContent = Number(counts.views || 0).toLocaleString() + ' views';
         })
         .catch(() => {
           container.querySelectorAll('[data-reaction-count]').forEach((count) => { count.textContent = '—'; });
+          const viewCount = container.querySelector('[data-at-view-count]');
+          if (viewCount) viewCount.textContent = 'Views unavailable';
         });
     });
 

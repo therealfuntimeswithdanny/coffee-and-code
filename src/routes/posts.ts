@@ -99,8 +99,8 @@ posts.get('/:rkey', async (c) => {
         <span class="recommendation-card__date">${formatDate(item.publishedAt)}</span>
       </div>
     </article>`).join('');
-  const latestRail = allPosts.filter((item) => item.path !== post.path).slice(0, 4).map((item, index) => `
-    <li><span class="article-rail__number">0${index + 1}</span><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></li>`).join('');
+  const latestRail = allPosts.filter((item) => item.path !== post.path).slice(0, 4).map((item) => `
+    <li><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></li>`).join('');
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
@@ -150,22 +150,20 @@ posts.get('/:rkey', async (c) => {
     <article class="article">
       <a href="/" class="article__back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All stories</a>
       <header class="article__header">
-        <p class="eyebrow">Technology · Ideas · Culture</p>
         <h1>${safeTitle}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
-        <span class="view-counter article-view-counter" data-view-counter data-path="${escapeHtml(post.path)}" data-update-db="true">Loading views...</span>
+        <div class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story views and reactions">
+          <span class="view-counter article-view-counter" data-at-view-count>Loading views...</span>
+          <div class="article-reactions__buttons" aria-label="React to this story">
+            <button type="button" class="reaction-button" data-reaction="like" aria-pressed="false"><i class="fa-regular fa-thumbs-up" aria-hidden="true"></i> Like <span class="reaction-count" data-reaction-count="like">—</span></button>
+            <button type="button" class="reaction-button" data-reaction="dislike" aria-pressed="false"><i class="fa-regular fa-thumbs-down" aria-hidden="true"></i> Dislike <span class="reaction-count" data-reaction-count="dislike">—</span></button>
+          </div>
+          <span class="article-reactions__status" aria-live="polite"></span>
+        </div>
       </header>
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image" width="1200" height="667" fetchpriority="high" decoding="async"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
-      <div class="article-reactions" data-reaction-subject="${escapeHtml(post.uri)}" aria-label="React to this story">
-        <span class="article-reactions__label">Was this story useful?</span>
-        <div class="article-reactions__buttons">
-          <button type="button" class="reaction-button" data-reaction="like" aria-pressed="false"><i class="fa-regular fa-thumbs-up" aria-hidden="true"></i> Like <span class="reaction-count" data-reaction-count="like">—</span></button>
-          <button type="button" class="reaction-button" data-reaction="dislike" aria-pressed="false"><i class="fa-regular fa-thumbs-down" aria-hidden="true"></i> Dislike <span class="reaction-count" data-reaction-count="dislike">—</span></button>
-        </div>
-        <span class="article-reactions__status" aria-live="polite"></span>
-      </div>
       <section class="article__comments">
         <sequoia-comments style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
       </section>
@@ -173,7 +171,7 @@ posts.get('/:rkey', async (c) => {
         <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </footer>
     </article>
-    <aside class="article-rail" aria-label="Latest stories"><p class="eyebrow">The latest</p><h2>From the newsroom</h2><ol>${latestRail}</ol><a href="/archive" class="read-link">Browse the archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></aside>
+    <aside class="article-rail" aria-label="Latest stories"><h2>Latest</h2><ul>${latestRail}</ul><a href="/archive" class="read-link">Browse the archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></aside>
     </div>
     ${recommendations.length ? `<section class="recommendations" aria-labelledby="recommendations-title"><div class="section-heading"><span id="recommendations-title">Continue reading</span><a href="/archive">All stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div><div class="recommendations__grid">${recommendationHtml}</div></section>` : ''}
   `;

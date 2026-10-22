@@ -10,7 +10,7 @@ pages.get('/auth', (c) => {
     <section class="auth-page" aria-labelledby="auth-title">
       <p class="eyebrow">Coffee &amp; Code account</p>
       <h1 id="auth-title">Sign in with AT Protocol</h1>
-      <p class="auth-page__intro">Use your Bluesky or other AT Protocol handle to sign in. Your account stays yours; sign-in takes place with your account provider.</p>
+      <p class="auth-page__intro">Use your Bluesky, Blacksky, Eurosky or other AT Protocol account to sign in. We will redirect you to your PDS (the server where your account is stored).</p>
       <form class="auth-form" data-auth-form>
         <label for="auth-handle">Handle or DID</label>
         <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.example" required>
@@ -20,7 +20,7 @@ pages.get('/auth', (c) => {
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove like and dislike records in your public AT Protocol repository. Your password is entered only on your account provider's site.</p>
+      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove like and dislike records in your repository (account). You will be redirected to your account provider's site.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;
