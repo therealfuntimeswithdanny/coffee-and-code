@@ -11,6 +11,7 @@ pages.get('/auth', (c) => {
       <p class="eyebrow">Coffee &amp; Code account</p>
       <h1 id="auth-title">Sign in with AT Protocol</h1>
       <p class="auth-page__intro">Use your Bluesky, Blacksky, Eurosky or other AT Protocol account to sign in. We will redirect you to your PDS (the server where your account is stored).</p>
+      <p class="auth-page__resolution">To locate your account provider, the handle you enter is sent to Coffee &amp; Code's PDS resolver before you are redirected.</p>
       <form class="auth-form" data-auth-form>
         <label for="auth-handle">Handle or DID</label>
         <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.example" required>
@@ -41,7 +42,8 @@ pages.get('/become-an-author', (c) => {
         </li>
         <li>
           <h2>Set the publication URL</h2>
-          <p>In the publication's settings, set its URL or domain to <code>coffeencode.cc</code> (this can be done via a tool like <a href="https://pdsls.dev" target="_blank" rel="noopener noreferrer">PDSls</a>).  This tells readers the publication is hosted on Coffee &amp; Code; you do not need to set up a separate custom domain.</p>
+          <p>Set the publication's URL or domain to the site you want to be its main home. If you are using this publication just for Coffee &amp; Code, set it to <code>coffeencode.cc</code> (or <code>https://coffeencode.cc</code> if a full URL is required). You can update this setting with a tool like <a href="https://pdsls.dev" target="_blank" rel="noopener noreferrer">PDSls</a>; you do not need to set up a custom domain.</p>
+          <p>Coffee &amp; Code connects to your publication using its AT Protocol URI, not this website URL. So if you also want the publication to represent your own site or power another Standard.site frontend, set the URL to that site's main address instead. After you send me the publication URI and I add it, Coffee &amp; Code can still show stories published to it at <code>coffeencode.cc/\${rkey}</code>.</p>
         </li>
         <li>
           <h2>Send me the publication URI</h2>

@@ -1,53 +1,41 @@
-import { BrowserOAuthClient } from '@atproto/oauth-client-browser';
+import {
+  BrowserOAuthClient,
+  OAuthCallbackError,
+  type OAuthClientMetadataInput,
+  type OAuthSession,
+} from '@atproto/oauth-client-browser';
+import rawClientMetadata from '../../media/oauth-client-metadata.json';
 
-const clientId = `${window.location.origin}/oauth-client-metadata.json`;
+// The same file is published as a Cloudflare static asset at the client_id URL.
+// Embedding it here avoids a second metadata fetch in the browser and prevents
+// the browser config from drifting from the public document.
+const clientMetadata = rawClientMetadata as OAuthClientMetadataInput;
+const clientOrigin = new URL(clientMetadata.client_id!).origin;
+const handleResolver = 'https://database.coffeencode.cc';
+
 let client: BrowserOAuthClient | undefined;
-let initialized: Awaited<ReturnType<BrowserOAuthClient['init']>>;
-let session: Awaited<ReturnType<BrowserOAuthClient['init']>> extends { session: infer T } ? T | undefined : never;
+let session: OAuthSession | undefined;
 let initializationError: unknown;
+let callbackState: string | null | undefined;
 
-try {
-  client = await BrowserOAuthClient.load({
-    clientId,
-    handleResolver: 'https://bsky.social',
-  });
-  initialized = await client.init();
-  session = initialized?.session;
-} catch (error) {
-  initializationError = error;
+function safeReturnPath(value: string | null | undefined) {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
+
+  try {
+    const target = new URL(value, window.location.origin);
+    if (target.origin !== window.location.origin || target.pathname === '/auth') return '/';
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return '/';
+  }
 }
 
-function safeReturnPath(value: string | null) {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || value === '/auth') return '/';
-  return value;
-}
-
-function repoRequest(path: string, body?: unknown) {
-  if (!session) throw new Error('Sign in with your AT Protocol account to react.');
-  return session.fetchHandler(`/xrpc/${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}
-
-function repoQuery(collection: string, rkey: string) {
-  const params = new URLSearchParams({ repo: session?.did || '', collection, rkey });
-  return `com.atproto.repo.getRecord?${params.toString()}`;
-}
-
-function recordKey(document: string) {
-  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(document))
-    .then((digest) => `post-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`);
-}
-
-async function recordExists(collection: string, rkey: string) {
-  const response = await repoRequest(repoQuery(collection, rkey));
-  if (response.ok) return true;
-
-  const result = await response.json().catch(() => null) as { error?: string; message?: string } | null;
-  if (response.status === 400 && result?.error === 'RecordNotFound') return false;
-  throw new Error(result?.message || result?.error || `Could not check reaction (${response.status}).`);
+function errorMessage(error: unknown) {
+  if (error instanceof OAuthCallbackError) {
+    const description = error.params.get('error_description');
+    return description || error.message || 'Sign-in was canceled or could not be completed.';
+  }
+  return error instanceof Error ? error.message : 'An unexpected sign-in error occurred.';
 }
 
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
@@ -56,99 +44,205 @@ const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
 
-if (authForm) {
-  if (initializationError && authError) {
-    authError.hidden = false;
-    authError.textContent = `Sign-in could not initialize: ${initializationError instanceof Error ? initializationError.message : String(initializationError)}`;
-  }
+function showAuthError(message: string) {
+  if (!authError) return;
+  authError.hidden = false;
+  authError.textContent = message;
+}
+
+function clearAuthError() {
+  if (!authError) return;
+  authError.hidden = true;
+  authError.textContent = '';
+}
+
+function renderAccount() {
   if (session) {
-    authForm.hidden = true;
+    if (authForm) authForm.hidden = true;
     if (authAccount) authAccount.hidden = false;
     if (authName) authName.textContent = session.sub;
+  } else {
+    if (authForm) authForm.hidden = false;
+    if (authAccount) authAccount.hidden = true;
+    if (authName) authName.textContent = '';
   }
+
+  document.querySelectorAll<HTMLAnchorElement>('.login-button').forEach((link) => {
+    if (!session) return;
+    link.textContent = 'Account';
+    link.setAttribute('aria-label', `Signed in as ${session.sub}`);
+  });
+}
+
+try {
+  if (window.location.origin !== clientOrigin) {
+    throw new Error(`AT Protocol sign-in is configured for ${clientOrigin}.`);
+  }
+
+  client = new BrowserOAuthClient({
+    clientMetadata,
+    handleResolver,
+    onSessionDeleted: (did) => {
+      if (session?.did !== did) return;
+      session = undefined;
+      renderAccount();
+    },
+  });
+} catch (error) {
+  initializationError = error;
+}
+
+renderAccount();
+
+if (initializationError && authForm) {
+  showAuthError(`Sign-in could not initialize: ${errorMessage(initializationError)}`);
+}
+
+const oauthReady = (async () => {
+  if (!client) return;
+  try {
+    const initialized = await client.init();
+    if (initialized) {
+      session = initialized.session;
+      if ('state' in initialized) callbackState = initialized.state;
+    }
+  } catch (error) {
+    initializationError = error;
+    if (authForm) showAuthError(`Sign-in could not initialize: ${errorMessage(error)}`);
+  }
+
+  renderAccount();
+  if (callbackState !== undefined && window.location.pathname === '/auth') {
+    window.location.replace(safeReturnPath(callbackState));
+  }
+})();
+
+if (authForm) {
   authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    clearAuthError();
     if (!client) {
-      if (authError) {
-        authError.hidden = false;
-        authError.textContent = `Sign-in could not initialize: ${initializationError instanceof Error ? initializationError.message : 'Please refresh and try again.'}`;
-      }
+      showAuthError(`Sign-in could not initialize: ${errorMessage(initializationError)}`);
       return;
     }
+
     const handle = new FormData(authForm).get('handle')?.toString().trim();
     if (!handle) return;
+
     const submit = authForm.querySelector<HTMLButtonElement>('button[type="submit"]');
-    if (submit) { submit.disabled = true; submit.textContent = 'Connecting…'; }
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Connecting…';
+    }
+
     try {
-      sessionStorage.setItem('cc-auth-return', safeReturnPath(new URLSearchParams(location.search).get('returnTo')));
-      await client.signInRedirect(handle);
+      await oauthReady;
+      const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
+      await client.signInRedirect(handle, { state: returnPath });
     } catch (error) {
-      if (authError) { authError.hidden = false; authError.textContent = error instanceof Error ? error.message : 'Unable to start sign-in.'; }
-      if (submit) { submit.disabled = false; submit.textContent = 'Continue with AT Protocol'; }
+      showAuthError(errorMessage(error));
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = 'Continue with AT Protocol';
+      }
     }
   });
 }
 
 signoutButton?.addEventListener('click', async () => {
+  await oauthReady;
+  if (!session) return;
+  signoutButton.disabled = true;
   try {
-    await session?.signOut();
-  } finally {
+    await session.signOut();
     window.location.reload();
+  } catch (error) {
+    showAuthError(`Could not sign out: ${errorMessage(error)}`);
+    signoutButton.disabled = false;
   }
 });
 
-document.querySelectorAll<HTMLAnchorElement>('.login-button').forEach((link) => {
-  if (!session) return;
-  link.textContent = 'Account';
-  link.setAttribute('aria-label', `Signed in as ${session.sub}`);
-});
+function requireSession() {
+  if (!session) throw new Error('Sign in with your AT Protocol account to react.');
+  return session;
+}
+
+async function repoRequest(path: string, body?: unknown) {
+  const activeSession = requireSession();
+  const response = await activeSession.fetchHandler(`/xrpc/${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (response.ok) return response;
+  const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('Your account has not granted this permission yet. Log out and sign in again to approve the updated permissions.');
+  }
+  throw new Error(payload?.message || payload?.error || `AT Protocol request failed (${response.status}).`);
+}
+
+function recordQuery(collection: string, rkey: string) {
+  const params = new URLSearchParams({ repo: requireSession().did, collection, rkey });
+  return `com.atproto.repo.getRecord?${params}`;
+}
+
+async function recordKey(document: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(document));
+  return `post-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+async function recordExists(collection: string, rkey: string) {
+  const response = await requireSession().fetchHandler(`/xrpc/${recordQuery(collection, rkey)}`);
+  if (response.ok) return true;
+
+  const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+  if (response.status === 400 && payload?.error === 'RecordNotFound') return false;
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('Your account has not granted this permission yet. Log out and sign in again to approve the updated permissions.');
+  }
+  throw new Error(payload?.message || payload?.error || `Could not read your reaction (${response.status}).`);
+}
 
 document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
-  const subject = container.dataset.viewSubject;
-  if (!subject || !session) return;
+  const documentUri = container.dataset.viewSubject;
+  if (!documentUri) return;
 
-  void repoRequest('com.atproto.repo.createRecord', {
-    repo: session.did,
-    collection: 'cc.coffeencode.interact.view',
-    record: {
-      $type: 'cc.coffeencode.interact.view',
-      document: subject,
-      createdAt: new Date().toISOString(),
-    },
-  }).then((response) => {
-    if (!response.ok) {
-      throw new Error(`View record was rejected (${response.status}).`);
-    }
-    // Allow Constellation time to index the new record, then refresh the count.
+  void (async () => {
+    await oauthReady;
+    if (!session) return;
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: session.did,
+      collection: 'cc.coffeencode.interact.view',
+      record: {
+        $type: 'cc.coffeencode.interact.view',
+        document: documentUri,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
     window.setTimeout(async () => {
       try {
-        const countResponse = await fetch(`/api/reactions?subject=${encodeURIComponent(subject)}&_=${Date.now()}`);
-        if (!countResponse.ok) return;
-        const counts = await countResponse.json() as { views: number };
+        const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`);
+        if (!response.ok) return;
+        const counts = await response.json() as { views: number };
         const viewCount = container.querySelector<HTMLElement>('[data-at-view-count]');
         if (viewCount) viewCount.textContent = `${Number(counts.views || 0).toLocaleString()} views`;
       } catch {
         // The normal count loader will retry on the next page view.
       }
     }, 2000);
-  }).catch((error) => {
+  })().catch((error) => {
     const status = container.querySelector<HTMLElement>('.article-reactions__status');
-    if (status) status.textContent = error instanceof Error && /403|401/.test(error.message)
-      ? 'Log out and sign in again to grant permission for view records.'
-      : 'This view could not be recorded.';
+    if (status) status.textContent = errorMessage(error);
   });
 });
 
-if (initialized?.state !== undefined) {
-  const returnPath = safeReturnPath(sessionStorage.getItem('cc-auth-return'));
-  sessionStorage.removeItem('cc-auth-return');
-  if (location.pathname === '/auth') window.location.replace(returnPath);
-}
-
 document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((container) => {
-  const subject = container.dataset.reactionSubject;
+  const documentUri = container.dataset.reactionSubject;
   const status = container.querySelector<HTMLElement>('.article-reactions__status');
-  if (!subject) return;
+  if (!documentUri) return;
 
   const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-reaction]'));
   const collections = {
@@ -156,9 +250,10 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     dislike: 'cc.coffeencode.interact.dislike',
   } as const;
 
-  const updateState = async () => {
+  const refreshReactionState = async () => {
+    await oauthReady;
     if (!session) return;
-    const rkey = await recordKey(subject);
+    const rkey = await recordKey(documentUri);
     const [liked, disliked] = await Promise.all([
       recordExists(collections.like, rkey),
       recordExists(collections.dislike, rkey),
@@ -167,72 +262,108 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(disliked));
   };
 
-  void updateState().catch((error) => {
-    if (status) status.textContent = error instanceof Error ? error.message : 'Could not load your reaction state.';
+  void refreshReactionState().catch((error) => {
+    if (status) status.textContent = errorMessage(error);
   });
+
   buttons.forEach((button) => button.addEventListener('click', async () => {
+    await oauthReady;
     if (!session) {
-      sessionStorage.setItem('cc-auth-return', `${location.pathname}${location.search}${location.hash}`);
-      window.location.assign(`/auth?returnTo=${encodeURIComponent(`${location.pathname}${location.search}${location.hash}`)}`);
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
       return;
     }
+
     const kind = button.dataset.reaction as keyof typeof collections;
     if (!(kind in collections)) return;
-    const other = kind === 'like' ? 'dislike' : 'like';
-    const repo = session.did;
-    const rkey = await recordKey(subject);
+    const opposite = kind === 'like' ? 'dislike' : 'like';
+    const activeSession = session;
+    const rkey = await recordKey(documentUri);
     buttons.forEach((item) => { item.disabled = true; });
     if (status) status.textContent = 'Saving your reaction…';
-    let recommendFailed = false;
+
+    let recommendationFailed = false;
+    let wasSelected = false;
     try {
-      const wasSelected = await recordExists(collections[kind], rkey);
-      const oppositeSelected = await recordExists(collections[other], rkey);
+      wasSelected = await recordExists(collections[kind], rkey);
+      const oppositeSelected = await recordExists(collections[opposite], rkey);
+
       if (wasSelected) {
-        const response = await repoRequest('com.atproto.repo.deleteRecord', { repo, collection: collections[kind], rkey });
-        if (!response.ok) throw new Error(`Could not remove reaction (${response.status}).`);
-      } else {
-        if (oppositeSelected) {
-          const response = await repoRequest('com.atproto.repo.deleteRecord', { repo, collection: collections[other], rkey });
-          if (!response.ok) throw new Error(`Could not update reaction (${response.status}).`);
-        }
-        const createdAt = new Date().toISOString();
-        const response = await repoRequest('com.atproto.repo.createRecord', {
-          repo, collection: collections[kind], rkey,
-          record: { $type: collections[kind], document: subject, createdAt },
+        await repoRequest('com.atproto.repo.deleteRecord', {
+          repo: activeSession.did,
+          collection: collections[kind],
+          rkey,
         });
-        if (!response.ok) throw new Error(`Could not save reaction (${response.status}).`);
+      } else {
+        const createdAt = new Date().toISOString();
+        await repoRequest('com.atproto.repo.createRecord', {
+          repo: activeSession.did,
+          collection: collections[kind],
+          rkey,
+          record: { $type: collections[kind], document: documentUri, createdAt },
+        });
+
+        if (oppositeSelected) {
+          try {
+            await repoRequest('com.atproto.repo.deleteRecord', {
+              repo: activeSession.did,
+              collection: collections[opposite],
+              rkey,
+            });
+          } catch (error) {
+            try {
+              await repoRequest('com.atproto.repo.deleteRecord', {
+                repo: activeSession.did,
+                collection: collections[kind],
+                rkey,
+              });
+            } catch {
+              throw new Error('Your new reaction was saved, but the previous reaction could not be removed. Refresh the page to see the current state.');
+            }
+            throw error;
+          }
+        }
 
         if (kind === 'like') {
-          const recommendResponse = await repoRequest('com.atproto.repo.createRecord', {
-            repo,
-            collection: 'site.standard.graph.recommend',
-            record: {
-              $type: 'site.standard.graph.recommend',
-              document: subject,
-              createdAt,
-            },
-          });
-          if (!recommendResponse.ok) {
-            recommendFailed = true;
+          try {
+            const recommendationCollection = 'site.standard.graph.recommend';
+            const recommendationExists = await recordExists(recommendationCollection, rkey);
+            if (!recommendationExists) {
+              await repoRequest('com.atproto.repo.createRecord', {
+                repo: activeSession.did,
+                collection: recommendationCollection,
+                rkey,
+                record: {
+                  $type: recommendationCollection,
+                  document: documentUri,
+                  createdAt,
+                },
+              });
+            }
+          } catch {
+            recommendationFailed = true;
           }
         }
       }
-      await updateState();
-      const response = await fetch(`/api/reactions?subject=${encodeURIComponent(subject)}`);
+
+      await refreshReactionState();
+      const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}`);
       if (response.ok) {
         const counts = await response.json() as { likes: number; dislikes: number };
         (['like', 'dislike'] as const).forEach((reaction) => {
           const count = container.querySelector<HTMLElement>(`[data-reaction-count="${reaction}"]`);
-          if (count) count.textContent = Number(counts[reaction] || 0).toLocaleString();
+          const total = reaction === 'like' ? counts.likes : counts.dislikes;
+          if (count) count.textContent = Number(total || 0).toLocaleString();
         });
       }
+
       if (status) {
-        status.textContent = recommendFailed
-          ? 'Your like was saved, but its recommendation could not be created. Log out and sign in again if you need to grant the new permission.'
+        status.textContent = recommendationFailed
+          ? 'Your like was saved, but its recommendation could not be created. Sign out and back in to approve updated permissions.'
           : wasSelected ? 'Reaction removed.' : 'Your reaction was recorded.';
       }
     } catch (error) {
-      if (status) status.textContent = error instanceof Error ? error.message : 'Could not save your reaction. Please try again.';
+      if (status) status.textContent = errorMessage(error);
     } finally {
       buttons.forEach((item) => { item.disabled = false; });
     }

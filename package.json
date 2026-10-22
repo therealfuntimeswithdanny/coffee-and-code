@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build:auth": "esbuild src/client/atproto-auth.ts --bundle --minify --platform=browser --format=esm --target=es2022 --outfile=media/components/atproto-auth.js",
+    "build:auth": "node scripts/build-auth.mjs",
     "dev": "npm run build:auth && wrangler dev",
     "deploy": "npm run build:auth && wrangler deploy"
   },
