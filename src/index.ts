@@ -20,6 +20,12 @@ app.route('/search', searchRouter);
 app.route('/export', exportRouter);
 app.route('/api/reactions', reactionsRouter);
 
+app.get('/:rkey', (c) => {
+  const rkey = encodeURIComponent(c.req.param('rkey'));
+  const search = new URL(c.req.url).search;
+  return c.redirect(`/post/${rkey}${search}`, 301);
+});
+
 // Catch-all 404 handler
 app.all('*', (c) => {
   const pageUrl = new URL(c.req.url).toString();

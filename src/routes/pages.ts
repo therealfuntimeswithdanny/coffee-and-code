@@ -28,6 +28,40 @@ pages.get('/auth', (c) => {
   return c.html(renderLayout(c, 'Log in', body));
 });
 
+pages.get('/become-an-author', (c) => {
+  const body = `
+    <section class="author-invitation" aria-labelledby="author-invitation-title">
+      <p class="eyebrow">Write for Coffee &amp; Code</p>
+      <h1 id="author-invitation-title">Become an author</h1>
+      <p class="author-invitation__intro">Coffee &amp; Code is an independent publication built on the AT Protocol. To contribute, create your own publication with Leaflet and send me its publication URI.</p>
+      <ol class="author-invitation__steps">
+        <li>
+          <h2>Create your publication</h2>
+          <p>Sign in to <a href="https://leaflet.pub/" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a Standard.site publication on your account. This keeps your stories published under your account and attributed to you.</p>
+        </li>
+        <li>
+          <h2>Set the publication URL</h2>
+          <p>In the publication's settings, set its URL or domain to <code>coffeencode.cc</code> (this can be done via a tool like <a href="https://pdsls.dev" target="_blank" rel="noopener noreferrer">PDSls</a>).  This tells readers the publication is hosted on Coffee &amp; Code; you do not need to set up a separate custom domain.</p>
+        </li>
+        <li>
+          <h2>Send me the publication URI</h2>
+          <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with the publication's AT Protocol URI. This is not the website URL above. It starts with <code>at://</code> and looks like:</p>
+          <code>at://your-did/site.standard.publication/your-record-key</code>
+        </li>
+        <li>
+          <h2>Publish your stories</h2>
+          <p>Once I have added your publication, publish stories to it through Leaflet. Stories in that publication can appear on <a href="/">coffeencode.cc</a> with your author profile.</p>
+        </li>
+      </ol>
+    </section>
+  `;
+
+  const metaTags = `
+    <meta name="description" content="How to write for Coffee &amp; Code: create a Leaflet publication and DM its AT Protocol URI.">
+  `;
+  return c.html(renderLayout(c, 'Become an Author', body, metaTags));
+});
+
 function formatDate(date?: string) {
   if (!date) return '';
   return new Date(date).toLocaleDateString('en-US', {
@@ -85,6 +119,7 @@ pages.get('/authors', async (c) => {
         <h1 id="authors-title">Authors</h1>
       </header>
       ${authorItems ? `<div class="author-grid">${authorItems}</div>` : '<p class="empty-state">No authors have published stories yet.</p>'}
+      <p class="authors-page__invitation"><a class="read-link" href="/become-an-author">Become an author <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></p>
     </section>
   `;
 

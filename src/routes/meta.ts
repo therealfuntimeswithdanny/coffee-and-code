@@ -28,28 +28,6 @@ meta.get('/.well-known/site.standard.publication', (c) => {
   });
 });
 
-// Public AT Protocol OAuth client metadata. The metadata URL is the OAuth client ID.
-meta.get('/oauth-client-metadata.json', (c) => {
-  const origin = new URL(c.req.url).origin;
-  return c.json({
-    client_id: `${origin}/oauth-client-metadata.json`,
-    client_name: c.env.PUB_NAME || 'Coffee and Code',
-    client_uri: origin,
-    logo_uri: `${origin}/favicon.png`,
-    policy_uri: `${origin}/privacy`,
-    redirect_uris: [`${origin}/auth`],
-    grant_types: ['authorization_code', 'refresh_token'],
-    response_types: ['code'],
-    scope: 'atproto repo:cc.coffeencode.interact.like?action=create&action=delete repo:cc.coffeencode.interact.dislike?action=create&action=delete repo:cc.coffeencode.interact.view?action=create repo:site.standard.graph.recommend?action=create',
-    token_endpoint_auth_method: 'none',
-    application_type: 'web',
-    dpop_bound_access_tokens: true,
-  }, 200, {
-    'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'public, max-age=3600',
-  });
-});
-
 // RSS 2.0 Feed
 meta.get('/rss.xml', async (c) => {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
