@@ -42,13 +42,12 @@ function recordKey(document: string) {
 }
 
 async function recordExists(collection: string, rkey: string) {
-  try {
-    const response = await repoRequest(repoQuery(collection, rkey));
-    if (!response.ok) return false;
-    return true;
-  } catch {
-    return false;
-  }
+  const response = await repoRequest(repoQuery(collection, rkey));
+  if (response.ok) return true;
+
+  const result = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+  if (response.status === 400 && result?.error === 'RecordNotFound') return false;
+  throw new Error(result?.message || result?.error || `Could not check reaction (${response.status}).`);
 }
 
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
@@ -168,7 +167,9 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(disliked));
   };
 
-  void updateState();
+  void updateState().catch((error) => {
+    if (status) status.textContent = error instanceof Error ? error.message : 'Could not load your reaction state.';
+  });
   buttons.forEach((button) => button.addEventListener('click', async () => {
     if (!session) {
       sessionStorage.setItem('cc-auth-return', `${location.pathname}${location.search}${location.hash}`);
