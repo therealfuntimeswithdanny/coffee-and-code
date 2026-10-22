@@ -3,15 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "build:auth": "esbuild src/client/atproto-auth.ts --bundle --minify --platform=browser --format=esm --target=es2022 --outfile=media/components/atproto-auth.js",
+    "dev": "npm run build:auth && wrangler dev",
+    "deploy": "npm run build:auth && wrangler deploy"
   },
   "dependencies": {
+    "@atproto/oauth-client-browser": "^0.5.10",
     "hono": "^4.0.0",
     "marked": "^12.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240320.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.0.0",
     "wrangler": "^3.0.0"
   }

@@ -49,7 +49,7 @@ home.get('/', async (c) => {
   const archivePosts = otherPosts.slice(4);
   const homeBaseUrl = new URL(c.req.url).origin;
 
-  const proxiedCover = (source?: string) => (source ? proxyImageUrl(source, pds || homeBaseUrl) : source);
+  const proxiedCover = (source?: string, preset = 'feed_fullsize') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);
 
   const heroHtml = heroPost
     ? `
@@ -72,7 +72,7 @@ home.get('/', async (c) => {
           (post) => `
             <article class="side-story">
               <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-                ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+                ${post.cover ? `<img src="${proxiedCover(post.cover, 'feed_medium')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
               </a>
               <div>
                 <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
@@ -88,7 +88,7 @@ home.get('/', async (c) => {
       (post) => `
         <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+            ${post.cover ? `<img src="${proxiedCover(post.cover, 'feed_medium')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>

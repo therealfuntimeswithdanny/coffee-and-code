@@ -22,17 +22,31 @@ meta.get('/.well-known/atproto-did', (c) => {
 
 // standard.site publication record
 meta.get('/.well-known/site.standard.publication', (c) => {
-  const pubRecord = {
-    $type: 'site.standard.publication',
-    name: c.env.PUB_NAME,
-    description: c.env.PUB_DESCRIPTION,
-    url: new URL(c.req.url).origin,
-    did: c.env.OWNER_DID,
-  };
-
-  return c.json(pubRecord, 200, {
-    'Content-Type': 'application/json',
+  return c.text('at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27', 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
+  });
+});
+
+// Public AT Protocol OAuth client metadata. The metadata URL is the OAuth client ID.
+meta.get('/oauth-client-metadata.json', (c) => {
+  const origin = new URL(c.req.url).origin;
+  return c.json({
+    client_id: `${origin}/oauth-client-metadata.json`,
+    client_name: c.env.PUB_NAME || 'Coffee and Code',
+    client_uri: origin,
+    logo_uri: `${origin}/favicon.png`,
+    policy_uri: `${origin}/privacy`,
+    redirect_uris: [`${origin}/auth`],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    scope: 'atproto repo:cc.coffeencode.interact.like?action=create&action=delete repo:cc.coffeencode.interact.dislike?action=create&action=delete',
+    token_endpoint_auth_method: 'none',
+    application_type: 'web',
+    dpop_bound_access_tokens: true,
+  }, 200, {
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'public, max-age=3600',
   });
 });
 

@@ -5,6 +5,29 @@ import { renderLayout, browserRenderOgImage } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
 
+pages.get('/auth', (c) => {
+  const body = `
+    <section class="auth-page" aria-labelledby="auth-title">
+      <p class="eyebrow">Coffee &amp; Code account</p>
+      <h1 id="auth-title">Sign in with AT Protocol</h1>
+      <p class="auth-page__intro">Use your Bluesky or other AT Protocol handle to sign in. Your account stays yours; sign-in takes place with your account provider.</p>
+      <form class="auth-form" data-auth-form>
+        <label for="auth-handle">Handle or DID</label>
+        <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.example" required>
+        <button type="submit" class="login-button">Continue with AT Protocol</button>
+      </form>
+      <div class="auth-account" data-auth-account hidden>
+        <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
+        <button type="button" class="auth-signout" data-auth-signout>Log out</button>
+      </div>
+      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove like and dislike records in your public AT Protocol repository. Your password is entered only on your account provider's site.</p>
+      <p class="auth-page__error" data-auth-error role="alert" hidden></p>
+    </section>
+  `;
+
+  return c.html(renderLayout(c, 'Log in', body));
+});
+
 function formatDate(date?: string) {
   if (!date) return '';
   return new Date(date).toLocaleDateString('en-US', {
@@ -91,7 +114,7 @@ pages.get('/author/:handle', async (c) => {
     .map((post) => `
       <article class="archive-story">
         <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
-          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds)}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds, 'feed_medium')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
         </a>
         <div>
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
@@ -141,14 +164,12 @@ pages.get('/archive', async (c) => {
   const posts = query.trim() ? searchArticles(allPosts, query) : allPosts;
   const archiveBaseUrl = new URL(c.req.url).origin;
 
-  const proxiedCover = (source?: string) => (source ? proxyImageUrl(source, pds || archiveBaseUrl) : source);
-
   const archiveItems = posts
     .map(
       (post) => `
         <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${proxiedCover(post.cover)}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+            ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds || archiveBaseUrl, 'feed_medium')}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>

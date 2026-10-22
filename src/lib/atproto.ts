@@ -1,7 +1,32 @@
 import { AuthorProfile, StandardDocument } from '../types';
 
-const imageCdnUrl = 'https://cdn.coffeencode.cc/';
-const avatarCdnHost = 'avatars.coffeencode.cc';
+const imageCdnUrl = 'https://cdn.coffeencode.cc';
+
+function atprotoBlobParts(imageUrl: string, baseUrl?: string): { did: string; cid: string; extension?: string } | undefined {
+  try {
+    const url = new URL(imageUrl, baseUrl);
+    const did = url.searchParams.get('did');
+    const cid = url.searchParams.get('cid');
+    if (did && cid && url.pathname.endsWith('/xrpc/com.atproto.sync.getBlob')) return { did, cid };
+
+    const match = url.pathname.match(/\/img\/(?:avatar|banner)\/plain\/([^/]+)\/([^/]+)$/i);
+    if (!match) return undefined;
+    const [blobCid, extension] = decodeURIComponent(match[2]).split('@', 2);
+    if (!blobCid) return undefined;
+    return {
+      did: decodeURIComponent(match[1]),
+      cid: blobCid,
+      extension,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function cdnBlobUrl(parts: { did: string; cid: string; extension?: string }, preset: string): string {
+  const blob = `${parts.cid}${parts.extension ? `@${parts.extension}` : ''}`;
+  return `${imageCdnUrl}/blob/${encodeURIComponent(parts.did)}/${blob}/${encodeURIComponent(preset)}`;
+}
 
 // Retry helper with exponential backoff
 async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): Promise<Response> {
@@ -29,26 +54,20 @@ async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): P
   throw lastError || new Error('Failed after retries');
 }
 
-export function proxyImageUrl(imageUrl: string, baseUrl?: string): string {
-  if (imageUrl.startsWith(imageCdnUrl)) return imageUrl;
+export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed_fullsize'): string {
+  if (imageUrl.startsWith(`${imageCdnUrl}/blob/`)) return imageUrl;
+  const blob = atprotoBlobParts(imageUrl, baseUrl);
+  if (blob) return cdnBlobUrl(blob, preset);
 
-  let absoluteUrl = imageUrl;
-  if (imageUrl.startsWith('/')) {
-    absoluteUrl = baseUrl ? new URL(imageUrl, baseUrl).toString() : imageUrl;
+  if (imageUrl.startsWith('/') && baseUrl) {
+    return new URL(imageUrl, baseUrl).toString();
   }
-
-  return `${imageCdnUrl}${encodeURIComponent(absoluteUrl)}`;
+  return imageUrl;
 }
 
 export function proxyAvatarUrl(avatarUrl: string): string {
-  try {
-    const url = new URL(avatarUrl);
-    url.protocol = 'https:';
-    url.host = avatarCdnHost;
-    return url.toString();
-  } catch {
-    return avatarUrl;
-  }
+  const blob = atprotoBlobParts(avatarUrl);
+  return blob ? cdnBlobUrl(blob, 'avatar_medium') : avatarUrl;
 }
 
 function extractDocumentContent(value: any): { content: string; format?: string; mimeType?: string } {

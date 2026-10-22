@@ -19,14 +19,17 @@ const styles = `
 .comment-text { margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
 `;
 
-const avatarCdnHost = 'avatars.coffeencode.cc';
-
 function avatarUrl(url) {
   try {
     const parsed = new URL(url);
-    parsed.protocol = 'https:';
-    parsed.host = avatarCdnHost;
-    return parsed.toString();
+    if (parsed.hostname === 'cdn.coffeencode.cc' && parsed.pathname.startsWith('/blob/')) return parsed.toString();
+    const match = parsed.pathname.match(/\/img\/avatar\/plain\/([^/]+)\/([^/]+)$/i);
+    if (!match) return url;
+
+    const did = decodeURIComponent(match[1]);
+    const [cid, extension] = decodeURIComponent(match[2]).split('@', 2);
+    const blob = `${cid}${extension ? `@${extension}` : ''}`;
+    return `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${blob}/avatar_medium`;
   } catch {
     return url;
   }
