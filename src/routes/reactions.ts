@@ -29,6 +29,19 @@ async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 
   return Number.isFinite(total) && total >= 0 ? total : 0;
 }
 
+async function countComments(subject: string) {
+  const url = new URL(constellationEndpoint);
+  url.searchParams.set('subject', subject);
+  url.searchParams.set('source', 'cc.coffeencode.comment:subject.uri');
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc; @coffeencode.bsky.social)' },
+  });
+  if (!response.ok) throw new Error(`Constellation returned ${response.status}`);
+  const result = await response.json() as { total?: unknown };
+  const total = Number(result.total);
+  return Number.isFinite(total) && total >= 0 ? total : 0;
+}
+
 async function hasBacklink(subject: string, collection: 'like' | 'dislike' | 'recommend', did: string) {
   const url = new URL(constellationBacklinksEndpoint);
   url.searchParams.set('subject', subject);
@@ -56,17 +69,21 @@ reactions.get('/', async (c) => {
   }
 
   try {
-    const [likes, dislikes, views, liked, disliked, recommended] = await Promise.all([
+    const [likes, dislikes, views, comments, liked, disliked, recommended] = await Promise.all([
       countBacklinks(subject, 'like'),
       countBacklinks(subject, 'dislike'),
       countBacklinks(subject, 'view'),
+      countComments(subject).catch((error) => {
+        console.error('Failed to load comment count:', error);
+        return 0;
+      }),
       did ? hasBacklink(subject, 'like', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'dislike', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'recommend', did).then((has) => Number(has)) : Promise.resolve(0),
     ]);
     // Reaction writes are immediately followed by a refresh from the client.
     // Shared caching here made those refreshes return the previous totals.
-    return c.json({ likes, dislikes, views, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0 }, 200, { 'Cache-Control': 'no-store' });
+    return c.json({ likes, dislikes, views, comments, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0 }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load reaction counts:', error);
     return c.json({ error: 'Reaction counts are temporarily unavailable.' }, 502);

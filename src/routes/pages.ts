@@ -22,6 +22,14 @@ pages.get('/api/invite-code', async (c) => {
   }
 });
 
+pages.get('/api/account/posts', async (c) => {
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const articles = await fetchArticles(pds, c.env.OWNER_DID);
+  return c.json(articles.map(({ uri, path, title, publishedAt, cover }) => ({ uri, path, title, publishedAt, cover })), 200, {
+    'Cache-Control': 'public, max-age=60',
+  });
+});
+
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
@@ -68,7 +76,25 @@ pages.get('/account', (c) => {
       <p class="eyebrow">Your profile</p>
       <h1 id="account-title">Your account</h1>
       <div class="auth-account" data-auth-account hidden>
-        <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p class="account-page__did" data-profile-did></p></div></div>
+        <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p data-profile-bio></p><p class="account-page__did" data-profile-did></p></div></div>
+        <section class="account-page__viewed" aria-labelledby="viewed-posts-title"><h2 id="viewed-posts-title">Posts you’ve viewed</h2><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
+        <section class="account-author-settings" data-author-settings hidden aria-labelledby="author-settings-title">
+          <h2 id="author-settings-title">Author profile</h2>
+          <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
+          <button type="button" class="auth-signout" data-edit-author-profile hidden>Edit author profile</button>
+          <form class="account-author-form" data-author-profile-form hidden>
+            <label>Display name<input name="displayName" maxlength="100"></label>
+            <label>Pronouns<input name="pronouns" maxlength="50" placeholder="Optional"></label>
+            <label>Bio<textarea name="description" maxlength="1000" rows="5"></textarea></label>
+            <label>Profile photo<input name="avatar" type="file" accept="image/*"></label>
+            <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
+            <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
+            <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
+            <label>Pinned post AT URIs<textarea name="pinnedPosts" rows="4" placeholder="One at:// URI per line"></textarea><small>Paste one of your published post URIs on each line.</small></label>
+            <div class="account-author-form__actions"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
+            <p class="account-author-form__status" data-author-profile-status role="status" aria-live="polite"></p>
+          </form>
+        </section>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
       <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth">Log in</a></div>
@@ -92,12 +118,6 @@ pages.get('/become-an-author', (c) => {
         <li>
           <h2>Send me your post</h2>
           <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with a link to the post you want to publish. I’ll review it and let you know if it’s a good fit for Coffee &amp; Code.</p>
-        </li>
-        <li>
-          <h2>Send me your work</h2>
-          <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with the document you want to publish and a link to the publication. I’ll review it, and if I like it, I’ll link your publication on Coffee &amp; Code.</p>
-          <p>If you are using Leaflet, you can also include the publication’s AT Protocol URI. It starts with <code>at://</code> and looks like:</p>
-          <code>at://your-did/site.standard.publication/your-record-key</code>
         </li>
         <li>
           <h2>Publish your stories</h2>

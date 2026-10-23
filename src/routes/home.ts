@@ -21,14 +21,14 @@ function excerpt(post: StandardDocument, length = 180) {
 }
 
 function articleMeta(post: StandardDocument) {
-  return `<span class="article-meta" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}"><span>${formatDate(post.publishedAt)}</span><span class="view-counter" data-at-view-count>Loading views...</span></span>`;
+  return `<span class="article-meta" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}"><span>${formatDate(post.publishedAt)}</span><span class="view-counter" data-at-view-count>Loading views...</span><span class="comment-counter" data-at-comment-count>Loading comments...</span></span>`;
 }
 
 function heroArticleMeta(post: StandardDocument) {
   if (!post.author) return articleMeta(post);
   const authorName = post.author.displayName || post.author.handle;
   const authorLink = `/author/${encodeURIComponent(post.author.did)}`;
-  return `<span class="article-meta article-meta--byline" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}"><span>Written by <a href="${authorLink}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter" data-at-view-count>Loading views...</span></span>`;
+  return `<span class="article-meta article-meta--byline" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}"><span>Written by <a href="${authorLink}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter" data-at-view-count>Loading views...</span><span class="comment-counter" data-at-comment-count>Loading comments...</span></span>`;
 }
 
 function escapeHtml(value: string) {

@@ -7,3 +7,9 @@
 /oauth-client-metadata-v3.json
   Content-Type: application/json
   Cache-Control: public, max-age=0, must-revalidate
+/oauth-client-metadata-v4.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=0, must-revalidate
+/oauth-client-metadata-v5.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=0, must-revalidate

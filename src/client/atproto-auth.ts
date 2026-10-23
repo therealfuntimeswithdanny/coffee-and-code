@@ -4,7 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawClientMetadata from '../../media/oauth-client-metadata-v3.json';
+import rawClientMetadata from '../../media/oauth-client-metadata-v5.json';
 
 // The same file is published as a Cloudflare static asset at the client_id URL.
 // Embedding it here avoids a second metadata fetch in the browser and prevents
@@ -57,12 +57,16 @@ const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobil
 const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
 const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
 let signupInviteCode: string | undefined;
+let accountAuthorRecord: Record<string, unknown> | undefined;
+let accountAuthorDid: string | undefined;
 
 declare global {
   interface Window {
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
       createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
+      editComment: (uri: string, record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
+      deleteComment: (uri: string) => Promise<void>;
       toggleCommentLike: (commentUri: string, isLiked: boolean) => Promise<void>;
     };
   }
@@ -110,16 +114,18 @@ function renderAccount() {
     const did = session.did;
     const profileName = accountPage.querySelector<HTMLElement>('[data-profile-name]');
     const profileHandle = accountPage.querySelector<HTMLElement>('[data-profile-handle]');
+    const profileBio = accountPage.querySelector<HTMLElement>('[data-profile-bio]');
     const profileDid = accountPage.querySelector<HTMLElement>('[data-profile-did]');
     const profileAvatar = accountPage.querySelector<HTMLImageElement>('[data-profile-avatar]');
     const profilePlaceholder = accountPage.querySelector<HTMLElement>('[data-profile-placeholder]');
     if (profileDid) profileDid.textContent = did;
     fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
-      .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
+      .then((profile: { avatar?: string; displayName?: string; handle?: string; description?: string }) => {
         if (session?.did !== did) return;
         if (profileName) profileName.textContent = profile.displayName || profile.handle || did;
         if (profileHandle) profileHandle.textContent = profile.handle ? `@${profile.handle}` : '';
+        if (profileBio) profileBio.textContent = profile.description || '';
         if (profileAvatar && profile.avatar) {
           profileAvatar.src = profile.avatar;
           profileAvatar.alt = `${profile.displayName || profile.handle || did}'s profile picture`;
@@ -128,6 +134,8 @@ function renderAccount() {
         }
       })
       .catch(() => { if (profileName) profileName.textContent = session?.sub || did; });
+      void loadAccountViewedPosts(did);
+      void loadAuthorProfileEditor(did);
     }
   }
 
@@ -151,6 +159,185 @@ function renderAccount() {
       }
     })
     .catch(() => {});
+}
+
+async function loadAuthorProfileEditor(did: string) {
+  if (!accountPage) return;
+  const section = accountPage.querySelector<HTMLElement>('[data-author-settings]');
+  const editButton = accountPage.querySelector<HTMLButtonElement>('[data-edit-author-profile]');
+  const form = accountPage.querySelector<HTMLFormElement>('[data-author-profile-form]');
+  const status = accountPage.querySelector<HTMLElement>('[data-author-profile-status]');
+  if (!section || !editButton || !form) return;
+
+  try {
+    const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.author.profile', rkey: 'self' });
+    const response = await repoRequest(`com.atproto.repo.getRecord?${query.toString()}`);
+    const result = await response.json() as { value?: Record<string, unknown> };
+    const value = result.value;
+    if (session?.did !== did || value?.$type !== 'cc.coffeencode.author.profile') return;
+
+    accountAuthorRecord = value;
+    accountAuthorDid = did;
+    section.hidden = false;
+    editButton.hidden = false;
+    editButton.onclick = () => {
+      if (!accountAuthorRecord || accountAuthorDid !== session?.did) return;
+      form.reset();
+      const displayName = form.elements.namedItem('displayName') as HTMLInputElement;
+      const pronouns = form.elements.namedItem('pronouns') as HTMLInputElement;
+      const description = form.elements.namedItem('description') as HTMLTextAreaElement;
+      const pinnedPosts = form.elements.namedItem('pinnedPosts') as HTMLTextAreaElement;
+      displayName.value = typeof accountAuthorRecord.displayName === 'string' ? accountAuthorRecord.displayName : '';
+      pronouns.value = typeof accountAuthorRecord.pronouns === 'string' ? accountAuthorRecord.pronouns : '';
+      description.value = typeof accountAuthorRecord.description === 'string' ? accountAuthorRecord.description : '';
+      pinnedPosts.value = Array.isArray(accountAuthorRecord.pinnedPosts)
+        ? accountAuthorRecord.pinnedPosts.filter((uri): uri is string => typeof uri === 'string').join('\n')
+        : '';
+      if (status) status.textContent = '';
+      form.hidden = false;
+      editButton.hidden = true;
+    };
+    accountPage.querySelector<HTMLButtonElement>('[data-cancel-author-edit]')!.onclick = () => {
+      form.hidden = true;
+      editButton.hidden = false;
+      if (status) status.textContent = '';
+    };
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      if (accountAuthorDid !== session?.did || !accountAuthorRecord) return;
+      const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (!submit) return;
+      const data = new FormData(form);
+      const pins = data.get('pinnedPosts')?.toString().split(/\r?\n/).map((uri) => uri.trim()).filter(Boolean) || [];
+      const validPostUri = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.document\/[a-zA-Z0-9._~:-]+$/;
+      if (pins.some((uri) => !validPostUri.test(uri))) {
+        if (status) status.textContent = 'Each pinned post must be a valid site.standard.document AT URI.';
+        return;
+      }
+      const uniquePins = [...new Set(pins)];
+      const next: Record<string, unknown> = { ...accountAuthorRecord, $type: 'cc.coffeencode.author.profile' };
+      const optionalFields = {
+        displayName: data.get('displayName')?.toString().trim(),
+        pronouns: data.get('pronouns')?.toString().trim(),
+        description: data.get('description')?.toString().trim(),
+      };
+      Object.entries(optionalFields).forEach(([key, value]) => {
+        if (value) next[key] = value;
+        else delete next[key];
+      });
+      next.pinnedPosts = uniquePins;
+
+      const avatarInput = form.elements.namedItem('avatar') as HTMLInputElement;
+      const bannerInput = form.elements.namedItem('banner') as HTMLInputElement;
+      const removeAvatar = (form.elements.namedItem('removeAvatar') as HTMLInputElement).checked;
+      const removeBanner = (form.elements.namedItem('removeBanner') as HTMLInputElement).checked;
+      const avatarFile = avatarInput.files?.[0];
+      const bannerFile = bannerInput.files?.[0];
+      if ([avatarFile, bannerFile].some((file) => file && !file.type.startsWith('image/'))) {
+        if (status) status.textContent = 'Choose image files for the photo and banner.';
+        return;
+      }
+
+      submit.disabled = true;
+      if (status) status.textContent = avatarFile || bannerFile ? 'Uploading images…' : 'Saving your author profile…';
+      try {
+        if (avatarFile) next.avatar = await uploadAuthorImage(avatarFile);
+        else if (removeAvatar) delete next.avatar;
+        if (bannerFile) next.banner = await uploadAuthorImage(bannerFile);
+        else if (removeBanner) delete next.banner;
+        if (status && (avatarFile || bannerFile)) status.textContent = 'Saving your author profile…';
+        await repoRequest('com.atproto.repo.putRecord', {
+          repo: did,
+          collection: 'cc.coffeencode.author.profile',
+          rkey: 'self',
+          record: next,
+        });
+        accountAuthorRecord = next;
+        if (status) status.textContent = 'Author profile saved.';
+        form.hidden = true;
+        editButton.hidden = false;
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not save your author profile.';
+      } finally {
+        submit.disabled = false;
+      }
+    };
+  } catch {
+    // A missing record means this account is not an author account.
+  }
+}
+
+async function uploadAuthorImage(file: File): Promise<unknown> {
+  const activeSession = requireSession();
+  const response = await activeSession.fetchHandler('/xrpc/com.atproto.repo.uploadBlob', {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (response.ok) {
+    const result = await response.json() as { blob?: unknown };
+    if (!result.blob) throw new Error('The PDS did not return an uploaded image.');
+    return result.blob;
+  }
+  const payload = await response.clone().json().catch(() => null) as { error?: string; message?: string } | null;
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('Your account has not granted image upload permission. Sign out and back in to approve the updated permissions.');
+  }
+  throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Image upload failed (${response.status}).`);
+}
+
+async function loadAccountViewedPosts(did: string) {
+  if (!accountPage) return;
+  const list = accountPage.querySelector<HTMLUListElement>('[data-viewed-posts]');
+  const status = accountPage.querySelector<HTMLElement>('[data-viewed-status]');
+  if (!list || !status) return;
+  try {
+    const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.interact.view', limit: '100' });
+    const [recordsResponse, postsResponse] = await Promise.all([
+      repoRequest(`com.atproto.repo.listRecords?${query.toString()}`),
+      fetch('/api/account/posts', { cache: 'no-store' }),
+    ]);
+    if (!postsResponse.ok) throw new Error('Could not load published posts.');
+    const recordsPayload = await recordsResponse.json() as { records?: Array<{ value?: { document?: string; createdAt?: string } }> };
+    const posts = await postsResponse.json() as Array<{ uri: string; path: string; title: string; publishedAt: string; cover?: string }>;
+    const postByUri = new Map(posts.map((post) => [post.uri, post]));
+    const views = (recordsPayload.records || [])
+      .filter((record) => typeof record.value?.document === 'string' && record.value.document.startsWith('at://'))
+      .sort((a, b) => (Date.parse(b.value?.createdAt || '') || 0) - (Date.parse(a.value?.createdAt || '') || 0));
+    const seen = new Set<string>();
+    const viewed = views.filter((record) => {
+      const uri = record.value?.document || '';
+      if (seen.has(uri)) return false;
+      seen.add(uri);
+      return true;
+    }).slice(0, 50);
+    if (!viewed.length) {
+      status.textContent = 'Posts you view while signed in will appear here.';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const record of viewed) {
+      const uri = record.value?.document || '';
+      const post = postByUri.get(uri);
+      const match = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/);
+      const link = document.createElement('a');
+      link.href = post?.path || (match ? `/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}` : '/');
+      link.textContent = post?.title || 'Viewed story';
+      const item = document.createElement('li');
+      item.append(link);
+      const metadata = document.createElement('small');
+      metadata.textContent = record.value?.createdAt
+        ? `Viewed ${new Date(record.value.createdAt).toLocaleDateString()}`
+        : 'Viewed recently';
+      item.append(metadata);
+      fragment.append(item);
+    }
+    list.replaceChildren(fragment);
+    status.hidden = true;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : 'Could not load your viewed posts.';
+  }
 }
 
 try {
@@ -280,7 +467,7 @@ window.coffeeAndCodeAuth = {
     await oauthReady;
     return session?.did;
   },
-  createComment: async (record) => {
+  createComment: async (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => {
     await oauthReady;
     const activeSession = requireSession();
     await repoRequest('com.atproto.repo.createRecord', {
@@ -289,7 +476,30 @@ window.coffeeAndCodeAuth = {
       record: { $type: 'cc.coffeencode.comment', ...record },
     });
   },
-  toggleCommentLike: async (commentUri, isLiked) => {
+  editComment: async (uri: string, record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const match = uri.match(/^at:\/\/(did:[^/]+)\/([^/]+)\/([^/]+)$/);
+    if (!match || match[1] !== activeSession.did || match[2] !== 'cc.coffeencode.comment') {
+      throw new Error('You can only edit your own comments.');
+    }
+    await repoRequest('com.atproto.repo.putRecord', {
+      repo: activeSession.did,
+      collection: match[2],
+      rkey: match[3],
+      record: { $type: 'cc.coffeencode.comment', ...record },
+    });
+  },
+  deleteComment: async (uri: string) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const match = uri.match(/^at:\/\/(did:[^/]+)\/([^/]+)\/([^/]+)$/);
+    if (!match || match[1] !== activeSession.did || match[2] !== 'cc.coffeencode.comment') {
+      throw new Error('You can only delete your own comments.');
+    }
+    await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection: match[2], rkey: match[3] });
+  },
+  toggleCommentLike: async (commentUri: string, isLiked: boolean) => {
     await oauthReady;
     const activeSession = requireSession();
     const collection = 'cc.coffeencode.comment.like';

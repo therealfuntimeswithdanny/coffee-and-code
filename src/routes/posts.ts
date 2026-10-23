@@ -173,6 +173,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
         <div class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story views and reactions">
           <span class="view-counter article-view-counter" data-at-view-count>Loading views...</span>
+          <span class="comment-counter" data-at-comment-count>Loading comments...</span>
           <div class="article-reactions__buttons" aria-label="React to this story">
             <button type="button" class="reaction-button" data-reaction="like" aria-pressed="false"><i class="fa-regular fa-thumbs-up" aria-hidden="true"></i> Like <span class="reaction-count" data-reaction-count="like">—</span></button>
             <button type="button" class="reaction-button" data-reaction="dislike" aria-pressed="false"><i class="fa-regular fa-thumbs-down" aria-hidden="true"></i> Dislike <span class="reaction-count" data-reaction-count="dislike">—</span></button>
