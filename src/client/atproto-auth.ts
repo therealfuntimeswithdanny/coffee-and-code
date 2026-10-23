@@ -212,8 +212,10 @@ async function loadAuthorProfileEditor(did: string) {
         if (status) status.textContent = 'Wait for your published stories to load before saving.';
         return;
       }
-      const pins = data.getAll('pinnedPost').map((uri) => uri.toString());
-      const validPostUri = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.document\/[a-zA-Z0-9._~:-]+$/;
+      const pins = data.getAll('pinnedPost').map((uri) => uri.toString().trim()).filter(Boolean);
+      // Post records may use valid AT Protocol rkeys outside the TID character
+      // subset, so validate the AT URI structure without over-restricting keys.
+      const validPostUri = /^at:\/\/did:[^/\s?#]+\/site\.standard\.document\/[^/\s?#]+$/;
       if (pins.some((uri) => !validPostUri.test(uri))) {
         if (status) status.textContent = 'Each pinned post must be a valid site.standard.document AT URI.';
         return;
