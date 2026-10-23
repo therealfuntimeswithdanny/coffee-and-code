@@ -132,6 +132,12 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .article-rail ul { border-top: 1px solid var(--line); list-style: none; margin: 0 0 18px; padding: 0; }
     .article-rail li { border-bottom: 1px solid var(--line); padding: 14px 0; }
     .article-rail li a { font-family: Lora, serif; font-size: 15px; font-weight: 600; line-height: 1.4; }
+    .article-rail__authors { margin-top: 34px; }
+    .article-rail__author { align-items: center; display: flex; gap: 10px; font-family: 'Source Sans 3', sans-serif !important; }
+    .article-rail__author img, .article-rail__author-placeholder { background: var(--paper-deep); border-radius: 50%; flex: 0 0 36px; height: 36px; object-fit: cover; width: 36px; }
+    .article-rail__author span { display: grid; gap: 0; min-width: 0; }
+    .article-rail__author strong { font-size: 14px; }
+    .article-rail__author small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
     .recommendations { margin: 70px auto 0; max-width: 1180px; }
     .recommendations .section-heading a { color: var(--accent); font-size: 11px; }
     .recommendations__grid { display: grid; gap: 24px; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: 22px; }
@@ -285,6 +291,26 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       .prose table { display: block; max-width: 100%; overflow-x: auto; }
       .article__cover { margin: 20px 0; }
       .mobile-nav .login-button { margin-left: 16px; }
+    }
+    @media (max-width: 900px) {
+      .article-layout { gap: 36px; }
+      .article-rail { background: rgba(59,42,29,.32); border-top: 2px solid var(--line-strong); display: block; padding: 18px; position: static; width: 100%; }
+      .article-rail ul { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: 20px; }
+      .article-rail__authors ul { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (max-width: 600px) {
+      body { overflow-x: hidden; }
+      .article-layout { gap: 28px; }
+      .article { width: 100%; }
+      .article-rail { padding: 16px 14px; }
+      .article-rail ul, .article-rail__authors ul { grid-template-columns: 1fr; }
+      .article-rail li { padding: 12px 0; }
+      .article-rail__authors { margin-top: 28px; }
+      .article__cover img, .prose img, .prose video, .prose iframe { height: auto; max-width: 100%; }
+      .prose pre, .prose-pre { max-width: 100%; overflow-x: auto; }
+      .article-engagement { flex-wrap: wrap; }
+      .article-reactions__buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+      .article-reactions__status { flex-basis: 100%; }
     }
   </style>
 </head>

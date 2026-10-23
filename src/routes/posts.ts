@@ -108,6 +108,15 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
     </article>`).join('');
   const latestRail = allPosts.filter((item) => item.path !== post.path).slice(0, 4).map((item) => `
     <li><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></li>`).join('');
+  const authorsByDid = new Map<string, NonNullable<typeof allPosts[number]['author']>>();
+  allPosts.forEach((item) => {
+    if (item.author) authorsByDid.set(item.author.did, item.author);
+  });
+  const railAuthors = [...authorsByDid.values()]
+    .sort((a, b) => (a.displayName || a.handle).localeCompare(b.displayName || b.handle))
+    .slice(0, 6)
+    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.handle)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong>${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
+    .join('');
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
@@ -178,7 +187,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
         <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </footer>
     </article>
-    <aside class="article-rail" aria-label="Latest stories"><h2>Latest</h2><ul>${latestRail}</ul><a href="/archive" class="read-link">Browse the archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></aside>
+    <aside class="article-rail" aria-label="Latest stories and authors"><section aria-labelledby="article-latest-title"><h2 id="article-latest-title">Recent posts</h2><ul>${latestRail}</ul><a href="/archive" class="read-link">Browse all posts <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>${railAuthors ? `<section class="article-rail__authors" aria-labelledby="article-authors-title"><h2 id="article-authors-title">Authors</h2><ul>${railAuthors}</ul><a href="/authors" class="read-link">Meet all authors <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>` : ''}</aside>
     </div>
     ${recommendations.length ? `<section class="recommendations" aria-labelledby="recommendations-title"><div class="section-heading"><span id="recommendations-title">Continue reading</span><a href="/archive">All stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div><div class="recommendations__grid">${recommendationHtml}</div></section>` : ''}
   `;
