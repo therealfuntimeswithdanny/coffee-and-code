@@ -212,14 +212,12 @@ async function loadAuthorProfileEditor(did: string) {
         if (status) status.textContent = 'Wait for your published stories to load before saving.';
         return;
       }
-      const pins = data.getAll('pinnedPost').map((uri) => uri.toString().trim()).filter(Boolean);
-      // Post records may use valid AT Protocol rkeys outside the TID character
-      // subset, so validate the AT URI structure without over-restricting keys.
-      const validPostUri = /^at:\/\/did:[^/\s?#]+\/site\.standard\.document\/[^/\s?#]+$/;
-      if (pins.some((uri) => !validPostUri.test(uri))) {
-        if (status) status.textContent = 'Each pinned post must be a valid site.standard.document AT URI.';
-        return;
-      }
+      // Read only checked controls from the picker. These values came from the
+      // author's published-post list, so stale/malformed pins in an older
+      // profile record cannot block a save.
+      const pins = [...form.querySelectorAll<HTMLInputElement>('input[name="pinnedPost"]:checked')]
+        .map((input) => input.value.trim())
+        .filter(Boolean);
       const uniquePins = [...new Set(pins)];
       const next: Record<string, unknown> = { ...accountAuthorRecord, $type: 'cc.coffeencode.author.profile' };
       const optionalFields = {
@@ -286,10 +284,7 @@ async function loadAuthorPostPicker(did: string, form: HTMLFormElement, selected
     const posts = await response.json() as Array<{ uri: string; title?: string; publishedAt?: string }>;
     if (session?.did !== did) return;
     const selected = new Set(selectedUris);
-    const postsByUri = new Map(posts.map((post) => [post.uri, post]));
-    selectedUris.forEach((uri) => {
-      if (!postsByUri.has(uri)) postsByUri.set(uri, { uri, title: 'Pinned story', publishedAt: '' });
-    });
+    const postsByUri = new Map(posts.filter((post) => typeof post.uri === 'string' && post.uri).map((post) => [post.uri, post]));
 
     const list = document.createElement('div');
     list.className = 'account-author-post-picker';
@@ -698,13 +693,53 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     like: 'cc.coffeencode.interact.like',
     dislike: 'cc.coffeencode.interact.dislike',
   } as const;
+  let reactionActionVersion = 0;
 
   const refreshReactionState = async () => {
     await oauthReady;
     if (!session) return;
+    const version = reactionActionVersion;
     const state = await getOwnRecords(documentUri, session.did);
+    if (version !== reactionActionVersion) return;
     container.querySelector<HTMLButtonElement>('[data-reaction="like"]')?.setAttribute('aria-pressed', String(state.liked));
     container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(state.disliked));
+  };
+
+  const readReactionCount = (reaction: 'like' | 'dislike') => {
+    const count = container.querySelector<HTMLElement>(`[data-reaction-count="${reaction}"]`);
+    const value = count?.textContent?.replace(/,/g, '').trim() || '';
+    return /^\d+$/.test(value) ? Number(value) : undefined;
+  };
+  const writeReactionCount = (reaction: 'like' | 'dislike', value: number) => {
+    const count = container.querySelector<HTMLElement>(`[data-reaction-count="${reaction}"]`);
+    if (count) count.textContent = Math.max(0, value).toLocaleString();
+  };
+  const refreshReactionCounts = async (before: { like?: number; dislike?: number }, delta: { like: number; dislike: number }, version: number) => {
+    const delays = [1200, 1800, 2600, 4000, 6000];
+    for (const delay of delays) {
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      if (version !== reactionActionVersion) return;
+      try {
+        const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) continue;
+        const counts = await response.json() as { likes?: number; dislikes?: number };
+        const observed = { like: Number(counts.likes), dislike: Number(counts.dislikes) };
+        const baselines = { like: before.like, dislike: before.dislike };
+        const deltas = { like: delta.like, dislike: delta.dislike };
+        const indexed = (['like', 'dislike'] as const).every((reaction) => {
+          const baseline = baselines[reaction];
+          const change = deltas[reaction];
+          const value = observed[reaction];
+          if (!Number.isFinite(value)) return false;
+          if (baseline === undefined || change === 0) return true;
+          return change > 0 ? value >= baseline + change : value < baseline;
+        });
+        if (!indexed) continue;
+        writeReactionCount('like', observed.like);
+        writeReactionCount('dislike', observed.dislike);
+        return;
+      } catch { /* Keep the optimistic count if the index is temporarily unavailable. */ }
+    }
   };
 
   void refreshReactionState().catch((error) => {
@@ -723,13 +758,14 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     if (!(kind in collections)) return;
     const opposite = kind === 'like' ? 'dislike' : 'like';
     const activeSession = session;
-    const rkey = await recordKey(documentUri);
+    const actionVersion = ++reactionActionVersion;
     buttons.forEach((item) => { item.disabled = true; });
     if (status) status.textContent = 'Saving your reaction…';
+    const beforeCounts = { like: readReactionCount('like'), dislike: readReactionCount('dislike') };
 
-    let recommendationFailed = false;
     let wasSelected = false;
     try {
+      const rkey = await recordKey(documentUri);
       const current = await getOwnRecords(documentUri, activeSession.did);
       wasSelected = kind === 'like' ? current.liked : current.disliked;
       const oppositeSelected = kind === 'like' ? current.disliked : current.liked;
@@ -786,27 +822,31 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
                 },
               });
             }
-          } catch {
-            recommendationFailed = true;
+          } catch (error) {
+            // Recommendations are optional. The like itself has already been
+            // saved, so this must not make the like appear to have failed.
+            console.warn('Could not create an optional post recommendation:', error);
           }
         }
       }
 
-      await refreshReactionState();
-      const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}`, { cache: 'no-store' });
-      if (response.ok) {
-        const counts = await response.json() as { likes: number; dislikes: number };
-        (['like', 'dislike'] as const).forEach((reaction) => {
-          const count = container.querySelector<HTMLElement>(`[data-reaction-count="${reaction}"]`);
-          const total = reaction === 'like' ? counts.likes : counts.dislikes;
-          if (count) count.textContent = Number(total || 0).toLocaleString();
-        });
-      }
+      const liked = kind === 'like' ? !wasSelected : false;
+      const disliked = kind === 'dislike' ? !wasSelected : false;
+      if (actionVersion !== reactionActionVersion) return;
+      container.querySelector<HTMLButtonElement>('[data-reaction="like"]')?.setAttribute('aria-pressed', String(liked));
+      container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(disliked));
+      const delta = { like: 0, dislike: 0 };
+      if (kind === 'like') delta.like = wasSelected ? -1 : 1;
+      else delta.dislike = wasSelected ? -1 : 1;
+      if (!wasSelected && oppositeSelected) delta[opposite] = -1;
+      if (beforeCounts.like !== undefined) writeReactionCount('like', beforeCounts.like + delta.like);
+      if (beforeCounts.dislike !== undefined) writeReactionCount('dislike', beforeCounts.dislike + delta.dislike);
+      void refreshReactionCounts(beforeCounts, delta, actionVersion);
 
       if (status) {
-        status.textContent = recommendationFailed
-          ? 'Your like was saved, but its recommendation could not be created. Sign out and back in to approve updated permissions.'
-          : wasSelected ? 'Reaction removed.' : 'Your reaction was recorded.';
+        status.textContent = wasSelected
+          ? `Your ${kind} was removed.`
+          : kind === 'like' ? 'You liked this post.' : 'You disliked this post.';
       }
     } catch (error) {
       if (status) status.textContent = errorMessage(error);
