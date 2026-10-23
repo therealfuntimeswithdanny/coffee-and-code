@@ -2,9 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
+const metadataPath = new URL('../media/oauth-client-metadata-v2.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
-const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
+const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata-v2.json';
 const expectedRedirectUri = 'https://coffeencode.cc/auth';
 
 function assert(condition, message) {

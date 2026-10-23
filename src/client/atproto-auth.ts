@@ -4,7 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawClientMetadata from '../../media/oauth-client-metadata.json';
+import rawClientMetadata from '../../media/oauth-client-metadata-v2.json';
 
 // The same file is published as a Cloudflare static asset at the client_id URL.
 // Embedding it here avoids a second metadata fetch in the browser and prevents

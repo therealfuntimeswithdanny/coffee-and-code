@@ -17,4 +17,4 @@ enabled = true
 PUB_NAME = "Coffee and Code"
 PUB_DESCRIPTION = "A small tech news publication built on the AT Protocol by Daniel Morrisey"
 OWNER_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
-OWNER_PDS = "https://database.coffeencode.cc"
+OWNER_PDS = "https://account.coffeencode.cc"
