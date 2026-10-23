@@ -186,16 +186,16 @@ async function loadAuthorProfileEditor(did: string) {
       const displayName = form.elements.namedItem('displayName') as HTMLInputElement;
       const pronouns = form.elements.namedItem('pronouns') as HTMLInputElement;
       const description = form.elements.namedItem('description') as HTMLTextAreaElement;
-      const pinnedPosts = form.elements.namedItem('pinnedPosts') as HTMLTextAreaElement;
       displayName.value = typeof accountAuthorRecord.displayName === 'string' ? accountAuthorRecord.displayName : '';
       pronouns.value = typeof accountAuthorRecord.pronouns === 'string' ? accountAuthorRecord.pronouns : '';
       description.value = typeof accountAuthorRecord.description === 'string' ? accountAuthorRecord.description : '';
-      pinnedPosts.value = Array.isArray(accountAuthorRecord.pinnedPosts)
-        ? accountAuthorRecord.pinnedPosts.filter((uri): uri is string => typeof uri === 'string').join('\n')
-        : '';
       if (status) status.textContent = '';
       form.hidden = false;
       editButton.hidden = true;
+      const currentPins = Array.isArray(accountAuthorRecord.pinnedPosts)
+        ? accountAuthorRecord.pinnedPosts.filter((uri): uri is string => typeof uri === 'string')
+        : [];
+      void loadAuthorPostPicker(did, form, currentPins);
     };
     accountPage.querySelector<HTMLButtonElement>('[data-cancel-author-edit]')!.onclick = () => {
       form.hidden = true;
@@ -208,7 +208,11 @@ async function loadAuthorProfileEditor(did: string) {
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (!submit) return;
       const data = new FormData(form);
-      const pins = data.get('pinnedPosts')?.toString().split(/\r?\n/).map((uri) => uri.trim()).filter(Boolean) || [];
+      if (form.dataset.authorPostsLoaded !== 'true') {
+        if (status) status.textContent = 'Wait for your published stories to load before saving.';
+        return;
+      }
+      const pins = data.getAll('pinnedPost').map((uri) => uri.toString());
       const validPostUri = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.document\/[a-zA-Z0-9._~:-]+$/;
       if (pins.some((uri) => !validPostUri.test(uri))) {
         if (status) status.textContent = 'Each pinned post must be a valid site.standard.document AT URI.';
@@ -264,6 +268,59 @@ async function loadAuthorProfileEditor(did: string) {
     };
   } catch {
     // A missing record means this account is not an author account.
+  }
+}
+
+async function loadAuthorPostPicker(did: string, form: HTMLFormElement, selectedUris: string[]) {
+  const picker = form.querySelector<HTMLElement>('[data-author-post-picker]');
+  const loadingStatus = form.querySelector<HTMLElement>('[data-author-posts-status]');
+  if (!picker || !loadingStatus) return;
+  form.dataset.authorPostsLoaded = 'false';
+  loadingStatus.textContent = 'Loading your published stories…';
+  picker.replaceChildren();
+  try {
+    const response = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load your published stories.');
+    const posts = await response.json() as Array<{ uri: string; title?: string; publishedAt?: string }>;
+    if (session?.did !== did) return;
+    const selected = new Set(selectedUris);
+    const postsByUri = new Map(posts.map((post) => [post.uri, post]));
+    selectedUris.forEach((uri) => {
+      if (!postsByUri.has(uri)) postsByUri.set(uri, { uri, title: 'Pinned story', publishedAt: '' });
+    });
+
+    const list = document.createElement('div');
+    list.className = 'account-author-post-picker';
+    if (!postsByUri.size) {
+      loadingStatus.textContent = 'No published stories are available to pin yet.';
+    } else {
+      loadingStatus.textContent = 'Select or clear the stories you want pinned.';
+    }
+    postsByUri.forEach((post, uri) => {
+      const label = document.createElement('label');
+      label.className = 'account-author-post-option';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.name = 'pinnedPost';
+      checkbox.value = uri;
+      checkbox.checked = selected.has(uri);
+      const copy = document.createElement('span');
+      copy.className = 'account-author-post-option__title';
+      copy.textContent = post.title || 'Untitled story';
+      if (post.publishedAt) {
+        const meta = document.createElement('small');
+        meta.className = 'account-author-post-option__meta';
+        const date = new Date(post.publishedAt);
+        meta.textContent = Number.isFinite(date.getTime()) ? date.toLocaleDateString() : '';
+        copy.append(meta);
+      }
+      label.append(checkbox, copy);
+      list.append(label);
+    });
+    picker.replaceChildren(list);
+    form.dataset.authorPostsLoaded = 'true';
+  } catch (error) {
+    loadingStatus.textContent = error instanceof Error ? error.message : 'Could not load your published stories.';
   }
 }
 

@@ -23,8 +23,15 @@ pages.get('/api/invite-code', async (c) => {
 });
 
 pages.get('/api/account/posts', async (c) => {
+  const authorDid = c.req.query('author');
+  if (authorDid && !/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(authorDid)) {
+    return c.json({ error: 'A valid author DID is required.' }, 400);
+  }
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
-  const articles = await fetchArticles(pds, c.env.OWNER_DID);
+  const allArticles = await fetchArticles(pds, c.env.OWNER_DID);
+  const articles = authorDid
+    ? allArticles.filter((post) => post.author?.did.toLowerCase() === authorDid.toLowerCase())
+    : allArticles;
   return c.json(articles.map(({ uri, path, title, publishedAt, cover }) => ({ uri, path, title, publishedAt, cover })), 200, {
     'Cache-Control': 'public, max-age=60',
   });
@@ -90,7 +97,7 @@ pages.get('/account', (c) => {
             <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
             <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
             <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-            <label>Pinned post AT URIs<textarea name="pinnedPosts" rows="4" placeholder="One at:// URI per line"></textarea><small>Paste one of your published post URIs on each line.</small></label>
+            <fieldset class="account-author-form__pins"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
             <div class="account-author-form__actions"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
             <p class="account-author-form__status" data-author-profile-status role="status" aria-live="polite"></p>
           </form>
@@ -240,9 +247,19 @@ pages.get('/author/:handle', async (c) => {
       </article>`)
     .join('');
   const pinnedPosts = new Set(author.pinnedPosts || []);
-  const pinnedItems = authorPosts
-    .filter((post) => pinnedPosts.has(post.uri))
-    .map((post) => `<li><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></li>`)
+  const pinnedArticles = authorPosts.filter((post) => pinnedPosts.has(post.uri));
+  const pinnedItems = pinnedArticles
+    .map((post) => `
+      <article class="author-pinned-card">
+        <a class="author-pinned-card__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+          ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" width="800" height="450" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
+        </a>
+        <div class="author-pinned-card__content">
+          <p class="eyebrow">${formatDate(post.publishedAt)}</p>
+          <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
+          ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
+        </div>
+      </article>`)
     .join('');
 
   const body = `
@@ -253,7 +270,7 @@ pages.get('/author/:handle', async (c) => {
         <div><p class="eyebrow">Author</p><h1 id="author-title">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
       </header>
       ${author.description ? `<p class="author-page__description">${escapeHtml(author.description)}</p>` : ''}
-      ${pinnedItems ? `<section class="author-page__pinned" aria-label="Pinned stories"><div class="section-heading"><span>Pinned stories</span></div><ul>${pinnedItems}</ul></section>` : ''}
+      ${pinnedItems ? `<section class="author-page__pinned" aria-labelledby="author-pinned-title"><div class="section-heading"><span id="author-pinned-title">Pinned posts</span><span>${pinnedArticles.length}</span></div><div class="author-page__pinned-grid">${pinnedItems}</div></section>` : ''}
       <div class="section-heading"><span>Stories</span><span>${authorPosts.length}</span></div>
       <div class="archive-grid">${archiveItems}</div>
     </section>
