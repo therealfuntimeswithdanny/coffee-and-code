@@ -39,6 +39,8 @@ for (const scope of [
   'repo:cc.coffeencode.interact.dislike?action=create&action=delete',
   'repo:cc.coffeencode.interact.view?action=create',
   'repo:site.standard.graph.recommend?action=create',
+  'repo:cc.coffeencode.comment?action=create',
+  'repo:cc.coffeencode.comment.like?action=create&action=delete',
 ]) {
   assert(requestedScopes.has(scope), `required permission scope is missing: ${scope}`);
 }

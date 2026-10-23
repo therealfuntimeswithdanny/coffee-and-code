@@ -1,0 +1,19 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.interact.dislike",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A dislike for a Coffee & Code story.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["document", "createdAt"],
+        "properties": {
+          "document": { "type": "string", "format": "at-uri" },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

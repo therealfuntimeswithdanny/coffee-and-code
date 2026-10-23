@@ -1,0 +1,48 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.comment",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A comment on a Coffee & Code story, optionally replying to another comment.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["subject", "text", "createdAt"],
+        "properties": {
+          "subject": {
+            "type": "ref",
+            "ref": "#subject"
+          },
+          "reply": {
+            "type": "ref",
+            "ref": "#reply"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 3000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "required": ["parent"],
+      "properties": {
+        "parent": { "type": "ref", "ref": "#subject" }
+      }
+    }
+  }
+}

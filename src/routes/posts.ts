@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
@@ -16,13 +16,15 @@ function formatDate(date?: string) {
   });
 }
 
-posts.get('/', (c) => c.redirect('/'));
-
-posts.get('/:rkey', async (c) => {
-  const rkey = c.req.param('rkey');
+async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requestedHandle?: string) {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
-  const post = allPosts.find((p) => p.rkey === rkey || p.path === `/post/${rkey}`);
+  const post = allPosts.find((p) => {
+    if (p.rkey !== rkey) return false;
+    if (!requestedHandle) return true;
+    const canonicalHandle = decodeURIComponent(p.path.split('/')[1] || '');
+    return canonicalHandle.toLowerCase() === requestedHandle.toLowerCase();
+  });
 
   if (!post) {
     return c.html(renderLayout(c, 'Article Not Found', `
@@ -37,6 +39,11 @@ posts.get('/:rkey', async (c) => {
         </div>
       </section>
     `), 404);
+  }
+
+  const requestUrl = new URL(c.req.url);
+  if (!requestedHandle || requestUrl.pathname !== post.path) {
+    return c.redirect(`${post.path}${requestUrl.search}`, 301);
   }
 
   const recommendations = allPosts.filter((item) => item.path !== post.path).slice(0, 3);
@@ -165,7 +172,7 @@ posts.get('/:rkey', async (c) => {
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image" width="1200" height="667" fetchpriority="high" decoding="async"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
       <section class="article__comments">
-        <sequoia-comments style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
+        <sequoia-comments document-uri="${escapeHtml(post.uri)}" style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
       </section>
       <footer class="article__footer">
         <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
@@ -177,6 +184,10 @@ posts.get('/:rkey', async (c) => {
   `;
 
   return c.html(renderLayout(c, post.title, body, articleMetaTags));
-});
+}
+
+posts.get('/', (c) => c.redirect('/'));
+posts.get('/post/:rkey', (c) => renderPost(c, c.req.param('rkey')));
+posts.get('/:handle/:rkey', (c) => renderPost(c, c.req.param('rkey'), c.req.param('handle')));
 
 export default posts;

@@ -1,39 +1,29 @@
 const styles = `
-:host { display: block; color: var(--sequoia-fg-color, #1f2937); font-family: var(--sequoia-font-family, system-ui, sans-serif); line-height: 1.5; }
-* { box-sizing: border-box; }
-.comments-header { align-items: center; display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
-.comments-title { font-size: 1.125rem; margin: 0; }
-.comments-actions { display: flex; gap: .5rem; }
-.reply-button { background: var(--sequoia-accent-color, #2563eb); border-radius: var(--sequoia-border-radius, 8px); color: #fff; font-size: .875rem; padding: .5rem .75rem; text-decoration: none; }
-.reply-button:hover { filter: brightness(.88); }
-.status { border: 1px solid var(--sequoia-border-color, #e5e7eb); border-radius: var(--sequoia-border-radius, 8px); color: var(--sequoia-secondary-color, #6b7280); padding: 1rem; text-align: center; }
-.comments-list { display: grid; gap: 1rem; }
-.comment { border-top: 1px solid var(--sequoia-border-color, #e5e7eb); display: flex; gap: .75rem; padding-top: 1rem; }
-.avatar, .avatar-placeholder { background: var(--sequoia-border-color, #e5e7eb); border-radius: 50%; flex: 0 0 2.5rem; height: 2.5rem; object-fit: cover; width: 2.5rem; }
-.avatar-placeholder { align-items: center; color: var(--sequoia-secondary-color, #6b7280); display: flex; font-weight: 600; justify-content: center; }
-.comment-content { min-width: 0; }
-.comment-meta { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; }
-.author { color: var(--sequoia-fg-color, #1f2937); font-weight: 600; text-decoration: none; }
-.handle, .time { color: var(--sequoia-secondary-color, #6b7280); font-size: .875rem; }
-.time { text-decoration: none; }
-.comment-text { margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
+:host { display:block; color:var(--sequoia-fg-color,#1f2937); font-family:var(--sequoia-font-family,system-ui,sans-serif); line-height:1.5; }
+* { box-sizing:border-box; }
+.comments-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+.comments-title { margin:0; font-size:1.125rem; }
+.status { border:1px solid var(--sequoia-border-color,#e5e7eb); color:var(--sequoia-secondary-color,#6b7280); padding:1rem; text-align:center; }
+.comment-form { display:grid; gap:.5rem; margin:.75rem 0 1rem; }
+.comment-input { width:100%; min-height:5rem; padding:.65rem; resize:vertical; color:inherit; background:var(--sequoia-bg-color,#fff); border:1px solid var(--sequoia-border-color,#e5e7eb); font:inherit; }
+.comment-submit,.reply-button { border:0; background:var(--sequoia-accent-color,#2563eb); color:#fff; cursor:pointer; font:inherit; padding:.45rem .75rem; }
+.comment-submit { justify-self:end; }
+.comment-submit:disabled { opacity:.6; cursor:wait; }
+.comments-list { display:grid; gap:1rem; }
+.comment { border-top:1px solid var(--sequoia-border-color,#e5e7eb); display:flex; gap:.75rem; padding-top:1rem; }
+.comment-children { display:grid; gap:.75rem; margin:.8rem 0 0 1rem; padding-left:.8rem; border-left:1px solid var(--sequoia-border-color,#e5e7eb); }
+.avatar,.avatar-placeholder { width:2.5rem; height:2.5rem; flex:0 0 2.5rem; border-radius:50%; object-fit:cover; background:var(--sequoia-border-color,#e5e7eb); }
+.avatar-placeholder { display:flex; align-items:center; justify-content:center; color:var(--sequoia-secondary-color,#6b7280); }
+.comment-content { min-width:0; flex:1; }
+.comment-meta { display:flex; flex-wrap:wrap; align-items:baseline; gap:.5rem; }
+.author { color:inherit; font-weight:600; text-decoration:none; }
+.handle,.time { color:var(--sequoia-secondary-color,#6b7280); font-size:.875rem; }
+.comment-text { margin:.25rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.reply-button { margin-top:.4rem; font-size:.875rem; }
+.comment-like { margin-top:.4rem; margin-right:.45rem; border:1px solid var(--sequoia-border-color,#e5e7eb); background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:.875rem; padding:.35rem .55rem; }
+.comment-like[aria-pressed="true"] { color:var(--sequoia-accent-color,#2563eb); }
+.comment-status { color:var(--sequoia-secondary-color,#6b7280); font-size:.875rem; }
 `;
-
-function avatarUrl(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === 'cdn.coffeencode.cc' && parsed.pathname.startsWith('/blob/')) return parsed.toString();
-    const match = parsed.pathname.match(/\/img\/avatar\/plain\/([^/]+)\/([^/]+)$/i);
-    if (!match) return url;
-
-    const did = decodeURIComponent(match[1]);
-    const [cid, extension] = decodeURIComponent(match[2]).split('@', 2);
-    const blob = `${cid}${extension ? `@${extension}` : ''}`;
-    return `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${blob}/avatar_medium`;
-  } catch {
-    return url;
-  }
-}
 
 function escapeHtml(value) {
   const element = document.createElement('div');
@@ -41,51 +31,9 @@ function escapeHtml(value) {
   return element.innerHTML;
 }
 
-function parseAtUri(uri) {
-  const match = /^at:\/\/([^/]+)\/([^/]+)\/(.+)$/.exec(uri);
-  return match ? { did: match[1], collection: match[2], rkey: match[3] } : null;
-}
-
-async function resolvePds(did) {
-  const response = await fetch(`https://plc.directory/${encodeURIComponent(did)}`);
-  if (!response.ok) throw new Error('Unable to resolve author');
-  const data = await response.json();
-  const service = data.service?.find((item) => item.id === '#atproto_pds' || item.type === 'AtprotoPersonalDataServer');
-  if (!service?.serviceEndpoint) throw new Error('Author has no PDS');
-  return service.serviceEndpoint;
-}
-
-async function getDocument(uri) {
-  const parsed = parseAtUri(uri);
-  if (!parsed) throw new Error('Invalid document URI');
-  const pds = await resolvePds(parsed.did);
-  const url = new URL(`${pds}/xrpc/com.atproto.repo.getRecord`);
-  url.searchParams.set('repo', parsed.did);
-  url.searchParams.set('collection', parsed.collection);
-  url.searchParams.set('rkey', parsed.rkey);
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Unable to load document');
-  return response.json();
-}
-
-async function getThread(uri, depth) {
-  const url = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread');
-  url.searchParams.set('uri', uri);
-  url.searchParams.set('depth', String(depth));
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Unable to load comments');
-  const data = await response.json();
-  if (data.thread?.$type !== 'app.bsky.feed.defs#threadViewPost') throw new Error('Post not found');
-  return data.thread;
-}
-
-function appUrl(uri) {
-  const parsed = parseAtUri(uri);
-  return parsed ? `https://bsky.app/profile/${parsed.did}/post/${parsed.rkey}` : '#';
-}
-
 function formatTime(value) {
   const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
   const days = Math.floor((Date.now() - date.getTime()) / 86400000);
   return days < 1 ? 'today' : days < 30 ? `${days}d ago` : date.toLocaleDateString();
 }
@@ -100,44 +48,116 @@ class SequoiaComments extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `<style>${styles}</style><div></div>`;
     this.container = this.shadowRoot.lastElementChild;
+    this.comments = [];
   }
 
-  connectedCallback() {
-    this.load();
-  }
+  connectedCallback() { void this.load(); }
 
   async load() {
     this.container.innerHTML = '<div class="status">Loading comments...</div>';
+    this.documentUri = this.getAttribute('document-uri');
+    if (!this.documentUri) return this.show('Comments are not available for this post.');
     try {
-      const documentUri = this.getAttribute('document-uri') || document.querySelector('link[rel="site.standard.document"]')?.getAttribute('href');
-      if (!documentUri) return this.show('Comments are not available for this post.');
-      const record = this.getAttribute('post-uri') ? { bskyPostRef: { uri: this.getAttribute('post-uri') } } : await getDocument(documentUri);
-      const postUri = record.value?.bskyPostRef?.uri || record.bskyPostRef?.uri;
-      if (!postUri) return this.show('Comments are not enabled for this post.');
-      const thread = await getThread(postUri, Number(this.getAttribute('depth') || 6));
-      const replies = (thread.replies || []).filter((reply) => reply?.$type === 'app.bsky.feed.defs#threadViewPost');
-      this.renderComments(postUri, replies);
+      const did = await window.coffeeAndCodeAuth?.getDid();
+      const response = await fetch(`/api/comments?subject=${encodeURIComponent(this.documentUri)}${did ? `&did=${encodeURIComponent(did)}` : ''}`);
+      if (!response.ok) throw new Error('Unable to load comments.');
+      const data = await response.json();
+      this.comments = data.records || [];
+      this.render();
     } catch (error) {
       this.show(error instanceof Error ? error.message : 'Unable to load comments.');
     }
   }
 
-  show(message) {
-    this.container.innerHTML = `<div class="status">${escapeHtml(message)}</div>`;
+  show(message) { this.container.innerHTML = `<div class="status">${escapeHtml(message)}</div>`; }
+
+  renderComment(comment, childrenByParent) {
+    const name = comment.displayName || comment.handle || comment.did;
+    const avatar = comment.avatar
+      ? `<img class="avatar" src="${escapeHtml(comment.avatar)}" alt="" loading="lazy">`
+      : `<div class="avatar-placeholder" aria-hidden="true">${escapeHtml(initials(name))}</div>`;
+    const replies = childrenByParent.get(comment.uri) || [];
+    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" href="https://bsky.app/profile/${encodeURIComponent(comment.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" aria-pressed="${String(comment.liked)}">♥ Like <span>${Number(comment.likeCount || 0).toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button><div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
   }
 
-  renderComments(postUri, replies) {
-    const comments = replies.map((reply) => this.renderReply(reply)).join('');
-    this.container.innerHTML = `<div class="comments-header"><h2 class="comments-title">Comments${replies.length ? ` (${replies.length})` : ''}</h2><div class="comments-actions"><a class="reply-button" href="${appUrl(postUri)}" target="_blank" rel="noopener noreferrer">Reply on Bluesky</a></div></div>${comments ? `<div class="comments-list">${comments}</div>` : '<div class="status">No comments yet. Be the first to reply on Bluesky.</div>'}`;
+  render() {
+    const childrenByParent = new Map();
+    const knownUris = new Set(this.comments.map((comment) => comment.uri));
+    this.comments.forEach((comment) => {
+      if (!comment.parentUri || !knownUris.has(comment.parentUri)) return;
+      const children = childrenByParent.get(comment.parentUri) || [];
+      children.push(comment);
+      childrenByParent.set(comment.parentUri, children);
+    });
+    const roots = this.comments.filter((comment) => !comment.parentUri || !knownUris.has(comment.parentUri));
+    this.container.innerHTML = `<div class="comments-header"><h2 class="comments-title">Comments${this.comments.length ? ` (${this.comments.length})` : ''}</h2></div><form class="comment-form" data-comment-form><textarea class="comment-input" name="text" maxlength="3000" required placeholder="Write a comment..."></textarea><button class="comment-submit" type="submit">Post comment</button><span class="comment-status" aria-live="polite"></span></form>${roots.length ? `<div class="comments-list">${roots.map((comment) => this.renderComment(comment, childrenByParent)).join('')}</div>` : '<div class="status">No comments yet. Start the conversation.</div>'}`;
+    this.container.querySelector('[data-comment-form]')?.addEventListener('submit', (event) => this.submit(event, undefined));
+    this.container.querySelectorAll('[data-reply-to]').forEach((button) => button.addEventListener('click', () => this.openReply(button.dataset.replyTo)));
+    this.container.querySelectorAll('[data-like-comment]').forEach((button) => button.addEventListener('click', () => this.toggleLike(button)));
   }
 
-  renderReply(reply) {
-    const author = reply.post.author;
-    const name = author.displayName || author.handle;
-    const avatar = author.avatar ? `<img class="avatar" src="${escapeHtml(avatarUrl(author.avatar))}" alt="${escapeHtml(name)}" loading="lazy">` : `<div class="avatar-placeholder">${escapeHtml(initials(name))}</div>`;
-    const text = escapeHtml(reply.post.record?.text || '');
-    const nested = (reply.replies || []).filter((item) => item?.$type === 'app.bsky.feed.defs#threadViewPost').map((item) => this.renderReply(item)).join('');
-    return `<article class="comment">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" href="https://bsky.app/profile/${encodeURIComponent(author.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(author.handle)}</span><a class="time" href="${appUrl(reply.post.uri)}" target="_blank" rel="noopener noreferrer">${formatTime(reply.post.record?.createdAt)}</a></div><p class="comment-text">${text}</p>${nested ? `<div class="comments-list">${nested}</div>` : ''}</div></article>`;
+  async toggleLike(button) {
+    const commentUri = button.dataset.likeComment;
+    const isLiked = button.getAttribute('aria-pressed') === 'true';
+    const status = button.closest('.comment-content')?.querySelector('.comment-status');
+    try {
+      const did = await window.coffeeAndCodeAuth?.getDid();
+      if (!did) {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.assign(`/auth?returnTo=${encodeURIComponent(returnTo)}`);
+        return;
+      }
+      button.disabled = true;
+      if (!window.coffeeAndCodeAuth?.toggleCommentLike) throw new Error('Sign-in is still initializing. Please try again.');
+      await window.coffeeAndCodeAuth.toggleCommentLike(commentUri, isLiked);
+      await this.load();
+    } catch (error) {
+      if (status) status.textContent = error instanceof Error ? error.message : 'Could not update this like.';
+      button.disabled = false;
+    }
+  }
+
+  async openReply(parentUri) {
+    const article = [...this.container.querySelectorAll('[data-comment-uri]')].find((item) => item.dataset.commentUri === parentUri);
+    if (!article) return;
+    article.querySelector('.reply-form')?.remove();
+    const form = document.createElement('form');
+    form.className = 'comment-form reply-form';
+    form.innerHTML = '<textarea class="comment-input" name="text" maxlength="3000" required placeholder="Write a reply..."></textarea><button class="comment-submit" type="submit">Post reply</button><span class="comment-status" aria-live="polite"></span>';
+    article.querySelector('.comment-content')?.append(form);
+    form.addEventListener('submit', (event) => this.submit(event, parentUri));
+    form.querySelector('textarea')?.focus();
+  }
+
+  async submit(event, parentUri) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const text = new FormData(form).get('text')?.toString().trim();
+    if (!text) return;
+    const status = form.querySelector('.comment-status');
+    const button = form.querySelector('button[type="submit"]');
+    try {
+      const did = await window.coffeeAndCodeAuth?.getDid();
+      if (!did) {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.assign(`/auth?returnTo=${encodeURIComponent(returnTo)}`);
+        return;
+      }
+      button.disabled = true;
+      status.textContent = 'Posting…';
+      const record = {
+        subject: { uri: this.documentUri },
+        ...(parentUri ? { reply: { parent: { uri: parentUri } } } : {}),
+        text,
+        createdAt: new Date().toISOString(),
+      };
+      if (!window.coffeeAndCodeAuth?.createComment) throw new Error('Sign-in is still initializing. Please try again.');
+      await window.coffeeAndCodeAuth.createComment(record);
+      await this.load();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : 'Could not post this comment.';
+      if (button) button.disabled = false;
+    }
   }
 }
 

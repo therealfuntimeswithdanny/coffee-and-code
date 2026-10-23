@@ -1,0 +1,19 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.interact.like",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A like for a Coffee & Code story.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["document", "createdAt"],
+        "properties": {
+          "document": { "type": "string", "format": "at-uri" },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

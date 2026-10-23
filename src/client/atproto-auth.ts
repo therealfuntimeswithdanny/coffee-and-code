@@ -44,6 +44,16 @@ const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
 
+declare global {
+  interface Window {
+    coffeeAndCodeAuth?: {
+      getDid: () => Promise<string | undefined>;
+      createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
+      toggleCommentLike: (commentUri: string, isLiked: boolean) => Promise<void>;
+    };
+  }
+}
+
 function showAuthError(message: string) {
   if (!authError) return;
   authError.hidden = false;
@@ -117,6 +127,38 @@ const oauthReady = (async () => {
   }
 })();
 
+window.coffeeAndCodeAuth = {
+  getDid: async () => {
+    await oauthReady;
+    return session?.did;
+  },
+  createComment: async (record) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection: 'cc.coffeencode.comment',
+      record: { $type: 'cc.coffeencode.comment', ...record },
+    });
+  },
+  toggleCommentLike: async (commentUri, isLiked) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const collection = 'cc.coffeencode.comment.like';
+    const rkey = await recordKey(commentUri);
+    if (isLiked) {
+      await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection, rkey });
+      return;
+    }
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection,
+      rkey,
+      record: { $type: collection, subject: { uri: commentUri }, createdAt: new Date().toISOString() },
+    });
+  },
+};
+
 if (authForm) {
   authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -184,29 +226,15 @@ async function repoRequest(path: string, body?: unknown) {
   throw new Error(detail || `AT Protocol request failed (${response.status}).`);
 }
 
-function recordQuery(collection: string, rkey: string) {
-  const params = new URLSearchParams({ repo: requireSession().did, collection, rkey });
-  return `com.atproto.repo.getRecord?${params}`;
-}
-
 async function recordKey(document: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(document));
   return `post-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
-async function recordExists(collection: string, rkey: string) {
-  const response = await requireSession().fetchHandler(`/xrpc/${recordQuery(collection, rkey)}`);
-  if (response.ok) return true;
-
-  const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
-  const detail = `${payload?.error || ''} ${payload?.message || ''}`.toLowerCase();
-  // PDS implementations commonly return HTTP 400 with RecordNotFound when
-  // getRecord is used to check whether the reader has reacted yet.
-  if (response.status === 400 && (payload?.error === 'RecordNotFound' || /record\s+(was\s+)?not found|could not locate record/.test(detail))) return false;
-  if (response.status === 401 || response.status === 403) {
-    throw new Error('Your account has not granted this permission yet. Log out and sign in again to approve the updated permissions.');
-  }
-  throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Could not read your reaction (${response.status}).`);
+async function getOwnRecords(document: string, did: string) {
+  const response = await fetch(`/api/reactions?subject=${encodeURIComponent(document)}&did=${encodeURIComponent(did)}`);
+  if (!response.ok) throw new Error('Could not load your reaction state.');
+  return await response.json() as { liked: boolean; disliked: boolean; recommended: boolean };
 }
 
 document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
@@ -257,13 +285,9 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
   const refreshReactionState = async () => {
     await oauthReady;
     if (!session) return;
-    const rkey = await recordKey(documentUri);
-    const [liked, disliked] = await Promise.all([
-      recordExists(collections.like, rkey),
-      recordExists(collections.dislike, rkey),
-    ]);
-    container.querySelector<HTMLButtonElement>('[data-reaction="like"]')?.setAttribute('aria-pressed', String(liked));
-    container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(disliked));
+    const state = await getOwnRecords(documentUri, session.did);
+    container.querySelector<HTMLButtonElement>('[data-reaction="like"]')?.setAttribute('aria-pressed', String(state.liked));
+    container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(state.disliked));
   };
 
   void refreshReactionState().catch((error) => {
@@ -289,8 +313,9 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     let recommendationFailed = false;
     let wasSelected = false;
     try {
-      wasSelected = await recordExists(collections[kind], rkey);
-      const oppositeSelected = await recordExists(collections[opposite], rkey);
+      const current = await getOwnRecords(documentUri, activeSession.did);
+      wasSelected = kind === 'like' ? current.liked : current.disliked;
+      const oppositeSelected = kind === 'like' ? current.disliked : current.liked;
 
       if (wasSelected) {
         await repoRequest('com.atproto.repo.deleteRecord', {
@@ -331,7 +356,7 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
         if (kind === 'like') {
           try {
             const recommendationCollection = 'site.standard.graph.recommend';
-            const recommendationExists = await recordExists(recommendationCollection, rkey);
+            const recommendationExists = current.recommended;
             if (!recommendationExists) {
               await repoRequest('com.atproto.repo.createRecord', {
                 repo: activeSession.did,

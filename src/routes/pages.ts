@@ -21,7 +21,7 @@ pages.get('/auth', (c) => {
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove like and dislike records, create view records, and create Standard.site recommendations when you like a story in your repository (account). You will be redirected to your account provider's site.</p>
+      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove your like and dislike records, create view records and story recommendations, and create comments and replies in your repository (account). You will be redirected to your account provider's site.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;

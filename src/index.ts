@@ -7,6 +7,7 @@ import metaRouter from './routes/meta';
 import searchRouter from './routes/search';
 import exportRouter from './routes/export';
 import reactionsRouter from './routes/reactions';
+import commentsRouter from './routes/comments';
 import { renderLayout } from './templates/layout';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -14,11 +15,13 @@ const app = new Hono<{ Bindings: Env }>();
 // Mount routes
 app.route('/', homeRouter);
 app.route('/', pagesRouter);
-app.route('/post', postsRouter);
 app.route('/', metaRouter);
 app.route('/search', searchRouter);
 app.route('/export', exportRouter);
 app.route('/api/reactions', reactionsRouter);
+app.route('/api/comments', commentsRouter);
+// Keep the two-segment story route after named page and API routes.
+app.route('/', postsRouter);
 
 app.get('/:rkey', (c) => {
   const rkey = encodeURIComponent(c.req.param('rkey'));

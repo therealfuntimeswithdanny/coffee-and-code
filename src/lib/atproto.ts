@@ -277,7 +277,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               title: rec.value.title || 'Untitled Post',
               content: content,
               publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-              path: `/post/${rkey}`,
+              path: `/${encodeURIComponent(authors.get(articleAuthorDid)?.handle || did)}/${rkey}`,
               description: rec.value.description || rec.value.summary || '',
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
@@ -300,6 +300,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
     }
 
     // 1. Fetch site.standard.document records (if no publications are configured)
+    const ownerProfile = await fetchAuthorProfile(did, pdsUrl);
     try {
       const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=site.standard.document&limit=50`;
       const stdRes = await fetchWithRetry(stdUrl);
@@ -318,11 +319,14 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
             title: rec.value.title || 'Untitled Post',
             content: content,
             publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-            path: `/post/${rkey}`,
+            path: `/${encodeURIComponent(ownerProfile?.handle || did)}/${rkey}`,
             description: rec.value.description || rec.value.summary || '',
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
             format,
             mimeType,
+            repoDid: did,
+            pdsUrl,
+            author: ownerProfile,
           });
         }
       }
@@ -354,8 +358,11 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               title: title,
               content: rawText,
               publishedAt: rec.value.createdAt || new Date().toISOString(),
-              path: `/post/${rkey}`,
+              path: `/${encodeURIComponent(ownerProfile?.handle || did)}/${rkey}`,
               description: rawText ? (rawText.length > 160 ? rawText.substring(0, 160) + '...' : rawText) : '',
+              repoDid: did,
+              pdsUrl,
+              author: ownerProfile,
             });
           }
         }
