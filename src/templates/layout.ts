@@ -403,7 +403,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       .lead-story .article-meta { align-items: center; flex-direction: row; flex-wrap: wrap; gap: 3px 9px; }
       .recent-stories { border-top: 0; display: grid; gap: 0; }
       .side-story { align-items: center; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; column-gap: 14px; grid-template-columns: 76px minmax(0, 1fr); margin: 0; padding: 14px 0; }
-      .side-story__image { aspect-ratio: 1; border-radius: 2px; grid-row: 1 / 3; }
+      .side-story__image { aspect-ratio: 1; border-radius: 2px; grid-row: 1 / 3; min-width: 0; width: 100%; }
       .side-story > div { min-width: 0; }
       .side-story h3 { display: -webkit-box; font-size: clamp(1.1rem, 4.8vw, 1.4rem); line-height: 1.2; margin: 0 0 5px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
       .side-story .article-meta { align-items: center; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px 9px; }
