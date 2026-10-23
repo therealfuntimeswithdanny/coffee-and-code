@@ -3,14 +3,26 @@ import { Env } from '../types';
 
 const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
+const constellationDistinctCountEndpoint = 'https://constellation.microcosm.blue/links/count/distinct-dids';
 const constellationBacklinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
 
 async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend') {
-  const url = new URL(constellationEndpoint);
-  url.searchParams.set('subject', subject);
-  url.searchParams.set('source', collection === 'recommend'
-    ? 'site.standard.graph.recommend:document'
-    : `cc.coffeencode.interact.${collection}:document`);
+  const source = collection === 'recommend'
+    ? 'site.standard.graph.recommend'
+    : `cc.coffeencode.interact.${collection}`;
+  const url = new URL(collection === 'like' || collection === 'dislike'
+    ? constellationDistinctCountEndpoint
+    : constellationEndpoint);
+  if (collection === 'like' || collection === 'dislike') {
+    // Count distinct authors, not raw records. Old clients or retries may leave
+    // more than one reaction record for the same author and post.
+    url.searchParams.set('target', subject);
+    url.searchParams.set('collection', source);
+    url.searchParams.set('path', '.document');
+  } else {
+    url.searchParams.set('subject', subject);
+    url.searchParams.set('source', `${source}:document`);
+  }
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
@@ -58,7 +70,9 @@ reactions.get('/', async (c) => {
       did ? hasBacklink(subject, 'dislike', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'recommend', did).then((has) => Number(has)) : Promise.resolve(0),
     ]);
-    return c.json({ likes, dislikes, views, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0 }, 200, { 'Cache-Control': 'public, max-age=30, s-maxage=30' });
+    // Reaction writes are immediately followed by a refresh from the client.
+    // Shared caching here made those refreshes return the previous totals.
+    return c.json({ likes, dislikes, views, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0 }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load reaction counts:', error);
     return c.json({ error: 'Reaction counts are temporarily unavailable.' }, 502);

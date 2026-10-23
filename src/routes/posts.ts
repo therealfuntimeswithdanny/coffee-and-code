@@ -19,12 +19,14 @@ function formatDate(date?: string) {
 async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requestedHandle?: string) {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
-  const post = allPosts.find((p) => {
-    if (p.rkey !== rkey) return false;
-    if (!requestedHandle) return true;
-    const canonicalHandle = decodeURIComponent(p.path.split('/')[1] || '');
-    return canonicalHandle.toLowerCase() === requestedHandle.toLowerCase();
-  });
+  const candidates = allPosts.filter((p) => p.rkey === rkey);
+  const post = !requestedHandle
+    ? candidates[0]
+    : candidates.find((item) => {
+        const canonicalDid = item.author?.did || item.repoDid || '';
+        return canonicalDid.toLowerCase() === requestedHandle.toLowerCase()
+          || item.author?.handle.toLowerCase() === requestedHandle.toLowerCase();
+      }) || (candidates.length === 1 ? candidates[0] : undefined);
 
   if (!post) {
     return c.html(renderLayout(c, 'Article Not Found', `
@@ -86,7 +88,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
 
   const articleDescription = getDescription();
   const articleSubtitle = articleDescription?.trim() || '';
-  const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
+  const authorLink = post.author ? `/author/${encodeURIComponent(post.author.did)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
   const authorAvatar = post.author?.avatar ? proxyAvatarUrl(post.author.avatar) : '';
   const safeTitle = escapeHtml(post.title);
@@ -115,7 +117,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
   const railAuthors = [...authorsByDid.values()]
     .sort((a, b) => (a.displayName || a.handle).localeCompare(b.displayName || b.handle))
     .slice(0, 6)
-    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.handle)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong>${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
+    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.did)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong>${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
     .join('');
   const structuredData = {
     '@context': 'https://schema.org',
@@ -129,7 +131,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
       ? {
           '@type': 'Person',
           name: authorName,
-          url: `${pageOrigin}/author/${encodeURIComponent(post.author.handle)}`,
+          url: `${pageOrigin}/author/${encodeURIComponent(post.author.did)}`,
         }
       : { '@type': 'Organization', name: c.env.PUB_NAME },
     publisher: {

@@ -59,7 +59,7 @@ class SequoiaComments extends HTMLElement {
     if (!this.documentUri) return this.show('Comments are not available for this post.');
     try {
       const did = await window.coffeeAndCodeAuth?.getDid();
-      const response = await fetch(`/api/comments?subject=${encodeURIComponent(this.documentUri)}${did ? `&did=${encodeURIComponent(did)}` : ''}`);
+      const response = await fetch(`/api/comments?subject=${encodeURIComponent(this.documentUri)}${did ? `&did=${encodeURIComponent(did)}` : ''}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('Unable to load comments.');
       const data = await response.json();
       this.comments = data.records || [];

@@ -27,7 +27,7 @@ function articleMeta(post: StandardDocument) {
 function heroArticleMeta(post: StandardDocument) {
   if (!post.author) return articleMeta(post);
   const authorName = post.author.displayName || post.author.handle;
-  const authorLink = `/author/${encodeURIComponent(post.author.handle)}`;
+  const authorLink = `/author/${encodeURIComponent(post.author.did)}`;
   return `<span class="article-meta article-meta--byline"><span>Written by <a href="${authorLink}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter" data-view-counter data-path="${escapeHtml(post.path)}" data-update-db="false">Loading views...</span></span>`;
 }
 

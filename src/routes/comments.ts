@@ -22,9 +22,10 @@ type CommentRecord = {
 type Profile = { handle?: string; displayName?: string; avatar?: string };
 
 async function countCommentLikes(uri: string) {
-  const url = new URL('https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount');
-  url.searchParams.set('subject', uri);
-  url.searchParams.set('source', 'cc.coffeencode.comment.like:subject.uri');
+  const url = new URL('https://constellation.microcosm.blue/links/count/distinct-dids');
+  url.searchParams.set('target', uri);
+  url.searchParams.set('collection', 'cc.coffeencode.comment.like');
+  url.searchParams.set('path', '.subject.uri');
   const response = await fetch(url, {
     headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc; @coffeencode.bsky.social)' },
   });
@@ -123,7 +124,7 @@ comments.get('/', async (c) => {
       record.displayName = profile?.displayName;
       record.avatar = profile?.avatar;
     });
-    return c.json({ records: commentsWithLikes, total: Number(index.total) || commentsWithLikes.length }, 200, { 'Cache-Control': 'public, max-age=15, s-maxage=15' });
+    return c.json({ records: commentsWithLikes, total: Number(index.total) || commentsWithLikes.length }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load comments:', error);
     return c.json({ error: 'Comments are temporarily unavailable.' }, 502);

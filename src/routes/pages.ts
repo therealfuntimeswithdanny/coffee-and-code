@@ -107,7 +107,7 @@ pages.get('/authors', async (c) => {
     .map(({ author, postCount }) => {
       const name = author.displayName || author.handle;
       const avatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
-      return `<a class="author-card" href="/author/${encodeURIComponent(author.handle)}">
+      return `<a class="author-card" href="/author/${encodeURIComponent(author.did)}">
         ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar" width="64" height="64" loading="lazy" decoding="async">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
         <span class="author-card__details"><strong>${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
       </a>`;
@@ -129,14 +129,21 @@ pages.get('/authors', async (c) => {
 });
 
 pages.get('/author/:handle', async (c) => {
-  const handle = c.req.param('handle').toLowerCase();
+  const identifier = c.req.param('handle');
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
-  const authorPosts = allPosts.filter((post) => post.author?.handle.toLowerCase() === handle);
+  const authorPosts = allPosts.filter((post) => post.author?.did.toLowerCase() === identifier.toLowerCase()
+    || post.author?.handle.toLowerCase() === identifier.toLowerCase());
   const author = authorPosts[0]?.author;
 
   if (!author) {
     return c.html(renderLayout(c, 'Author Not Found', '<section class="not-found"><p class="eyebrow">404</p><h1>Author not found</h1><p>This author has not published in this publication.</p><a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
+  }
+
+  const authorCanonicalPath = `/author/${encodeURIComponent(author.did)}`;
+  const currentUrl = new URL(c.req.url);
+  if (currentUrl.pathname !== authorCanonicalPath) {
+    return c.redirect(`${authorCanonicalPath}${currentUrl.search}`, 301);
   }
 
   const escapeHtml = (value: string) => value

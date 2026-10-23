@@ -232,7 +232,7 @@ async function recordKey(document: string) {
 }
 
 async function getOwnRecords(document: string, did: string) {
-  const response = await fetch(`/api/reactions?subject=${encodeURIComponent(document)}&did=${encodeURIComponent(did)}`);
+  const response = await fetch(`/api/reactions?subject=${encodeURIComponent(document)}&did=${encodeURIComponent(did)}`, { cache: 'no-store' });
   if (!response.ok) throw new Error('Could not load your reaction state.');
   return await response.json() as { liked: boolean; disliked: boolean; recommended: boolean };
 }
@@ -256,7 +256,7 @@ document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container
 
     window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`);
+        const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`, { cache: 'no-store' });
         if (!response.ok) return;
         const counts = await response.json() as { views: number };
         const viewCount = container.querySelector<HTMLElement>('[data-at-view-count]');
@@ -376,7 +376,7 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
       }
 
       await refreshReactionState();
-      const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}`);
+      const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}`, { cache: 'no-store' });
       if (response.ok) {
         const counts = await response.json() as { likes: number; dislikes: number };
         (['like', 'dislike'] as const).forEach((reaction) => {

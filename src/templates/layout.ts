@@ -362,7 +362,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     document.querySelectorAll('[data-reaction-subject]').forEach((container) => {
       const subject = container.dataset.reactionSubject;
       if (!subject) return;
-      fetch('/api/reactions?subject=' + encodeURIComponent(subject))
+      fetch('/api/reactions?subject=' + encodeURIComponent(subject), { cache: 'no-store' })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error('Reaction count request failed')))
         .then((counts) => {
           ['like', 'dislike'].forEach((kind) => {
