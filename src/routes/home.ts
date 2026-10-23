@@ -21,14 +21,14 @@ function excerpt(post: StandardDocument, length = 180) {
 }
 
 function articleMeta(post: StandardDocument) {
-  return `<span class="article-meta"><span>${formatDate(post.publishedAt)}</span><span class="view-counter" data-view-counter data-path="${escapeHtml(post.path)}" data-update-db="false" data-lazy="true">Loading views...</span></span>`;
+  return `<span class="article-meta" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}"><span>${formatDate(post.publishedAt)}</span><span class="view-counter" data-at-view-count>Loading views...</span></span>`;
 }
 
 function heroArticleMeta(post: StandardDocument) {
   if (!post.author) return articleMeta(post);
   const authorName = post.author.displayName || post.author.handle;
   const authorLink = `/author/${encodeURIComponent(post.author.did)}`;
-  return `<span class="article-meta article-meta--byline"><span>Written by <a href="${authorLink}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter" data-view-counter data-path="${escapeHtml(post.path)}" data-update-db="false">Loading views...</span></span>`;
+  return `<span class="article-meta article-meta--byline" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}"><span>Written by <a href="${authorLink}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter" data-at-view-count>Loading views...</span></span>`;
 }
 
 function escapeHtml(value: string) {
@@ -58,7 +58,6 @@ home.get('/', async (c) => {
           ${heroPost.cover ? `<img src="${proxiedCover(heroPost.cover)}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
         </a>
         <div class="lead-story__content">
-          <p class="eyebrow">Most recent</p>
           <h2><a href="${heroPost.path}">${heroPost.title || 'Untitled'}</a></h2>
           ${excerpt(heroPost, 260) ? `<p class="lead-story__summary">${excerpt(heroPost, 260)}</p>` : ''}
           <div class="story-footer">${heroArticleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
@@ -105,7 +104,6 @@ home.get('/', async (c) => {
       <div class="front-page__grid">
         ${heroHtml}
         <aside class="recent-stories" aria-label="More recent stories">
-          <div class="recent-stories__heading">Also new</div>
           ${sideHtml}
         </aside>
       </div>

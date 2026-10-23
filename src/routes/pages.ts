@@ -8,20 +8,33 @@ const pages = new Hono<{ Bindings: Env }>();
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
-      <p class="eyebrow">Coffee &amp; Code account</p>
-      <h1 id="auth-title">Sign in with AT Protocol</h1>
-      <p class="auth-page__intro">Use your Bluesky, Blacksky, Eurosky or other AT Protocol account to sign in. We will redirect you to your PDS (the server where your account is stored).</p>
-      <p class="auth-page__resolution">To locate your account provider, the handle you enter is sent to Coffee &amp; Code's PDS resolver before you are redirected.</p>
-      <form class="auth-form" data-auth-form>
-        <label for="auth-handle">Handle or DID</label>
-        <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.example" required>
-        <button type="submit" class="login-button">Continue with AT Protocol</button>
-      </form>
+      <p class="eyebrow">Welcome back</p>
+      <h1 id="auth-title">Log in to Coffee &amp; Code</h1>
+      <p class="auth-page__intro">Choose your Coffee &amp; Code account or continue with an existing Bluesky account.</p>
+      <div class="auth-options" data-auth-options>
+        <section class="auth-option auth-option--coffee" aria-labelledby="coffee-account-title">
+          <p class="auth-option__label">Hosted by Coffee &amp; Code</p>
+          <h2 id="coffee-account-title">Coffee &amp; Code account</h2>
+          <p>Log in or create an account on our Data Server server. Your password and invite code are shared with the data server, but not shared with this site. </p>
+          <button type="button" class="login-button auth-option__button" data-coffee-account>Continue with Coffee &amp; Code</button>
+        </section>
+        <section class="auth-option" aria-labelledby="existing-account-title">
+          <p class="auth-option__label">Already have an account?</p>
+          <h2 id="existing-account-title">Existing Bluesky account</h2>
+          <p>Use Bluesky or another AT Protocol account you already have.</p>
+          <form class="auth-form" data-auth-form>
+            <label for="auth-handle">Handle or DID</label>
+            <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
+            <button type="submit" class="login-button auth-option__button">Continue with existing account</button>
+          </form>
+          <p class="auth-page__resolution">Your handle is sent to Coffee &amp; Code's resolver to find your account provider. You’ll enter your password on that provider’s site.</p>
+        </section>
+      </div>
       <div class="auth-account" data-auth-account hidden>
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Coffee &amp; Code asks permission to create and remove your like and dislike records, create view records and story recommendations, and create comments and replies in your repository (account). You will be redirected to your account provider's site.</p>
+      <p class="auth-page__permissions">Your account provider will show the permissions Coffee &amp; Code requests. Public likes, dislikes, views, comments, and replies are saved to your AT Protocol account. <a href="/privacy">Read our privacy policy</a>.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;
@@ -29,25 +42,41 @@ pages.get('/auth', (c) => {
   return c.html(renderLayout(c, 'Log in', body));
 });
 
+pages.get('/account', (c) => {
+  const body = `
+    <section class="auth-page account-page" aria-labelledby="account-title" data-account-page>
+      <p class="eyebrow">Your profile</p>
+      <h1 id="account-title">Your account</h1>
+      <div class="auth-account" data-auth-account hidden>
+        <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p class="account-page__did" data-profile-did></p></div></div>
+        <button type="button" class="auth-signout" data-auth-signout>Log out</button>
+      </div>
+      <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth">Log in</a></div>
+    </section>
+  `;
+
+  return c.html(renderLayout(c, 'Your account', body));
+});
+
 pages.get('/become-an-author', (c) => {
   const body = `
     <section class="author-invitation" aria-labelledby="author-invitation-title">
       <p class="eyebrow">Write for Coffee &amp; Code</p>
       <h1 id="author-invitation-title">Become an author</h1>
-      <p class="author-invitation__intro">Coffee &amp; Code is an independent publication built on the AT Protocol. To contribute, create your own publication with Leaflet and send me its publication URI.</p>
+      <p class="author-invitation__intro">Have something you’d like to publish? DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with your document and a link to the publication. I’ll review it, and if it’s a good fit for Coffee &amp; Code, I’ll link to your publication.</p>
       <ol class="author-invitation__steps">
         <li>
           <h2>Create your publication</h2>
-          <p>Sign in to <a href="https://leaflet.pub/" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a Standard.site publication on your account. This keeps your stories published under your account and attributed to you.</p>
+          <p>Sign in to <a href="https://leaflet.pub/" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a publication on your account. This keeps your stories published under your account and attributed to you.</p>
         </li>
         <li>
-          <h2>Set the publication URL</h2>
-          <p>Set the publication's URL or domain to the site you want to be its main home. If you are using this publication just for Coffee &amp; Code, set it to <code>coffeencode.cc</code> (or <code>https://coffeencode.cc</code> if a full URL is required). You can update this setting with a tool like <a href="https://pdsls.dev" target="_blank" rel="noopener noreferrer">PDSls</a>; you do not need to set up a custom domain.</p>
-          <p>Coffee &amp; Code connects to your publication using its AT Protocol URI, not this website URL. So if you also want the publication to represent your own site or power another Standard.site frontend, set the URL to that site's main address instead. After you send me the publication URI and I add it, Coffee &amp; Code can still show stories published to it at <code>coffeencode.cc/\${rkey}</code>.</p>
+          <h2>Send me your post</h2>
+          <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with a link to the post you want to publish. I’ll review it and let you know if it’s a good fit for Coffee &amp; Code.</p>
         </li>
         <li>
-          <h2>Send me the publication URI</h2>
-          <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with the publication's AT Protocol URI. This is not the website URL above. It starts with <code>at://</code> and looks like:</p>
+          <h2>Send me your work</h2>
+          <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with the document you want to publish and a link to the publication. I’ll review it, and if I like it, I’ll link your publication on Coffee &amp; Code.</p>
+          <p>If you are using Leaflet, you can also include the publication’s AT Protocol URI. It starts with <code>at://</code> and looks like:</p>
           <code>at://your-did/site.standard.publication/your-record-key</code>
         </li>
         <li>
@@ -59,7 +88,7 @@ pages.get('/become-an-author', (c) => {
   `;
 
   const metaTags = `
-    <meta name="description" content="How to write for Coffee &amp; Code: create a Leaflet publication and DM its AT Protocol URI.">
+    <meta name="description" content="Submit your work to Coffee &amp; Code by DMing your document and publication link for review.">
   `;
   return c.html(renderLayout(c, 'Become an Author', body, metaTags));
 });
@@ -165,7 +194,7 @@ pages.get('/author/:handle', async (c) => {
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
           <h3><a href="${post.path}">${escapeHtml(post.title || 'Untitled')}</a></h3>
           ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
-            <span class="view-counter" data-view-counter data-path="${post.path}" data-update-db="false">Loading views...</span>
+            <span class="view-counter" data-at-uri="${escapeHtml(post.uri)}">Loading views...</span>
         </div>
         <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </article>`)
@@ -228,7 +257,7 @@ pages.get('/archive', async (c) => {
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             ${excerpt(post) ? `<p>${excerpt(post)}</p>` : ''}
-            <span class="view-counter" data-view-counter data-path="${post.path}" data-update-db="false">Loading views...</span>
+            <span class="view-counter" data-at-uri="${escapeHtml(post.uri)}">Loading views...</span>
           </div>
           <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </article>`
@@ -287,7 +316,39 @@ pages.get('/archive', async (c) => {
 });
 
 pages.get('/privacy', (c) => {
-  const body = '<article class="max-w-2xl mx-auto py-8"><h1 class="text-3xl font-bold text-white mb-4">Privacy</h1><p class="text-gray-300 leading-relaxed mb-4">Coffee &amp; Code does not sell personal information. This site reads publicly available publication records from AT Protocol to display its stories.</p><p class="text-gray-300 leading-relaxed">We use Umami Analytics, provided by Umami Cloud, to understand how visitors use this site and improve it. Umami may process privacy-focused, aggregated usage information such as page views, referring pages, device and browser details, and approximate location. We do not use this analytics data to identify you or sell it to third parties. The Umami service is loaded when you visit pages on this site.</p></article>';
+  const body = `
+    <article class="privacy-page" aria-labelledby="privacy-title">
+      <p class="eyebrow">Your information</p>
+      <h1 id="privacy-title">Privacy policy</h1>
+      <p class="privacy-page__updated">Last updated October 23, 2026</p>
+      <p>Coffee &amp; Code is a publication operated by MBD Company. This policy describes information handled when you visit <a href="https://coffeencode.cc">coffeencode.cc</a>, sign in, or interact with stories.</p>
+
+      <h2>Information the site uses</h2>
+      <ul>
+        <li><strong>Public AT Protocol information.</strong> The site reads public publication, story, author, and profile records to display content. It also asks public AT Protocol services to resolve identities and retrieve profile information.</li>
+        <li><strong>Account sign-in.</strong> Sign-in is handled by your chosen Personal Data Server (PDS). Coffee &amp; Code receives your account identifier (DID) and the authorization needed for features you approve. The site does not ask for or receive your PDS password. OAuth session data is kept in your browser so you can stay signed in.</li>
+        <li><strong>Interactions.</strong> If you approve and use these features, the site writes likes, dislikes, views, recommendations, comments, replies, and comment likes to your AT Protocol repository. These records are public and may be copied or indexed by other network services. Removing a record from your repository may not remove copies already made elsewhere.</li>
+        <li><strong>Technical and usage information.</strong> Cloudflare provides hosting and security for the site and may process request and device information, such as IP address, browser details, and requested URLs. Umami Cloud analytics is used to understand page usage, including page views, referrers, device/browser information, and approximate location. The site also loads search, font, and icon resources from third-party services, which receive the usual connection information when your browser requests them.</li>
+      </ul>
+
+      <h2>Services involved</h2>
+      <p>Depending on the page or feature, requests may go to your PDS, the Coffee &amp; Code PDS resolver, the AT Protocol PLC directory, Bluesky’s public profile service, Constellation for public interaction counts, Cloudflare, Umami Cloud, Google Fonts, or Font Awesome. These services process requests under their own privacy practices.</p>
+
+      <h2>How information is used</h2>
+      <p>Information is used to display the publication, authenticate your account, save interactions you request, retrieve public counts and profiles, protect and operate the service, and understand general site usage. Coffee &amp; Code does not sell personal information.</p>
+
+      <h2>Choices and account controls</h2>
+      <p>You can use the publication without signing in. You can sign out from the account page and manage or remove records through tools supported by your PDS. Your PDS controls your credentials and repository. Because AT Protocol is a distributed network, Coffee &amp; Code cannot remove copies held by other services.</p>
+
+      <h2>Retention</h2>
+      <p>OAuth session information remains in your browser until you sign out or the session expires. Public AT Protocol records remain in your repository until you or your PDS remove them. Hosting logs and analytics are retained according to the settings and policies of the providers that operate those services.</p>
+
+      <h2>Contact</h2>
+      <p>For privacy questions, contact the Coffee &amp; Code operator through <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Coffee &amp; Code on Bluesky</a>.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>This policy may be updated as the site changes. The date above shows when it was most recently revised.</p>
+    </article>`;
 
   const pageUrl = new URL(c.req.url).toString();
   const escapeHtml = (str: string) => str
@@ -308,7 +369,7 @@ pages.get('/privacy', (c) => {
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
 
-  return c.html(renderLayout(c, 'Privacy', body, metaTags));
+  return c.html(renderLayout(c, 'Privacy policy', body, metaTags));
 });
 
 export default pages;

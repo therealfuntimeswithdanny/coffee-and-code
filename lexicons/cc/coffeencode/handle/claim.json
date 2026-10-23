@@ -1,0 +1,20 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.handle.claim",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A one-time proof that an account owner requested a Coffee & Code handle.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["handle", "nonce", "createdAt"],
+        "properties": {
+          "handle": { "type": "string", "maxLength": 253 },
+          "nonce": { "type": "string", "minLength": 64, "maxLength": 64 },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

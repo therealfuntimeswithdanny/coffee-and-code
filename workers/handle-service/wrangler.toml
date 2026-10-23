@@ -1,0 +1,19 @@
+name = "coffeencode-handle-service"
+main = "worker.js"
+compatibility_date = "2026-10-23"
+
+[[kv_namespaces]]
+binding = "HANDLES"
+id = "REPLACE_WITH_COFFEECODE_HANDLES_KV_NAMESPACE_ID"
+
+[vars]
+ACCOUNT_PDS = "https://account.coffeencode.cc"
+ALLOWED_ORIGIN = "https://coffeencode.cc"
+
+[[routes]]
+pattern = "*.coffeencode.cc/.well-known/atproto-did"
+zone_name = "coffeencode.cc"
+
+[[routes]]
+pattern = "handles.coffeencode.cc/*"
+zone_name = "coffeencode.cc"

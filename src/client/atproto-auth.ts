@@ -4,7 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawClientMetadata from '../../media/oauth-client-metadata-v2.json';
+import rawClientMetadata from '../../media/oauth-client-metadata-v3.json';
 
 // The same file is published as a Cloudflare static asset at the client_id URL.
 // Embedding it here avoids a second metadata fetch in the browser and prevents
@@ -39,10 +39,18 @@ function errorMessage(error: unknown) {
 }
 
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
+const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
+const coffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-coffee-account]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
+const headerAccount = document.querySelector<HTMLAnchorElement>('[data-account-link]');
+const headerAccountAvatar = document.querySelector<HTMLImageElement>('[data-account-avatar]');
+const headerAccountPlaceholder = document.querySelector<HTMLElement>('[data-account-placeholder]');
+const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobile-account-link]');
+const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
+const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
 
 declare global {
   interface Window {
@@ -67,21 +75,76 @@ function clearAuthError() {
 }
 
 function renderAccount() {
+  const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
+  const displayName = session?.sub || '';
+  loginLinks.forEach((link) => { link.hidden = Boolean(session); });
+  if (headerAccount) {
+    headerAccount.hidden = !session;
+    headerAccount.setAttribute('aria-label', session ? `Account for ${displayName}` : 'Your account');
+    headerAccount.title = session ? `Account for ${displayName}` : 'Your account';
+  }
+  if (mobileAccountLink) {
+    mobileAccountLink.hidden = !session;
+    mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
+  }
+
   if (session) {
-    if (authForm) authForm.hidden = true;
+    if (authOptions) authOptions.hidden = true;
     if (authAccount) authAccount.hidden = false;
     if (authName) authName.textContent = session.sub;
   } else {
-    if (authForm) authForm.hidden = false;
+    if (authOptions) authOptions.hidden = false;
     if (authAccount) authAccount.hidden = true;
     if (authName) authName.textContent = '';
   }
 
-  document.querySelectorAll<HTMLAnchorElement>('.login-button').forEach((link) => {
-    if (!session) return;
-    link.textContent = 'Account';
-    link.setAttribute('aria-label', `Signed in as ${session.sub}`);
-  });
+  if (accountPage) {
+    if (signedOutAccount) signedOutAccount.hidden = Boolean(session);
+    if (session) {
+    const did = session.did;
+    const profileName = accountPage.querySelector<HTMLElement>('[data-profile-name]');
+    const profileHandle = accountPage.querySelector<HTMLElement>('[data-profile-handle]');
+    const profileDid = accountPage.querySelector<HTMLElement>('[data-profile-did]');
+    const profileAvatar = accountPage.querySelector<HTMLImageElement>('[data-profile-avatar]');
+    const profilePlaceholder = accountPage.querySelector<HTMLElement>('[data-profile-placeholder]');
+    if (profileDid) profileDid.textContent = did;
+    fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
+      .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
+        if (session?.did !== did) return;
+        if (profileName) profileName.textContent = profile.displayName || profile.handle || did;
+        if (profileHandle) profileHandle.textContent = profile.handle ? `@${profile.handle}` : '';
+        if (profileAvatar && profile.avatar) {
+          profileAvatar.src = profile.avatar;
+          profileAvatar.alt = `${profile.displayName || profile.handle || did}'s profile picture`;
+          profileAvatar.hidden = false;
+          if (profilePlaceholder) profilePlaceholder.hidden = true;
+        }
+      })
+      .catch(() => { if (profileName) profileName.textContent = session?.sub || did; });
+    }
+  }
+
+  if (!session) {
+    if (headerAccountAvatar) { headerAccountAvatar.hidden = true; headerAccountAvatar.removeAttribute('src'); }
+    if (headerAccountPlaceholder) headerAccountPlaceholder.hidden = false;
+    return;
+  }
+
+  const did = session.did;
+  fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
+    .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
+    .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
+      if (session?.did !== did) return;
+      const avatar = profile.avatar;
+      if (headerAccountAvatar && avatar) {
+        headerAccountAvatar.src = avatar;
+        headerAccountAvatar.alt = `${profile.displayName || profile.handle || did}'s profile picture`;
+        headerAccountAvatar.hidden = false;
+        if (headerAccountPlaceholder) headerAccountPlaceholder.hidden = true;
+      }
+    })
+    .catch(() => {});
 }
 
 try {
@@ -126,6 +189,25 @@ const oauthReady = (async () => {
     window.location.replace(safeReturnPath(callbackState));
   }
 })();
+
+coffeeAccountButton?.addEventListener('click', async () => {
+  clearAuthError();
+  if (!client) {
+    showAuthError(`Sign-in could not initialize: ${errorMessage(initializationError)}`);
+    return;
+  }
+  coffeeAccountButton.disabled = true;
+  coffeeAccountButton.textContent = 'Connecting…';
+  try {
+    await oauthReady;
+    const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
+    await client.signInRedirect('https://account.coffeencode.cc', { state: returnPath });
+  } catch (error) {
+    showAuthError(errorMessage(error));
+    coffeeAccountButton.disabled = false;
+    coffeeAccountButton.textContent = 'Continue with Coffee & Code';
+  }
+});
 
 window.coffeeAndCodeAuth = {
   getDid: async () => {
@@ -185,7 +267,7 @@ if (authForm) {
       showAuthError(errorMessage(error));
       if (submit) {
         submit.disabled = false;
-        submit.textContent = 'Continue with AT Protocol';
+        submit.textContent = 'Continue with existing account';
       }
     }
   });

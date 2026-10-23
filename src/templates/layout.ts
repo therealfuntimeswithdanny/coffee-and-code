@@ -158,7 +158,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     @media (max-width: 520px) { .recommendations__grid { grid-template-columns: 1fr; }.recommendation-card { display: grid; gap: 14px; grid-template-columns: 112px minmax(0, 1fr); padding: 14px 0; }.recommendation-card__image { aspect-ratio: 1; }.recommendation-card__body { padding: 0; }.recommendation-card h3 { font-size: 17px; }.recommendation-card__body > p:not(.eyebrow) { display: none; }.article__back { margin-bottom: 24px; }.prose p, .prose li, .prose-paragraph { font-size: 18px; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
     /* Finishing pass: keep the coffee palette, sharpen the publication hierarchy. */
-    body { background: radial-gradient(ellipse at 50% -18rem, #443126 0, var(--paper) 46rem); }
+    body { background: var(--paper); }
     .site-header { border-top: 3px solid var(--accent); box-shadow: 0 1px 0 rgba(255,255,255,.025); }
     .header-inner { min-height: 96px; }
     .site-brand { align-items: center; display: flex; flex-direction: column; font-size: clamp(1.8rem, 3vw, 2.45rem); line-height: 1; }
@@ -171,6 +171,22 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .section-heading span:first-child { color: var(--ink); }
     .front-page__grid { padding-top: 34px; }
     .lead-image { aspect-ratio: 1.82 / 1; }
+    @media (max-width: 760px) {
+      .page-content { padding-top: 24px; }
+      .front-page__grid { gap: 26px; padding-top: 22px; }
+      .lead-image { aspect-ratio: 1.28 / 1; max-height: 58vh; }
+      .lead-story { min-width: 0; padding-bottom: 22px; }
+      .lead-story__content { padding: 18px 2px 0; }
+      .lead-story h2 { font-size: clamp(2rem, 9vw, 3rem); line-height: 1.04; overflow-wrap: anywhere; }
+      .lead-story__summary { font-size: 17px; line-height: 1.48; margin: 11px 0 14px; }
+      .story-footer { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .story-footer .article-meta { align-items: flex-start; flex-direction: column; gap: 4px; }
+      .story-footer .read-link { align-self: flex-start; }
+    }
+    @media (max-width: 420px) {
+      .lead-image { aspect-ratio: 1.08 / 1; }
+      .lead-story h2 { font-size: clamp(1.9rem, 9vw, 2.5rem); }
+    }
     .lead-story { padding-bottom: 30px; }
     .lead-story__content { padding-top: 24px; }
     .lead-story .eyebrow { align-items: center; display: flex; gap: 10px; }
@@ -227,22 +243,47 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .reaction-button:disabled { cursor: wait; opacity: .65; }
     .reaction-count { color: var(--accent); font-variant-numeric: tabular-nums; }
     .article-reactions__status { color: var(--muted); flex-basis: 100%; font-size: 12px; min-height: 18px; }
-    .auth-page { margin: 24px auto 60px; max-width: 620px; }
-    .auth-page h1 { font-size: clamp(2.4rem, 6vw, 3.7rem); margin: 0; }
+    .auth-page { margin: 24px auto 60px; max-width: 760px; }
+    .auth-page h1, .privacy-page h1 { font-size: clamp(2.2rem, 6vw, 3.5rem); margin: 0; }
     .auth-page__intro { color: #eee9dc; font-size: 18px; line-height: 1.6; margin: 16px 0 28px; }
-    .auth-form { background: var(--paper-deep); border: 1px solid var(--line); display: grid; gap: 10px; padding: 22px; }
+    .auth-options { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .auth-option { background: var(--paper-deep); border: 1px solid var(--line); display: flex; flex-direction: column; padding: 24px; }
+    .auth-option--coffee { border-color: var(--accent); }
+    .auth-option__label { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .12em; margin: 0 0 10px; text-transform: uppercase; }
+    .auth-option h2 { font-family: 'Lora', Georgia, serif; font-size: 23px; margin: 0 0 8px; }
+    .auth-option > p:not(.auth-option__label) { color: #d2cbb9; font-size: 15px; line-height: 1.55; margin: 0 0 16px; }
+    .auth-option__button { cursor: pointer; font-family: inherit; justify-self: start; margin-top: auto; width: 100%; }
+    .auth-form { display: grid; gap: 10px; margin-top: auto; }
     .auth-form label { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
     .auth-form input { background: var(--paper); border: 1px solid var(--line); color: var(--ink); font: 17px 'Source Sans 3', sans-serif; min-height: 48px; padding: 10px 12px; width: 100%; }
-    .auth-form .login-button { cursor: pointer; font-family: inherit; justify-self: start; margin-top: 6px; }
+    .auth-page__resolution { color: var(--muted); font-size: 12px !important; margin: 12px 0 0 !important; }
     .auth-page__permissions { color: var(--muted); font-size: 14px; line-height: 1.6; margin-top: 20px; }
     .auth-account { background: var(--paper-deep); border: 1px solid var(--line); margin-top: 24px; padding: 20px; }
     .auth-account__status { color: var(--muted); margin: 0 0 14px; }.auth-account__status strong { color: var(--ink); }
     .auth-signout { background: transparent; border: 1px solid var(--line-strong); color: var(--ink); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; padding: 9px 14px; }
     .auth-page__error { color: #f2a18d; margin-top: 14px; }
+    .header-account { align-items: center; border-radius: 50%; display: none; height: 40px; justify-content: center; overflow: hidden; width: 40px; }
+    .header-account[hidden] { display: none; }
+    .header-account:not([hidden]) { display: inline-flex; }
+    .header-account img { border-radius: 50%; height: 100%; object-fit: cover; width: 100%; }
+    .header-account__placeholder { align-items: center; background: var(--paper-deep); border: 1px solid var(--line-strong); border-radius: 50%; color: var(--accent); display: inline-flex; font-size: 17px; height: 40px; justify-content: center; width: 40px; }
+    .header-account__placeholder[hidden], .account-page__profile img[hidden], .account-page__profile > span[hidden] { display: none; }
+    .account-page__profile { align-items: center; display: flex; gap: 18px; margin-bottom: 24px; min-width: 0; }
+    .account-page__profile img, .account-page__profile > span { background: var(--paper); border-radius: 50%; flex: 0 0 80px; height: 80px; object-fit: cover; width: 80px; }
+    .account-page__profile > span { align-items: center; color: var(--accent); display: inline-flex; font-size: 28px; justify-content: center; }
+    .account-page__profile h2 { font-size: 25px; margin: 0; overflow-wrap: anywhere; }
+    .account-page__profile p { color: var(--muted); margin: 3px 0 0; overflow-wrap: anywhere; }
+    .account-page__did { font-size: 12px; }
+    .privacy-page { line-height: 1.7; margin: 18px auto 64px; max-width: 760px; }
+    .privacy-page > p, .privacy-page li { color: #e0d8c7; }
+    .privacy-page h2 { font-family: 'Lora', Georgia, serif; font-size: 24px; margin: 34px 0 8px; }
+    .privacy-page ul { padding-left: 22px; }
+    .privacy-page li { margin: 10px 0; }
+    .privacy-page__updated { color: var(--muted) !important; font-size: 14px; margin: 6px 0 24px; }
     .site-footer { border-top-width: 1px; padding-top: 48px; }
     .footer-tagline { color: #d2cbb9; }
     .footer-social a { background: rgba(178,172,136,.1); border: 1px solid var(--line); border-radius: 50%; display: inline-grid; height: 38px; place-items: center; width: 38px; }
-    @media (max-width: 760px) { .header-inner { grid-template-columns: auto minmax(0,1fr) auto; min-height: 76px; }.hamburger-button { grid-column: 1; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 2; grid-row: 1; justify-self: center; }.header-links { grid-column: 3; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; } }
+    @media (max-width: 760px) { .header-inner { grid-template-columns: auto minmax(0,1fr) auto; min-height: 76px; }.hamburger-button { grid-column: 1; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 2; grid-row: 1; justify-self: center; }.header-links { grid-column: 3; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; }.auth-options { grid-template-columns: 1fr; }.auth-option { padding: 20px; }.privacy-page h2 { font-size: 21px; } }
     .section-heading { border-top-color: var(--line); }
     .recent-stories { border-top-color: var(--line); }
     @media (max-width: 760px) {
@@ -315,7 +356,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   </style>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/authors">Authors</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles">Search</button><a class="rss-link" href="/rss.xml">RSS</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button">Log in</a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button">Log in</a></nav></header>
+  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/authors">Authors</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles">Search</button><a class="rss-link" href="/rss.xml">RSS</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
@@ -357,6 +398,16 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     } else {
     loadViewCounters(lazyViewCounters);
     }
+
+    // Author and archive cards use the same AT Protocol view records as post pages.
+    document.querySelectorAll('[data-at-uri]').forEach((element) => {
+      const subject = element.dataset.atUri;
+      if (!subject) return;
+      fetch('/api/reactions?subject=' + encodeURIComponent(subject), { cache: 'no-store' })
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error('View count request failed')))
+        .then((counts) => { element.textContent = Number(counts.views || 0).toLocaleString() + ' views'; })
+        .catch(() => { element.textContent = 'Views unavailable'; });
+    });
 
     // Public reaction totals are indexed by Constellation.
     document.querySelectorAll('[data-reaction-subject]').forEach((container) => {

@@ -3,26 +3,20 @@ import { Env } from '../types';
 
 const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
-const constellationDistinctCountEndpoint = 'https://constellation.microcosm.blue/links/count/distinct-dids';
 const constellationBacklinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
 
 async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend') {
   const source = collection === 'recommend'
     ? 'site.standard.graph.recommend'
     : `cc.coffeencode.interact.${collection}`;
-  const url = new URL(collection === 'like' || collection === 'dislike'
-    ? constellationDistinctCountEndpoint
-    : constellationEndpoint);
+  const url = new URL(constellationEndpoint);
   if (collection === 'like' || collection === 'dislike') {
-    // Count distinct authors, not raw records. Old clients or retries may leave
-    // more than one reaction record for the same author and post.
-    url.searchParams.set('target', subject);
-    url.searchParams.set('collection', source);
-    url.searchParams.set('path', '.document');
-  } else {
-    url.searchParams.set('subject', subject);
-    url.searchParams.set('source', `${source}:document`);
+    // The app permits one reaction per DID and post. Count matching records
+    // using the current XRPC endpoint so counts and per-user state use the
+    // same collection:path index.
   }
+  url.searchParams.set('subject', subject);
+  url.searchParams.set('source', `${source}:document`);
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',

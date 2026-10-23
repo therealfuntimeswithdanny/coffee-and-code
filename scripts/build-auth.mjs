@@ -2,9 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-const metadataPath = new URL('../media/oauth-client-metadata-v2.json', import.meta.url);
+const metadataPath = new URL('../media/oauth-client-metadata-v3.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
-const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata-v2.json';
+const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata-v3.json';
 const expectedRedirectUri = 'https://coffeencode.cc/auth';
 
 function assert(condition, message) {
@@ -41,6 +41,7 @@ for (const scope of [
   'repo:site.standard.graph.recommend?action=create',
   'repo:cc.coffeencode.comment?action=create',
   'repo:cc.coffeencode.comment.like?action=create&action=delete',
+  'repo:cc.coffeencode.handle.claim?action=create',
 ]) {
   assert(requestedScopes.has(scope), `required permission scope is missing: ${scope}`);
 }

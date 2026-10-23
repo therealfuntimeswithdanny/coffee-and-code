@@ -1,0 +1,21 @@
+{
+  "client_id": "https://coffeencode.cc/oauth-client-metadata-v3.json",
+  "client_name": "Coffee and Code",
+  "client_uri": "https://coffeencode.cc",
+  "logo_uri": "https://coffeencode.cc/favicon.png",
+  "policy_uri": "https://coffeencode.cc/privacy",
+  "redirect_uris": [
+    "https://coffeencode.cc/auth"
+  ],
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "scope": "atproto repo:cc.coffeencode.interact.like?action=create&action=delete repo:cc.coffeencode.interact.dislike?action=create&action=delete repo:cc.coffeencode.interact.view?action=create repo:site.standard.graph.recommend?action=create repo:cc.coffeencode.comment?action=create repo:cc.coffeencode.comment.like?action=create&action=delete repo:cc.coffeencode.handle.claim?action=create",
+  "token_endpoint_auth_method": "none",
+  "application_type": "web",
+  "dpop_bound_access_tokens": true
+}
