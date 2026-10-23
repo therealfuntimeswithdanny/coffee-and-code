@@ -4,7 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawClientMetadata from '../../media/oauth-client-metadata-v5.json';
+import rawClientMetadata from '../../media/oauth-client-metadata-v6.json';
 
 // The same file is published as a Cloudflare static asset at the client_id URL.
 // Embedding it here avoids a second metadata fetch in the browser and prevents
@@ -632,7 +632,7 @@ async function repoRequest(path: string, body?: unknown) {
   if (response.ok) return response;
   const payload = await response.clone().json().catch(() => null) as { error?: string; message?: string } | null;
   if (response.status === 401 || response.status === 403) {
-    throw new Error('Your account has not granted this permission yet. Log out and sign in again to approve the updated permissions.');
+    throw new Error('Your account has not granted the author profile permission needed to save pinned posts. Sign out, then sign in again and approve the updated permissions.');
   }
   const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
   throw new Error(detail || `AT Protocol request failed (${response.status}).`);
