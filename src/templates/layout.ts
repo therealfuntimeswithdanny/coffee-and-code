@@ -253,6 +253,11 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .auth-option h2 { font-family: 'Lora', Georgia, serif; font-size: 23px; margin: 0 0 8px; }
     .auth-option > p:not(.auth-option__label) { color: #d2cbb9; font-size: 15px; line-height: 1.55; margin: 0 0 16px; }
     .auth-option__button { cursor: pointer; font-family: inherit; justify-self: start; margin-top: auto; width: 100%; }
+    .auth-create-button { background: transparent; border: 1px solid var(--line-strong); color: var(--ink); cursor: pointer; font: 600 14px 'Source Sans 3', sans-serif; margin-top: 10px; min-height: 44px; padding: 9px 14px; width: 100%; }
+    .auth-create-button:hover, .auth-create-button:focus-visible { border-color: var(--accent); }
+    .auth-invite { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .auth-invite[hidden] { display: none; }
+    .auth-invite code { background: var(--paper-deep); border: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; padding: 8px 10px; user-select: all; }
     .auth-form { display: grid; gap: 10px; margin-top: auto; }
     .auth-form label { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
     .auth-form input { background: var(--paper); border: 1px solid var(--line); color: var(--ink); font: 17px 'Source Sans 3', sans-serif; min-height: 48px; padding: 10px 12px; width: 100%; }

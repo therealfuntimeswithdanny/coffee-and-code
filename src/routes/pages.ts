@@ -5,6 +5,23 @@ import { renderLayout, browserRenderOgImage } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
 
+pages.get('/api/invite-code', async (c) => {
+  try {
+    const response = await fetch('https://invite-code.coffeencode.cc/', {
+      headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc)' },
+    });
+    if (!response.ok) throw new Error(`Invite service returned ${response.status}`);
+    const payload = await response.json() as { code?: unknown };
+    if (typeof payload.code !== 'string' || !/^[a-zA-Z0-9-]{8,128}$/.test(payload.code)) {
+      throw new Error('Invite service returned an invalid code');
+    }
+    return c.json({ code: payload.code }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    console.error('Could not retrieve a signup invite code:', error);
+    return c.json({ error: 'A signup invite code is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+});
+
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
@@ -15,8 +32,11 @@ pages.get('/auth', (c) => {
         <section class="auth-option auth-option--coffee" aria-labelledby="coffee-account-title">
           <p class="auth-option__label">Hosted by Coffee &amp; Code</p>
           <h2 id="coffee-account-title">Coffee &amp; Code account</h2>
-          <p>Log in or create an account on our Data Server server. Your password and invite code are shared with the data server, but not shared with this site. </p>
+          <p>Log in to your Coffee &amp; Code account, or start creating one on our account server. Your password stays on the account server.</p>
           <button type="button" class="login-button auth-option__button" data-coffee-account>Continue with Coffee &amp; Code</button>
+          <button type="button" class="auth-create-button" data-create-coffee-account>Create a Coffee &amp; Code account</button>
+          <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
+          <div class="auth-invite" data-invite-panel hidden><code data-invite-code></code><button type="button" class="auth-signout" data-copy-invite>Copy invite code</button></div>
         </section>
         <section class="auth-option" aria-labelledby="existing-account-title">
           <p class="auth-option__label">Already have an account?</p>

@@ -44,6 +44,11 @@ const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const coffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-coffee-account]');
+const createCoffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-create-coffee-account]');
+const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
+const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
+const inviteCodeElement = document.querySelector<HTMLElement>('[data-invite-code]');
+const copyInviteButton = document.querySelector<HTMLButtonElement>('[data-copy-invite]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
 const headerAccount = document.querySelector<HTMLAnchorElement>('[data-account-link]');
 const headerAccountAvatar = document.querySelector<HTMLImageElement>('[data-account-avatar]');
@@ -51,6 +56,7 @@ const headerAccountPlaceholder = document.querySelector<HTMLElement>('[data-acco
 const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobile-account-link]');
 const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
 const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
+let signupInviteCode: string | undefined;
 
 declare global {
   interface Window {
@@ -206,6 +212,66 @@ coffeeAccountButton?.addEventListener('click', async () => {
     showAuthError(errorMessage(error));
     coffeeAccountButton.disabled = false;
     coffeeAccountButton.textContent = 'Continue with Coffee & Code';
+  }
+});
+
+createCoffeeAccountButton?.addEventListener('click', async () => {
+  clearAuthError();
+  if (!client) {
+    showAuthError(`Sign-in could not initialize: ${errorMessage(initializationError)}`);
+    return;
+  }
+
+  if (!signupInviteCode) {
+    createCoffeeAccountButton.disabled = true;
+    createCoffeeAccountButton.textContent = 'Getting an invite code…';
+    try {
+      const response = await fetch('/api/invite-code', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Could not get a signup invite code. Please try again shortly.');
+      const result = await response.json() as { code?: unknown };
+      if (typeof result.code !== 'string' || !result.code) throw new Error('Invite service returned an invalid code.');
+      signupInviteCode = result.code;
+      if (inviteCodeElement) inviteCodeElement.textContent = signupInviteCode;
+      if (invitePanel) invitePanel.hidden = false;
+      if (inviteStatus) inviteStatus.textContent = 'Copy this invite code. The Coffee & Code account page will ask you to paste it during sign-up.';
+      createCoffeeAccountButton.textContent = 'Continue to account creation';
+      createCoffeeAccountButton.disabled = false;
+      return;
+    } catch (error) {
+      showAuthError(errorMessage(error));
+      createCoffeeAccountButton.textContent = 'Create a Coffee & Code account';
+      createCoffeeAccountButton.disabled = false;
+      return;
+    }
+  }
+
+  createCoffeeAccountButton.disabled = true;
+  createCoffeeAccountButton.textContent = 'Connecting…';
+  try {
+    await oauthReady;
+    const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
+    await client.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create' });
+  } catch (error) {
+    showAuthError(errorMessage(error));
+    createCoffeeAccountButton.disabled = false;
+    createCoffeeAccountButton.textContent = 'Continue to account creation';
+  }
+});
+
+copyInviteButton?.addEventListener('click', async () => {
+  if (!signupInviteCode) return;
+  try {
+    await navigator.clipboard.writeText(signupInviteCode);
+    copyInviteButton.textContent = 'Copied';
+  } catch {
+    const range = document.createRange();
+    if (inviteCodeElement) {
+      range.selectNodeContents(inviteCodeElement);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    copyInviteButton.textContent = 'Select and copy the code';
   }
 });
 
