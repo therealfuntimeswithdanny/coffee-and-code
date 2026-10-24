@@ -304,6 +304,12 @@ pages.get('/archive', async (c) => {
   // Filter posts based on search query
   const posts = query.trim() ? searchArticles(allPosts, query) : allPosts;
   const archiveBaseUrl = new URL(c.req.url).origin;
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
   const archiveItems = posts
     .map(
@@ -353,13 +359,6 @@ pages.get('/archive', async (c) => {
   `;
 
   const pageUrl = new URL(c.req.url).toString();
-  const escapeHtml = (str: string) => str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
   const metaTags = `
     <meta property="og:title" content="Coffee and Code.">
     <meta property="og:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
