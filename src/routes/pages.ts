@@ -141,8 +141,10 @@ pages.get('/become-an-author', (c) => {
 });
 
 function formatDate(date?: string) {
-  if (!date) return '';
-  return new Date(date).toLocaleDateString('en-US', {
+  if (typeof date !== 'string' || !date) return '';
+  const parsed = new Date(date);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  return parsed.toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
@@ -150,7 +152,7 @@ function formatDate(date?: string) {
 }
 
 function excerpt(post: StandardDocument) {
-  const text = post.description?.trim() || '';
+  const text = typeof post.description === 'string' ? post.description.trim() : '';
   if (!text) return '';
   return text.length > 150 ? `${text.substring(0, 150).trimEnd()}…` : text;
 }
