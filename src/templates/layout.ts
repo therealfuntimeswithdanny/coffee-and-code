@@ -77,6 +77,17 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .author-invitation { margin: 24px auto 60px; max-width: 760px; }.author-invitation h1 { font-size: clamp(2.5rem, 6vw, 4rem); margin: 0; }.author-invitation__intro { color: var(--muted); font-size: 20px; line-height: 1.55; margin: 18px 0 32px; }.author-invitation__steps { counter-reset: author-step; display: grid; gap: 22px; list-style: none; margin: 0; padding: 0; }.author-invitation__steps li { border-top: 1px solid var(--line); padding-top: 20px; }.author-invitation__steps h2 { font-size: 22px; margin: 0 0 8px; }.author-invitation__steps p { color: var(--muted); line-height: 1.6; margin: 0; }.author-invitation__steps a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }.author-invitation__steps code { background: var(--paper-deep); border: 1px solid var(--line); display: inline-block; margin-top: 4px; overflow-wrap: anywhere; padding: 8px 10px; }.authors-page__invitation { margin: 28px 0 0; }
     @media (max-width: 760px) { .writers-callout { align-items: flex-start; flex-direction: column; } }
     .archive-story { content-visibility: auto; contain-intrinsic-size: 0 360px; }
+    .archive-search { background: var(--paper-deep); border: 1px solid var(--line); margin-bottom: 28px; padding: 18px; }
+    .archive-search .search-form { display: grid; gap: 14px; }
+    .archive-search label { color: var(--muted); display: grid; font-size: 12px; font-weight: 700; gap: 6px; letter-spacing: .04em; text-transform: uppercase; }
+    .archive-search__query input, .archive-search select { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; padding: 9px 12px; width: 100%; }
+    .archive-search__filters { align-items: end; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
+    .archive-search .archive-search__image-filter { align-items: center; display: flex; flex-direction: row; gap: 8px; min-height: 44px; white-space: nowrap; }
+    .archive-search__image-filter input { accent-color: var(--accent); height: 18px; width: 18px; }
+    .archive-search__actions { align-items: center; display: flex; gap: 18px; }
+    .archive-search .search-button { background: var(--accent); border: 1px solid var(--accent); color: var(--paper); cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; letter-spacing: .06em; min-height: 42px; padding: 9px 16px; text-transform: uppercase; }
+    .archive-search .search-button:hover { background: transparent; color: var(--accent); }
+    @media (max-width: 760px) { .archive-search { margin-bottom: 20px; padding: 14px; }.archive-search__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }.archive-search .archive-search__image-filter { align-self: end; } }
     /* Editorial publication system */
     :root { color-scheme: dark; --ink: #ffffff; --paper: #281914; --paper-deep: #3b2a1d; --accent: #b2ac88; --muted: #b2ac88; --line: rgba(178,172,136,.42); --line-strong: #b2ac88; --page-width: 1180px; }
     body { background: var(--paper); color: var(--ink); font-size: 18px; }
@@ -242,6 +253,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .article-reactions__buttons { display: inline-flex; flex-wrap: wrap; gap: 6px; }
     .reaction-button { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); cursor: pointer; display: inline-flex; font: 600 13px 'Source Sans 3', sans-serif; gap: 6px; min-height: 32px; padding: 4px 8px; transition: background 160ms, border-color 160ms, color 160ms; }
     .reaction-button:hover, .reaction-button[aria-pressed="true"] { background: rgba(178,172,136,.16); border-color: var(--accent); color: var(--ink); }
+    .engagement-stat { cursor: default; }
     .reaction-button:disabled { cursor: wait; opacity: .65; }
     .reaction-count { color: var(--accent); font-variant-numeric: tabular-nums; }
     .article-reactions__status { color: var(--muted); flex-basis: 100%; font-size: 12px; min-height: 18px; }
@@ -438,7 +450,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     const viewCounterEndpoint = 'https://reads.coffeencode.cc/';
     const viewCounters = [...document.querySelectorAll('[data-view-counter][data-path]')];
     const renderViewCount = (element, views) => {
-      element.textContent = Number(views).toLocaleString() + ' views';
+      element.textContent = Number(views).toLocaleString();
     };
     const loadViewCounters = (elements) => {
       if (!elements.length) return;
@@ -477,8 +489,8 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       if (!subject) return;
       fetch('/api/reactions?subject=' + encodeURIComponent(subject), { cache: 'no-store' })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error('View count request failed')))
-        .then((counts) => { element.textContent = Number(counts.views || 0).toLocaleString() + ' views'; })
-        .catch(() => { element.textContent = 'Views unavailable'; });
+        .then((counts) => { element.textContent = Number(counts.views || 0).toLocaleString(); })
+        .catch(() => { element.textContent = '—'; });
     });
 
     // Public reaction totals are indexed by Constellation.
@@ -492,15 +504,17 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
             const count = container.querySelector('[data-reaction-count="' + kind + '"]');
             if (count) count.textContent = Number(counts[kind] || 0).toLocaleString();
           });
+          const saveCount = container.querySelector('[data-save-count]');
+          if (saveCount) saveCount.textContent = Number(counts.saves || 0).toLocaleString();
           const viewCount = container.querySelector('[data-at-view-count]');
-          if (viewCount) viewCount.textContent = Number(counts.views || 0).toLocaleString() + ' views';
+          if (viewCount) viewCount.textContent = Number(counts.views || 0).toLocaleString();
           const commentCount = container.querySelector('[data-at-comment-count]');
-          if (commentCount) commentCount.textContent = Number(counts.comments || 0).toLocaleString() + ' comments';
+          if (commentCount) commentCount.textContent = Number(counts.comments || 0).toLocaleString();
         })
         .catch(() => {
           container.querySelectorAll('[data-reaction-count]').forEach((count) => { count.textContent = '—'; });
           const viewCount = container.querySelector('[data-at-view-count]');
-          if (viewCount) viewCount.textContent = 'Views unavailable';
+          if (viewCount) viewCount.textContent = '—';
           const commentCount = container.querySelector('[data-at-comment-count]');
           if (commentCount) commentCount.textContent = 'Comments unavailable';
         });

@@ -5,10 +5,12 @@ const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
 const constellationBacklinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
 
-async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend') {
+async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend' | 'save') {
   const source = collection === 'recommend'
     ? 'site.standard.graph.recommend'
-    : `cc.coffeencode.interact.${collection}`;
+    : collection === 'save'
+      ? 'cc.coffeencode.save'
+      : `cc.coffeencode.interact.${collection}`;
   const url = new URL(constellationEndpoint);
   if (collection === 'like' || collection === 'dislike') {
     // The app permits one reaction per DID and post. Count matching records
@@ -16,7 +18,7 @@ async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 
     // same collection:path index.
   }
   url.searchParams.set('subject', subject);
-  url.searchParams.set('source', `${source}:document`);
+  url.searchParams.set('source', `${source}:${collection === 'save' ? 'target.document' : 'document'}`);
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
@@ -42,12 +44,14 @@ async function countComments(subject: string) {
   return Number.isFinite(total) && total >= 0 ? total : 0;
 }
 
-async function hasBacklink(subject: string, collection: 'like' | 'dislike' | 'recommend', did: string) {
+async function hasBacklink(subject: string, collection: 'like' | 'dislike' | 'recommend' | 'save', did: string) {
   const url = new URL(constellationBacklinksEndpoint);
   url.searchParams.set('subject', subject);
   url.searchParams.set('source', collection === 'recommend'
     ? 'site.standard.graph.recommend:document'
-    : `cc.coffeencode.interact.${collection}:document`);
+    : collection === 'save'
+      ? 'cc.coffeencode.save:target.document'
+      : `cc.coffeencode.interact.${collection}:document`);
   url.searchParams.set('did', did);
   url.searchParams.set('limit', '1');
   const response = await fetch(url, {
@@ -69,7 +73,7 @@ reactions.get('/', async (c) => {
   }
 
   try {
-    const [likes, dislikes, views, comments, liked, disliked, recommended] = await Promise.all([
+    const [likes, dislikes, views, comments, savedCount, liked, disliked, recommended, saved] = await Promise.all([
       countBacklinks(subject, 'like'),
       countBacklinks(subject, 'dislike'),
       countBacklinks(subject, 'view'),
@@ -77,13 +81,15 @@ reactions.get('/', async (c) => {
         console.error('Failed to load comment count:', error);
         return 0;
       }),
+      countBacklinks(subject, 'save'),
       did ? hasBacklink(subject, 'like', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'dislike', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'recommend', did).then((has) => Number(has)) : Promise.resolve(0),
+      did ? hasBacklink(subject, 'save', did) : Promise.resolve(false),
     ]);
     // Reaction writes are immediately followed by a refresh from the client.
     // Shared caching here made those refreshes return the previous totals.
-    return c.json({ likes, dislikes, views, comments, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0 }, 200, { 'Cache-Control': 'no-store' });
+    return c.json({ likes, dislikes, views, comments, saves: savedCount, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0, saved }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load reaction counts:', error);
     return c.json({ error: 'Reaction counts are temporarily unavailable.' }, 502);

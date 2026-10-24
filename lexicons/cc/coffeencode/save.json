@@ -1,0 +1,25 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.save",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A saved site.standard.document.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["target", "createdAt"],
+        "properties": {
+          "target": {
+            "type": "object",
+            "required": ["document"],
+            "properties": {
+              "document": { "type": "string", "format": "at-uri" }
+            }
+          },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

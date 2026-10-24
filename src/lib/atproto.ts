@@ -384,10 +384,12 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
 export function searchArticles(articles: StandardDocument[], query: string): StandardDocument[] {
   if (!query.trim()) return articles;
 
-  const q = query.toLowerCase();
-  return articles.filter(article =>
-    article.title.toLowerCase().includes(q) ||
-    article.description?.toLowerCase().includes(q) ||
-    article.content.toLowerCase().includes(q)
-  );
+  const terms = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+  return articles.filter((article) => {
+    const searchable = [article.title, article.description, article.content, article.author?.handle, article.author?.displayName]
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ')
+      .toLocaleLowerCase();
+    return terms.every((term) => searchable.includes(term));
+  });
 }

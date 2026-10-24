@@ -171,19 +171,20 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
         <h1>${safeTitle}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
-        <div class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story views and reactions">
-          <span class="view-counter article-view-counter" data-at-view-count>Loading views...</span>
-          <span class="comment-counter" data-at-comment-count>Loading comments...</span>
+        <div class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story reads and reactions">
+          <span class="reaction-button engagement-stat"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Reads <span class="reaction-count" data-at-view-count>—</span></span>
           <div class="article-reactions__buttons" aria-label="React to this story">
             <button type="button" class="reaction-button" data-reaction="like" aria-pressed="false"><i class="fa-regular fa-thumbs-up" aria-hidden="true"></i> Like <span class="reaction-count" data-reaction-count="like">—</span></button>
             <button type="button" class="reaction-button" data-reaction="dislike" aria-pressed="false"><i class="fa-regular fa-thumbs-down" aria-hidden="true"></i> Dislike <span class="reaction-count" data-reaction-count="dislike">—</span></button>
+            <button type="button" class="reaction-button" data-save-post aria-pressed="false"><i class="fa-regular fa-bookmark" aria-hidden="true"></i> Save <span class="reaction-count" data-save-count>—</span></button>
+            <a class="reaction-button" href="#comments"><i class="fa-regular fa-comment" aria-hidden="true"></i> Comments <span class="reaction-count" data-at-comment-count>—</span></a>
           </div>
           <span class="article-reactions__status" aria-live="polite"></span>
         </div>
       </header>
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image" width="1200" height="667" fetchpriority="high" decoding="async"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
-      <section class="article__comments">
+      <section class="article__comments" id="comments">
         <sequoia-comments document-uri="${escapeHtml(post.uri)}" style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
       </section>
       <footer class="article__footer">

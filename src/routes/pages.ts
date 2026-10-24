@@ -69,7 +69,7 @@ pages.get('/auth', (c) => {
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Your account provider will show the permissions Coffee &amp; Code requests. Public likes, dislikes, views, comments, and replies are saved to your AT Protocol account. <a href="/privacy">Read our privacy policy</a>.</p>
+      <p class="auth-page__permissions">Your account provider will show the permissions Coffee &amp; Code requests. Public likes, dislikes, views, saves, comments, and replies are saved to your AT Protocol account. <a href="/privacy">Read our privacy policy</a>.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;
@@ -243,7 +243,7 @@ pages.get('/author/:handle', async (c) => {
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
           <h3><a href="${post.path}">${escapeHtml(post.title || 'Untitled')}</a></h3>
           ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
-            <span class="view-counter" data-at-uri="${escapeHtml(post.uri)}">Loading views...</span>
+            <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
         </div>
         <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </article>`)
@@ -299,17 +299,39 @@ pages.get('/author/:handle', async (c) => {
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
-  const query = c.req.query('q') || '';
-
-  // Filter posts based on search query
-  const posts = query.trim() ? searchArticles(allPosts, query) : allPosts;
-  const archiveBaseUrl = new URL(c.req.url).origin;
+  const query = (c.req.query('q') || '').trim();
+  const authorFilter = c.req.query('author') || '';
+  const yearFilter = c.req.query('year') || '';
+  const sort = c.req.query('sort') === 'oldest' ? 'oldest' : 'newest';
+  const imageOnly = c.req.query('image') === '1';
   const escapeHtml = (str: string) => str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+
+  const authorOptions = [...new Map(allPosts
+    .filter((post) => post.author && typeof post.author.did === 'string')
+    .map((post): [string, string] => [post.author!.did, String(post.author!.displayName || post.author!.handle || post.author!.did)]))]
+    .map(([did, label]) => ({ did, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const yearOptions = [...new Set(allPosts
+    .map((post) => typeof post.publishedAt === 'string' ? new Date(post.publishedAt).getFullYear() : NaN)
+    .filter(Number.isFinite))]
+    .sort((a, b) => b - a);
+  const searchedPosts = query ? searchArticles(allPosts, query) : allPosts;
+  const filteredPosts = searchedPosts.filter((post) => {
+    if (authorFilter && post.author?.did !== authorFilter) return false;
+    if (yearFilter && String(new Date(post.publishedAt).getFullYear()) !== yearFilter) return false;
+    if (imageOnly && !post.cover) return false;
+    return true;
+  });
+  const posts = [...filteredPosts].sort((a, b) => {
+    const difference = (Date.parse(a.publishedAt) || 0) - (Date.parse(b.publishedAt) || 0);
+    return sort === 'oldest' ? difference : -difference;
+  });
+  const archiveBaseUrl = new URL(c.req.url).origin;
 
   const archiveItems = posts
     .map(
@@ -322,7 +344,7 @@ pages.get('/archive', async (c) => {
             <p class="eyebrow">${formatDate(post.publishedAt)}</p>
             <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
             ${excerpt(post) ? `<p>${excerpt(post)}</p>` : ''}
-            <span class="view-counter" data-at-uri="${escapeHtml(post.uri)}">Loading views...</span>
+            <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
           </div>
           <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </article>`
@@ -332,20 +354,27 @@ pages.get('/archive', async (c) => {
   const searchForm = `
     <div class="archive-search">
       <form class="search-form" action="/archive" method="get">
-        <input
-          type="text"
-          name="q"
-          placeholder="Search archive..."
-          value="${query.replace(/"/g, '&quot;')}"
-          class="search-input"
-          autocomplete="off"
-        >
-        <button type="submit" class="search-button">Search</button>
+        <label class="archive-search__query">Search stories
+          <input type="search" name="q" placeholder="Title, author, or keywords" value="${escapeHtml(query)}" class="search-input" autocomplete="off">
+        </label>
+        <div class="archive-search__filters">
+          <label>Author
+            <select name="author"><option value="">All authors</option>${authorOptions.map(({ did, label }) => `<option value="${escapeHtml(did)}"${authorFilter === did ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>
+          </label>
+          <label>Year
+            <select name="year"><option value="">Any year</option>${yearOptions.map((year) => `<option value="${year}"${yearFilter === String(year) ? ' selected' : ''}>${year}</option>`).join('')}</select>
+          </label>
+          <label>Order
+            <select name="sort"><option value="newest"${sort === 'newest' ? ' selected' : ''}>Newest first</option><option value="oldest"${sort === 'oldest' ? ' selected' : ''}>Oldest first</option></select>
+          </label>
+          <label class="archive-search__image-filter"><input type="checkbox" name="image" value="1"${imageOnly ? ' checked' : ''}> With images</label>
+        </div>
+        <div class="archive-search__actions"><button type="submit" class="search-button">Apply filters</button><a href="/archive" class="read-link">Clear</a></div>
       </form>
     </div>
   `;
 
-  const emptyMessage = query.trim() ? 'No stories found matching your search.' : 'No stories have been published yet.';
+  const emptyMessage = allPosts.length ? 'No stories match these search filters.' : 'No stories have been published yet.';
   const gridOrEmpty = archiveItems
     ? `<div class="archive-grid">${archiveItems}</div>`
     : `<p class="empty-state">${emptyMessage}</p>`;
@@ -353,7 +382,7 @@ pages.get('/archive', async (c) => {
   const body = `
     <section class="archive-page" aria-labelledby="archive-title">
       ${searchForm}
-      <div class="section-heading"><span id="archive-title">Archive</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
+      <div class="section-heading"><span id="archive-title">Archive</span><span>${posts.length} of ${allPosts.length} ${allPosts.length === 1 ? 'story' : 'stories'}</span></div>
       ${gridOrEmpty}
     </section>
   `;
@@ -385,7 +414,7 @@ pages.get('/privacy', (c) => {
       <ul>
         <li><strong>Public AT Protocol information.</strong> The site reads public publication, story, author, and profile records to display content. It also asks public AT Protocol services to resolve identities and retrieve profile information.</li>
         <li><strong>Account sign-in.</strong> Sign-in is handled by your chosen Personal Data Server (PDS). Coffee &amp; Code receives your account identifier (DID) and the authorization needed for features you approve. The site does not ask for or receive your PDS password. OAuth session data is kept in your browser so you can stay signed in.</li>
-        <li><strong>Interactions.</strong> If you approve and use these features, the site writes likes, dislikes, views, recommendations, comments, replies, and comment likes to your AT Protocol repository. These records are public and may be copied or indexed by other network services. Removing a record from your repository may not remove copies already made elsewhere.</li>
+        <li><strong>Interactions.</strong> If you approve and use these features, the site writes likes, dislikes, views, saves, recommendations, comments, replies, and comment likes to your AT Protocol repository. These records are public and may be copied or indexed by other network services. Removing a record from your repository may not remove copies already made elsewhere.</li>
         <li><strong>Technical and usage information.</strong> Cloudflare provides hosting and security for the site and may process request and device information, such as IP address, browser details, and requested URLs. Umami Cloud analytics is used to understand page usage, including page views, referrers, device/browser information, and approximate location. The site also loads search, font, and icon resources from third-party services, which receive the usual connection information when your browser requests them.</li>
       </ul>
 

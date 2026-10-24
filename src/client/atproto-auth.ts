@@ -4,7 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawClientMetadata from '../../media/oauth-client-metadata-v6.json';
+import rawClientMetadata from '../../media/oauth-client-metadata-v7.json';
 
 // The same file is published as a Cloudflare static asset at the client_id URL.
 // Embedding it here avoids a second metadata fetch in the browser and prevents
@@ -632,7 +632,7 @@ async function repoRequest(path: string, body?: unknown) {
   if (response.ok) return response;
   const payload = await response.clone().json().catch(() => null) as { error?: string; message?: string } | null;
   if (response.status === 401 || response.status === 403) {
-    throw new Error('Your account has not granted the author profile permission needed to save pinned posts. Sign out, then sign in again and approve the updated permissions.');
+    throw new Error('Your account has not granted this permission yet. Sign out, then sign in again and approve the updated permissions.');
   }
   const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
   throw new Error(detail || `AT Protocol request failed (${response.status}).`);
@@ -646,7 +646,7 @@ async function recordKey(document: string) {
 async function getOwnRecords(document: string, did: string) {
   const response = await fetch(`/api/reactions?subject=${encodeURIComponent(document)}&did=${encodeURIComponent(did)}`, { cache: 'no-store' });
   if (!response.ok) throw new Error('Could not load your reaction state.');
-  return await response.json() as { liked: boolean; disliked: boolean; recommended: boolean };
+  return await response.json() as { liked: boolean; disliked: boolean; recommended: boolean; saved: boolean };
 }
 
 document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
@@ -672,7 +672,7 @@ document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container
         if (!response.ok) return;
         const counts = await response.json() as { views: number };
         const viewCount = container.querySelector<HTMLElement>('[data-at-view-count]');
-        if (viewCount) viewCount.textContent = `${Number(counts.views || 0).toLocaleString()} views`;
+        if (viewCount) viewCount.textContent = Number(counts.views || 0).toLocaleString();
       } catch {
         // The normal count loader will retry on the next page view.
       }
@@ -854,4 +854,79 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
       buttons.forEach((item) => { item.disabled = false; });
     }
   }));
+});
+
+document.querySelectorAll<HTMLElement>('[data-reaction-subject] [data-save-post]').forEach((button) => {
+  const container = button.closest<HTMLElement>('[data-reaction-subject]');
+  const documentUri = container?.dataset.reactionSubject;
+  const status = container?.querySelector<HTMLElement>('.article-reactions__status');
+  if (!container || !documentUri) return;
+  const updateCount = (count: number) => {
+    const countNode = button.querySelector<HTMLElement>('[data-save-count]');
+    if (countNode) countNode.textContent = Math.max(0, count).toLocaleString();
+  };
+  const readCount = () => {
+    const value = button.querySelector<HTMLElement>('[data-save-count]')?.textContent?.replace(/,/g, '').trim() || '';
+    return /^\d+$/.test(value) ? Number(value) : undefined;
+  };
+
+  void (async () => {
+    await oauthReady;
+    if (!session) return;
+    const state = await getOwnRecords(documentUri, session.did);
+    button.setAttribute('aria-pressed', String(state.saved));
+    button.querySelector('i')?.classList.replace('fa-regular', state.saved ? 'fa-solid' : 'fa-regular');
+    const label = button.childNodes[1];
+    if (label) label.textContent = state.saved ? ' Saved ' : ' Save ';
+  })().catch((error) => { if (status) status.textContent = errorMessage(error); });
+
+  button.addEventListener('click', async () => {
+    await oauthReady;
+    if (!session) {
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
+      return;
+    }
+    const activeSession = session;
+    const beforeCount = readCount();
+    button.disabled = true;
+    try {
+      const rkey = await recordKey(documentUri);
+      const current = await getOwnRecords(documentUri, activeSession.did);
+      if (current.saved) {
+        await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection: 'cc.coffeencode.save', rkey });
+      } else {
+        await repoRequest('com.atproto.repo.createRecord', {
+          repo: activeSession.did,
+          collection: 'cc.coffeencode.save',
+          rkey,
+          record: { $type: 'cc.coffeencode.save', target: { document: documentUri }, createdAt: new Date().toISOString() },
+        });
+      }
+      const saved = !current.saved;
+      button.setAttribute('aria-pressed', String(saved));
+      button.querySelector('i')?.classList.replace(saved ? 'fa-regular' : 'fa-solid', saved ? 'fa-solid' : 'fa-regular');
+      const label = button.childNodes[1];
+      if (label) label.textContent = saved ? ' Saved ' : ' Save ';
+      if (beforeCount !== undefined) updateCount(beforeCount + (saved ? 1 : -1));
+      if (status) status.textContent = saved ? 'Story saved to your account.' : 'Story removed from your saved posts.';
+
+      if (beforeCount !== undefined) {
+        for (const delay of [1200, 1800, 2600, 4000, 6000]) {
+          await new Promise((resolve) => window.setTimeout(resolve, delay));
+          const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`, { cache: 'no-store' });
+          if (!response.ok) continue;
+          const counts = await response.json() as { saves?: number };
+          if (Number.isFinite(counts.saves) && (saved ? Number(counts.saves) >= beforeCount + 1 : Number(counts.saves) < beforeCount)) {
+            updateCount(Number(counts.saves));
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      if (status) status.textContent = errorMessage(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
 });
