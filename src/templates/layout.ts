@@ -302,6 +302,11 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .account-page__viewed a:hover { color: var(--accent); }
     .account-page__viewed small { color: var(--muted); display: block; font: 13px 'Source Sans 3', sans-serif; margin-top: 4px; }
     .account-page__viewed-status { color: var(--muted); }
+    .account-page__saved-item { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+    .account-page__saved-item a { min-width: 0; }
+    .account-page__remove-save { background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; flex: 0 0 auto; font: 600 12px 'Source Sans 3', sans-serif; padding: 6px 10px; }
+    .account-page__remove-save:hover { border-color: var(--accent); color: var(--accent); }
+    .account-page__remove-save:disabled { cursor: wait; opacity: .6; }
     .account-page { max-width: none; width: 100%; }
     .page-content:has(.account-page) { width: min(1440px, calc(100% - 48px)); }
     .account-page > [data-auth-account] { background: transparent; border: 0; margin-top: 24px; padding: 0; }

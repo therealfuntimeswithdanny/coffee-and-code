@@ -85,6 +85,7 @@ pages.get('/account', (c) => {
       <div class="auth-account" data-auth-account hidden>
         <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p data-profile-bio></p><p class="account-page__did" data-profile-did></p></div></div>
         <section class="account-page__viewed" aria-labelledby="viewed-posts-title"><h2 id="viewed-posts-title">Posts you’ve viewed</h2><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
+        <section class="account-page__viewed" aria-labelledby="saved-posts-title"><h2 id="saved-posts-title">Reading list</h2><p class="account-page__viewed-status" data-saved-status>Loading your saved posts…</p><ul data-saved-posts></ul></section>
         <section class="account-author-settings" data-author-settings hidden aria-labelledby="author-settings-title">
           <h2 id="author-settings-title">Author profile</h2>
           <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>

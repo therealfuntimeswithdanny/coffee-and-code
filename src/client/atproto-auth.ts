@@ -135,6 +135,7 @@ function renderAccount() {
       })
       .catch(() => { if (profileName) profileName.textContent = session?.sub || did; });
       void loadAccountViewedPosts(did);
+      void loadAccountSavedPosts(did);
       void loadAuthorProfileEditor(did);
     }
   }
@@ -528,6 +529,86 @@ async function loadAccountViewedPosts(did: string) {
     status.hidden = true;
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : 'Could not load your viewed posts.';
+  }
+}
+
+async function loadAccountSavedPosts(did: string) {
+  if (!accountPage) return;
+  const list = accountPage.querySelector<HTMLUListElement>('[data-saved-posts]');
+  const status = accountPage.querySelector<HTMLElement>('[data-saved-status]');
+  if (!list || !status) return;
+  try {
+    const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.save', limit: '100' });
+    const [recordsResponse, postsResponse] = await Promise.all([
+      repoRequest(`com.atproto.repo.listRecords?${query.toString()}`),
+      fetch('/api/account/posts', { cache: 'no-store' }),
+    ]);
+    if (!postsResponse.ok) throw new Error('Could not load published posts.');
+    const recordsPayload = await recordsResponse.json() as {
+      records?: Array<{ uri?: string; value?: { target?: { document?: string }; createdAt?: string } }>;
+    };
+    const posts = await postsResponse.json() as Array<{ uri: string; path: string; title: string; publishedAt: string }>;
+    const postByUri = new Map(posts.map((post) => [post.uri, post]));
+    const saved = (recordsPayload.records || [])
+      .map((record) => {
+        const match = record.uri?.match(/^at:\/\/(did:[^/]+)\/cc\.coffeencode\.save\/([a-zA-Z0-9._~:-]+)$/);
+        const uri = record.value?.target?.document;
+        return match?.[1] === did && typeof uri === 'string' && uri.startsWith('at://')
+          ? { rkey: match[2], uri, createdAt: record.value?.createdAt }
+          : undefined;
+      })
+      .filter((record): record is { rkey: string; uri: string; createdAt: string | undefined } => Boolean(record))
+      .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
+    const unique = new Map<string, typeof saved[number]>();
+    saved.forEach((record) => { if (!unique.has(record.uri)) unique.set(record.uri, record); });
+    if (!unique.size) {
+      status.textContent = 'Stories you save will appear here.';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    unique.forEach(({ rkey, uri, createdAt }) => {
+      const post = postByUri.get(uri);
+      const match = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/);
+      const item = document.createElement('li');
+      item.className = 'account-page__saved-item';
+      const link = document.createElement('a');
+      link.href = post?.path || (match ? `/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}` : '/');
+      link.textContent = post?.title || 'Saved story';
+      if (createdAt && Number.isFinite(Date.parse(createdAt))) {
+        const metadata = document.createElement('small');
+        metadata.textContent = `Saved ${new Date(createdAt).toLocaleDateString()}`;
+        link.append(metadata);
+      }
+      item.append(link);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'account-page__remove-save';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove ${link.textContent} from your reading list`);
+      remove.addEventListener('click', async () => {
+        if (session?.did !== did) return;
+        remove.disabled = true;
+        try {
+          await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: 'cc.coffeencode.save', rkey });
+          item.remove();
+          if (!list.children.length) {
+            status.hidden = false;
+            status.textContent = 'Stories you save will appear here.';
+          }
+        } catch (error) {
+          status.hidden = false;
+          status.textContent = errorMessage(error);
+          remove.disabled = false;
+        }
+      });
+      item.append(remove);
+      fragment.append(item);
+    });
+    list.replaceChildren(fragment);
+    status.hidden = true;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : 'Could not load your reading list.';
   }
 }
 
