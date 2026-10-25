@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, proxyImageUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, isPdsAvailable, proxyImageUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 
 const home = new Hono<{ Bindings: Env }>();
@@ -43,6 +43,7 @@ function escapeHtml(value: string) {
 home.get('/', async (c) => {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const posts = await fetchArticles(pds, c.env.OWNER_DID);
+  const pdsAvailable = posts.length > 0 || await isPdsAvailable(pds);
   const latestPosts = posts.slice(0, 11);
   const [heroPost, ...otherPosts] = latestPosts;
   const sidePosts = otherPosts.slice(0, 4);
@@ -51,6 +52,9 @@ home.get('/', async (c) => {
 
   const proxiedCover = (source?: string, preset = 'feed_fullsize') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);
 
+  const emptyMessage = pdsAvailable
+    ? 'No stories have been published yet. Please check back soon.'
+    : 'We can’t reach the Coffee &amp; Code PDS right now. Please try again shortly.';
   const heroHtml = heroPost
     ? `
       <article class="lead-story">
@@ -63,7 +67,7 @@ home.get('/', async (c) => {
           <div class="story-footer">${heroArticleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </div>
       </article>`
-    : '<p class="empty-state">No stories have been published yet. Please check back soon.</p>';
+    : `<p class="empty-state">${emptyMessage}</p>`;
 
   const sideHtml = sidePosts.length
     ? sidePosts
@@ -80,7 +84,7 @@ home.get('/', async (c) => {
             </article>`
         )
         .join('')
-    : '<p class="side-empty">More reporting is on its way.</p>';
+    : `<p class="side-empty">${emptyMessage}</p>`;
 
   const archiveHtml = archivePosts
     .map(
@@ -100,7 +104,7 @@ home.get('/', async (c) => {
 
   const body = `
     <section class="front-page" aria-label="Latest stories">
-      <div class="section-heading"><span>Latest</span><span>${posts.length} ${posts.length === 1 ? 'story' : 'stories'}</span></div>
+      <div class="section-heading"><span>Latest</span><span>${pdsAvailable ? `${posts.length} ${posts.length === 1 ? 'story' : 'stories'}` : 'Temporarily unavailable'}</span></div>
       <div class="front-page__grid">
         ${heroHtml}
         <aside class="recent-stories" aria-label="More recent stories">

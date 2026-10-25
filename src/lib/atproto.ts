@@ -150,6 +150,16 @@ export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<
   }
 }
 
+export async function isPdsAvailable(pdsUrl: string): Promise<boolean> {
+  try {
+    const response = await fetchWithRetry(`${pdsUrl}/xrpc/com.atproto.server.describeServer`);
+    return response.ok;
+  } catch (error) {
+    console.error('Error checking PDS availability:', error);
+    return false;
+  }
+}
+
 function profileBlobUrl(blob: any, did: string, pdsUrl: string): string | undefined {
   const cid = blob?.ref?.$link;
   if (typeof cid !== 'string') return undefined;
