@@ -500,9 +500,9 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       fetch('/api/reactions?subject=' + encodeURIComponent(subject), { cache: 'no-store' })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error('Reaction count request failed')))
         .then((counts) => {
-          ['like', 'dislike'].forEach((kind) => {
+          [['like', 'likes'], ['dislike', 'dislikes']].forEach(([kind, key]) => {
             const count = container.querySelector('[data-reaction-count="' + kind + '"]');
-            if (count) count.textContent = Number(counts[kind] || 0).toLocaleString();
+            if (count) count.textContent = Number(counts[key] || 0).toLocaleString();
           });
           const saveCount = container.querySelector('[data-save-count]');
           if (saveCount) saveCount.textContent = Number(counts.saves || 0).toLocaleString();

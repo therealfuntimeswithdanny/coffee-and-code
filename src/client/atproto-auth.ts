@@ -67,7 +67,7 @@ declare global {
       createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
       editComment: (uri: string, record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
       deleteComment: (uri: string) => Promise<void>;
-      toggleCommentLike: (commentUri: string, isLiked: boolean) => Promise<void>;
+      toggleCommentLike: (commentUri: string, isLiked: boolean, likeRkey?: string) => Promise<string | undefined>;
     };
   }
 }
@@ -553,21 +553,26 @@ window.coffeeAndCodeAuth = {
     }
     await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection: match[2], rkey: match[3] });
   },
-  toggleCommentLike: async (commentUri: string, isLiked: boolean) => {
+  toggleCommentLike: async (commentUri: string, isLiked: boolean, likeRkey?: string) => {
     await oauthReady;
     const activeSession = requireSession();
     const collection = 'cc.coffeencode.comment.like';
-    const rkey = await recordKey(commentUri);
     if (isLiked) {
-      await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection, rkey });
-      return;
+      if (!likeRkey || !/^[a-zA-Z0-9._~:-]+$/.test(likeRkey)) {
+        throw new Error('Could not find your comment-like record. Refresh the comments and try again.');
+      }
+      await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection, rkey: likeRkey });
+      return undefined;
     }
-    await repoRequest('com.atproto.repo.createRecord', {
+    const response = await repoRequest('com.atproto.repo.createRecord', {
       repo: activeSession.did,
       collection,
-      rkey,
       record: { $type: collection, subject: { uri: commentUri }, createdAt: new Date().toISOString() },
     });
+    const result = await response.json() as { uri?: string };
+    const match = result.uri?.match(/^at:\/\/[^/]+\/cc\.coffeencode\.comment\.like\/([a-zA-Z0-9._~:-]+)$/);
+    if (!match) throw new Error('Your like was created, but its record key could not be confirmed. Refresh the comments before changing it.');
+    return match[1];
   },
 };
 

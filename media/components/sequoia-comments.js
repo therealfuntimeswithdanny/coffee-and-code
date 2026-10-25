@@ -2,25 +2,29 @@ const styles = `
 :host { display:block; color:var(--sequoia-fg-color,#1f2937); font-family:var(--sequoia-font-family,system-ui,sans-serif); line-height:1.5; }
 * { box-sizing:border-box; }
 .comments-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
-.comments-title { margin:0; font-size:1.125rem; }
+.comments-title { margin:0; font-size:1.35rem; letter-spacing:-.02em; }
+.comments-intro { margin:.2rem 0 0; color:var(--sequoia-secondary-color,#6b7280); font-size:.9rem; }
 .status { border:1px solid var(--sequoia-border-color,#e5e7eb); color:var(--sequoia-secondary-color,#6b7280); padding:1rem; text-align:center; }
 .comment-form { display:grid; gap:.5rem; margin:.75rem 0 1rem; }
-.comment-input { width:100%; min-height:5rem; padding:.65rem; resize:vertical; color:inherit; background:var(--sequoia-bg-color,#fff); border:1px solid var(--sequoia-border-color,#e5e7eb); font:inherit; }
+.comment-input { width:100%; min-height:5rem; padding:.75rem; resize:vertical; color:inherit; background:var(--sequoia-bg-color,#fff); border:1px solid var(--sequoia-border-color,#e5e7eb); border-radius:var(--sequoia-border-radius,8px); font:inherit; }
+.comment-input:focus { border-color:var(--sequoia-accent-color,#2563eb); outline:2px solid color-mix(in srgb,var(--sequoia-accent-color,#2563eb) 20%,transparent); }
 .comment-submit,.reply-button { border:0; background:var(--sequoia-accent-color,#2563eb); color:#fff; cursor:pointer; font:inherit; padding:.45rem .75rem; }
 .comment-submit { justify-self:end; }
 .comment-submit:disabled { opacity:.6; cursor:wait; }
-.comments-list { display:grid; gap:1rem; }
+.comments-list { display:grid; gap:0; }
 .comments-more { justify-self:center; border:1px solid var(--sequoia-border-color,#e5e7eb); background:transparent; color:inherit; cursor:pointer; font:inherit; padding:.5rem .8rem; }
 .comments-more:disabled { opacity:.6; cursor:wait; }
-.comment { border-top:1px solid var(--sequoia-border-color,#e5e7eb); display:flex; gap:.75rem; padding-top:1rem; }
-.comment-children { display:grid; gap:.75rem; margin:.8rem 0 0 1rem; padding-left:.8rem; border-left:1px solid var(--sequoia-border-color,#e5e7eb); }
+.comment { display:grid; grid-template-columns:2.5rem minmax(0,1fr); gap:.75rem; padding:1rem 0; border:0; border-radius:0; background:transparent; }
+.comments-list > .comment + .comment { border-top:1px solid var(--sequoia-border-color,#e5e7eb); }
+.comment-children { display:grid; gap:0; margin:.75rem 0 0; padding-left:clamp(.6rem,2vw,1rem); border-left:2px solid var(--sequoia-border-color,#e5e7eb); }
+.comment-children > .comment { padding:.85rem 0 .25rem; }
 .avatar,.avatar-placeholder { width:2.5rem; height:2.5rem; flex:0 0 2.5rem; border-radius:50%; object-fit:cover; background:var(--sequoia-border-color,#e5e7eb); }
 .avatar-placeholder { display:flex; align-items:center; justify-content:center; color:var(--sequoia-secondary-color,#6b7280); }
 .comment-content { min-width:0; flex:1; }
 .comment-meta { display:flex; flex-wrap:wrap; align-items:baseline; gap:.5rem; }
 .author { color:inherit; font-weight:600; text-decoration:none; }
 .handle,.time { color:var(--sequoia-secondary-color,#6b7280); font-size:.875rem; }
-.comment-text { margin:.25rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.comment-text { margin:.45rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .reply-button { margin-top:.4rem; font-size:.875rem; }
 .comment-like { margin-top:.4rem; margin-right:.45rem; border:1px solid var(--sequoia-border-color,#e5e7eb); background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:.875rem; padding:.35rem .55rem; }
 .comment-like[aria-pressed="true"] { color:var(--sequoia-accent-color,#2563eb); }
@@ -29,6 +33,7 @@ const styles = `
 .comment-action:disabled { opacity:.55; cursor:wait; }
 .comment-edit-form { margin-top:.6rem; }
 .comment-status { color:var(--sequoia-secondary-color,#6b7280); font-size:.875rem; }
+@media (max-width:480px) { .comment { grid-template-columns:2rem minmax(0,1fr); gap:.55rem; padding:.8rem 0; }.avatar,.avatar-placeholder { width:2rem; height:2rem; flex-basis:2rem; }.comment-children { padding-left:.5rem; } }
 `;
 
 function escapeHtml(value) {
@@ -125,7 +130,7 @@ class SequoiaComments extends HTMLElement {
     const ownActions = this.viewerDid && comment.did === this.viewerDid
       ? `<button type="button" class="comment-action" data-edit-comment="${escapeHtml(comment.uri)}">Edit</button><button type="button" class="comment-action comment-action--danger" data-delete-comment="${escapeHtml(comment.uri)}">Delete</button>`
       : '';
-    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" href="https://bsky.app/profile/${encodeURIComponent(comment.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" aria-pressed="${String(Boolean(comment.liked))}">♥ Like <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
+    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" href="https://bsky.app/profile/${encodeURIComponent(comment.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}">♥ ${comment.liked ? 'Liked' : 'Like'} <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
   }
 
   render() {
@@ -148,9 +153,11 @@ class SequoiaComments extends HTMLElement {
       childrenByParent.set(comment.parentUri, children);
       parentByChild.set(comment.uri, comment.parentUri);
     });
-    const roots = this.comments.filter((comment) => !childrenByParent.has(comment.uri));
+    const roots = this.comments
+      .filter((comment) => !parentByChild.has(comment.uri))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.uri.localeCompare(a.uri));
     const hasMore = Boolean(this.cursor);
-    this.container.innerHTML = `<div class="comments-header"><h2 class="comments-title">Comments${this.total ? ` (${this.total.toLocaleString()})` : ''}</h2></div><form class="comment-form" data-comment-form><textarea class="comment-input" name="text" maxlength="3000" required placeholder="Write a comment..."></textarea><button class="comment-submit" type="submit">Post comment</button><span class="comment-status" aria-live="polite"></span></form>${roots.length ? `<div class="comments-list">${roots.map((comment) => this.renderComment(comment, childrenByParent)).join('')}</div>` : '<div class="status">No comments yet. Start the conversation.</div>'}${hasMore ? '<button type="button" class="comments-more">Load older comments</button>' : ''}<div class="comment-status" data-list-status aria-live="polite"></div>`;
+    this.container.innerHTML = `<div class="comments-header"><div><h2 class="comments-title">Join the conversation${this.total ? ` <span>(${this.total.toLocaleString()})</span>` : ''}</h2><p class="comments-intro">Comments are shown in threads. Reply to keep a conversation together.</p></div></div><form class="comment-form" data-comment-form><textarea class="comment-input" name="text" maxlength="3000" required placeholder="Share your thoughts..." aria-label="Write a comment"></textarea><button class="comment-submit" type="submit">Post comment</button><span class="comment-status" aria-live="polite"></span></form>${roots.length ? `<div class="comments-list">${roots.map((comment) => this.renderComment(comment, childrenByParent)).join('')}</div>` : '<div class="status">No comments yet. Start the conversation.</div>'}${hasMore ? '<button type="button" class="comments-more">Load older comments</button>' : ''}<div class="comment-status" data-list-status aria-live="polite"></div>`;
     this.container.querySelector('[data-comment-form]')?.addEventListener('submit', (event) => this.submit(event, undefined));
     this.container.querySelectorAll('[data-reply-to]').forEach((button) => button.addEventListener('click', () => this.openReply(button.dataset.replyTo)));
     this.container.querySelectorAll('[data-like-comment]').forEach((button) => button.addEventListener('click', () => this.toggleLike(button)));
@@ -179,17 +186,20 @@ class SequoiaComments extends HTMLElement {
       }
       button.disabled = true;
       if (!window.coffeeAndCodeAuth?.toggleCommentLike) throw new Error('Sign-in is still initializing. Please try again.');
-      await window.coffeeAndCodeAuth.toggleCommentLike(commentUri, isLiked);
-      const count = button.querySelector('span');
       const current = this.comments.find((item) => item.uri === commentUri);
+      const likeRkey = await window.coffeeAndCodeAuth.toggleCommentLike(commentUri, isLiked, current?.likeRkey);
+      const count = button.querySelector('span');
       if (current) {
         current.liked = !isLiked;
         current.likeCount = Math.max(0, Number(current.likeCount || 0) + (isLiked ? -1 : 1));
+        current.likeRkey = likeRkey;
       }
       if (count && current) count.textContent = current.likeCount.toLocaleString();
       button.setAttribute('aria-pressed', String(!isLiked));
+      button.dataset.likeRkey = likeRkey || '';
+      button.firstChild.textContent = `♥ ${isLiked ? 'Like' : 'Liked'} `;
       button.disabled = false;
-      if (status) status.textContent = 'Saved.';
+      if (status) status.textContent = isLiked ? 'Like removed.' : 'You liked this comment.';
       this.scheduleRefresh();
     } catch (error) {
       if (status) status.textContent = error instanceof Error ? error.message : 'Could not update this like.';

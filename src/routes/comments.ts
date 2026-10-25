@@ -23,6 +23,7 @@ type CommentRecord = {
   parentUri?: string;
   likeCount: number;
   liked: boolean;
+  likeRkey?: string;
 };
 type Profile = { handle?: string; displayName?: string; avatar?: string };
 type IndexPage = { records?: Backlink[]; total?: number; cursor?: string };
@@ -55,14 +56,17 @@ async function countCommentLikes(uri: string): Promise<number> {
   return Number.isFinite(count) && count >= 0 ? count : 0;
 }
 
-async function hasCommentLike(uri: string, did: string): Promise<boolean> {
+async function getCommentLike(uri: string, did: string): Promise<Backlink | undefined> {
   const url = new URL(constellationUrl);
   url.searchParams.set('subject', uri);
   url.searchParams.set('source', likeSource);
   url.searchParams.set('did', did);
   url.searchParams.set('limit', '1');
   const result = await getBacklinks(url);
-  return Boolean(result.records?.length);
+  return result.records?.find((record) => record.collection === 'cc.coffeencode.comment.like'
+    && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(record.did)
+    && typeof record.rkey === 'string'
+    && /^[a-zA-Z0-9._~:-]+$/.test(record.rkey));
 }
 
 comments.get('/', async (c) => {
@@ -149,11 +153,11 @@ comments.get('/', async (c) => {
     for (let offset = 0; offset < records.length; offset += 8) {
       const batch = records.slice(offset, offset + 8);
       commentsWithLikes.push(...await Promise.all(batch.map(async (record) => {
-        const [likeCount, liked] = await Promise.all([
+        const [likeCount, like] = await Promise.all([
           countCommentLikes(record.uri).catch(() => 0),
-          did ? hasCommentLike(record.uri, did).catch(() => false) : Promise.resolve(false),
+          did ? getCommentLike(record.uri, did).catch(() => undefined) : Promise.resolve(undefined),
         ]);
-        return { ...record, likeCount, liked };
+        return { ...record, likeCount, liked: Boolean(like), likeRkey: like?.rkey };
       })));
     }
 

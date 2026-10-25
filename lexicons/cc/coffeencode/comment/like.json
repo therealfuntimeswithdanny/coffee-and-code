@@ -5,7 +5,7 @@
     "main": {
       "type": "record",
       "description": "A like for a Coffee & Code comment.",
-      "key": "any",
+      "key": "tid",
       "record": {
         "type": "object",
         "required": ["subject", "createdAt"],

@@ -4,6 +4,7 @@ import { Env } from '../types';
 const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
 const constellationBacklinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
+const constellationLinksCountEndpoint = 'https://constellation.microcosm.blue/links/count';
 
 async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend' | 'save') {
   const source = collection === 'recommend'
@@ -29,6 +30,27 @@ async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 
   const result = await response.json() as { total?: unknown };
   const total = Number(result.total);
   return Number.isFinite(total) && total >= 0 ? total : 0;
+}
+
+async function countLinks(subject: string, collection: 'like' | 'save') {
+  const url = new URL(constellationLinksCountEndpoint);
+  url.searchParams.set('target', subject);
+  url.searchParams.set('collection', collection === 'like'
+    ? 'cc.coffeencode.interact.like'
+    : 'cc.coffeencode.save');
+  url.searchParams.set('path', collection === 'like' ? '.document' : '.target.document');
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'CoffeeAndCode (coffeencode.cc; @coffeencode.bsky.social)',
+    },
+  });
+  if (!response.ok) throw new Error(`Constellation returned ${response.status}`);
+  const result = await response.json() as { total?: unknown };
+  if (typeof result.total !== 'number' || !Number.isFinite(result.total) || result.total < 0) {
+    throw new Error('Constellation returned an invalid link count');
+  }
+  return result.total;
 }
 
 async function countComments(subject: string) {
@@ -74,14 +96,14 @@ reactions.get('/', async (c) => {
 
   try {
     const [likes, dislikes, views, comments, savedCount, liked, disliked, recommended, saved] = await Promise.all([
-      countBacklinks(subject, 'like'),
+      countLinks(subject, 'like'),
       countBacklinks(subject, 'dislike'),
       countBacklinks(subject, 'view'),
       countComments(subject).catch((error) => {
         console.error('Failed to load comment count:', error);
         return 0;
       }),
-      countBacklinks(subject, 'save'),
+      countLinks(subject, 'save'),
       did ? hasBacklink(subject, 'like', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'dislike', did).then((has) => Number(has)) : Promise.resolve(0),
       did ? hasBacklink(subject, 'recommend', did).then((has) => Number(has)) : Promise.resolve(0),
