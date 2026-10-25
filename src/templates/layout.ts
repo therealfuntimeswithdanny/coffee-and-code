@@ -256,6 +256,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .engagement-stat { cursor: default; }
     .reaction-button:disabled { cursor: wait; opacity: .65; }
     .reaction-count { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .author-verification-badge { color: #3897f0; display: inline-block; margin-left: .3em; }
     .article-reactions__status { color: var(--muted); flex-basis: 100%; font-size: 12px; min-height: 18px; }
     .auth-page { margin: 24px auto 60px; max-width: 760px; }
     .auth-page h1, .privacy-page h1 { font-size: clamp(2.2rem, 6vw, 3.5rem); margin: 0; }
@@ -301,11 +302,21 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .account-page__viewed a:hover { color: var(--accent); }
     .account-page__viewed small { color: var(--muted); display: block; font: 13px 'Source Sans 3', sans-serif; margin-top: 4px; }
     .account-page__viewed-status { color: var(--muted); }
+    .account-page { max-width: none; width: 100%; }
+    .page-content:has(.account-page) { width: min(1440px, calc(100% - 48px)); }
+    .account-page > [data-auth-account] { background: transparent; border: 0; margin-top: 24px; padding: 0; }
     .account-author-settings { border-top: 1px solid var(--line); margin: 26px 0; padding-top: 22px; }
     .account-author-settings[hidden], .account-author-form[hidden] { display: none; }
     .account-author-settings h2 { font-size: 24px; margin: 0 0 8px; }
     .account-author-settings__intro { color: var(--muted); margin: 0 0 16px; }
-    .account-author-form { display: grid; gap: 14px; margin-top: 18px; }
+    .account-author-form { margin-top: 18px; }
+    .account-author-form__workspace { align-items: start; display: grid; gap: clamp(24px, 4vw, 48px); grid-template-columns: minmax(0, 1.35fr) minmax(280px, .75fr); }
+    .account-author-form__fields { align-items: start; display: grid; gap: 14px 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .account-author-form__wide { grid-column: 1 / -1; }
+    .account-author-form__sync { background: var(--accent); border: 1px solid var(--accent); color: var(--paper); cursor: pointer; font: 700 13px 'Source Sans 3', sans-serif; justify-self: start; padding: 10px 14px; }
+    .account-author-form__sync:hover { background: transparent; color: var(--accent); }
+    .account-author-form__sync:disabled { cursor: wait; opacity: .65; }
+    .account-author-form__sync-note { color: var(--muted); font-size: 13px; grid-column: 1 / -1; margin: -8px 0 0; }
     .account-author-form label { color: var(--muted); display: grid; font-size: 13px; font-weight: 600; gap: 6px; }
     .account-author-form input, .account-author-form textarea { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); font: 16px 'Source Sans 3', sans-serif; padding: 10px 12px; width: 100%; }
     .account-author-form label.account-author-form__check { align-items: center; display: flex; flex-direction: row; font-weight: 400; }
@@ -322,6 +333,21 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .account-author-form small, .account-author-form__status { color: var(--muted); font-size: 13px; font-weight: 400; }
     .account-author-form__actions { display: flex; flex-wrap: wrap; gap: 10px; }
     .account-author-form__cancel { background: transparent; border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; padding: 9px 14px; }
+    .account-author-preview { background: var(--paper-deep); border: 1px solid var(--line); min-width: 0; padding: 16px; position: sticky; top: 92px; }
+    .account-author-preview > .eyebrow { margin: 0 0 10px; }
+    .account-author-preview__banner { align-items: center; aspect-ratio: 3 / 1; background: linear-gradient(130deg, var(--paper), var(--accent)); color: var(--paper); display: flex; justify-content: center; overflow: hidden; position: relative; }
+    .account-author-preview__banner img { height: 100%; object-fit: cover; position: absolute; width: 100%; }
+    .account-author-preview__banner span { font: 600 15px 'Lora', Georgia, serif; }
+    .account-author-preview__identity { align-items: end; display: flex; gap: 14px; margin-top: -26px; padding: 0 12px; position: relative; }
+    .account-author-preview__avatar { background: var(--paper-deep); border: 4px solid var(--paper-deep); border-radius: 50%; flex: 0 0 76px; height: 76px; object-fit: cover; width: 76px; }
+    .account-author-preview__avatar[hidden] { display: none; }
+    .account-author-preview__avatar--placeholder { align-items: center; color: var(--accent); display: inline-flex; font-size: 25px; justify-content: center; }
+    .account-author-preview__avatar--placeholder[hidden], .account-author-preview__banner span[hidden] { display: none; }
+    .account-author-preview__identity h3 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
+    .account-author-preview__identity p, .account-author-preview__pronouns, .account-author-preview__bio { color: var(--muted); margin: 3px 0 0; overflow-wrap: anywhere; }
+    .account-author-preview__pronouns, .account-author-preview__bio, .account-author-preview__footnote { margin-left: 12px; margin-right: 12px; }
+    .account-author-preview__bio { color: var(--ink); margin-top: 12px; white-space: pre-wrap; }
+    .account-author-preview__footnote { border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; margin-bottom: 0; margin-top: 18px; padding-top: 10px; }
     .privacy-page { line-height: 1.7; margin: 18px auto 64px; max-width: 760px; }
     .privacy-page > p, .privacy-page li { color: #e0d8c7; }
     .privacy-page h2 { font-family: 'Lora', Georgia, serif; font-size: 24px; margin: 34px 0 8px; }
@@ -330,8 +356,10 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .privacy-page__updated { color: var(--muted) !important; font-size: 14px; margin: 6px 0 24px; }
     .site-footer { border-top-width: 1px; padding-top: 48px; }
     .footer-tagline { color: #d2cbb9; }
+    .footer-legal { display: flex; font-size: 13px; gap: 14px; margin-top: 14px; }
+    .footer-legal a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
     .footer-social a { background: rgba(178,172,136,.1); border: 1px solid var(--line); border-radius: 50%; display: inline-grid; height: 38px; place-items: center; width: 38px; }
-    @media (max-width: 760px) { .header-inner { grid-template-columns: auto minmax(0,1fr) auto; min-height: 76px; }.hamburger-button { grid-column: 1; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 2; grid-row: 1; justify-self: center; }.header-links { grid-column: 3; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; }.auth-options { grid-template-columns: 1fr; }.auth-option { padding: 20px; }.privacy-page h2 { font-size: 21px; } }
+    @media (max-width: 760px) { .header-inner { grid-template-columns: auto minmax(0,1fr) auto; min-height: 76px; }.hamburger-button { grid-column: 1; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 2; grid-row: 1; justify-self: center; }.header-links { grid-column: 3; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; }.auth-options { grid-template-columns: 1fr; }.auth-option { padding: 20px; }.privacy-page h2 { font-size: 21px; }.account-author-form__workspace { grid-template-columns: 1fr; }.account-author-preview { position: static; }.account-author-form__fields { grid-template-columns: 1fr; }.account-author-form__wide, .account-author-form__sync-note { grid-column: 1; } }
     .section-heading { border-top-color: var(--line); }
     .recent-stories { border-top-color: var(--line); }
     @media (max-width: 760px) {
@@ -444,7 +472,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   <main class="page-content">${content}</main>
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
-  <footer class="site-footer"><div class="footer-inner"><div class="footer-brand-block"><p class="footer-brand">${pubName}</p><p class="footer-tagline">${pubDescription}</p><div class="footer-social"><a href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/rss.xml" aria-label="RSS feed" title="RSS feed"><i class="fas fa-rss" aria-hidden="true"></i></a><a href="/sitemap.xml" aria-label="Sitemap" title="Sitemap"><i class="fas fa-sitemap" aria-hidden="true"></i></a><a href="/privacy" aria-label="Privacy policy" title="Privacy policy"><i class="fas fa-shield-halved" aria-hidden="true"></i></a></div></div><p class="footer-meta">© ${new Date().getFullYear()} ${pubName} an MBD Company</p></div></footer>
+  <footer class="site-footer"><div class="footer-inner"><div class="footer-brand-block"><p class="footer-brand">${pubName}</p><p class="footer-tagline">${pubDescription}</p><div class="footer-social"><a href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/rss.xml" aria-label="RSS feed" title="RSS feed"><i class="fas fa-rss" aria-hidden="true"></i></a><a href="/sitemap.xml" aria-label="Sitemap" title="Sitemap"><i class="fas fa-sitemap" aria-hidden="true"></i></a><a href="/privacy" aria-label="Privacy policy" title="Privacy policy"><i class="fas fa-shield-halved" aria-hidden="true"></i></a></div><nav class="footer-legal" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav></div><p class="footer-meta">© ${new Date().getFullYear()} ${pubName} an MBD Company</p></div></footer>
   <script>
     // Load view counts without blocking the page.
     const viewCounterEndpoint = 'https://reads.coffeencode.cc/';
@@ -519,6 +547,28 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
           if (commentCount) commentCount.textContent = 'Comments unavailable';
         });
     });
+
+    const authorNameElements = [...document.querySelectorAll('[data-author-verification-did]')];
+    const authorDids = [...new Set(authorNameElements.map((element) => element.dataset.authorVerificationDid).filter(Boolean))];
+    if (authorDids.length) {
+        const query = new URLSearchParams();
+        authorDids.forEach((did) => query.append('did', did));
+        fetch('/api/verifications?' + query.toString(), { cache: 'force-cache' })
+          .then((response) => response.ok ? response.json() : Promise.reject(new Error('Author verification request failed')))
+          .then((result) => {
+            const verifiedDids = new Set(result.verifiedDids);
+            authorNameElements.forEach((element) => {
+              if (!verifiedDids.has(element.dataset.authorVerificationDid) || element.querySelector('.author-verification-badge')) return;
+              const badge = document.createElement('i');
+              badge.className = 'fa-solid fa-circle-check author-verification-badge';
+              badge.setAttribute('role', 'img');
+              badge.setAttribute('aria-label', 'Verified author');
+              badge.title = 'Verified author';
+              element.append(badge);
+            });
+          })
+          .catch((error) => console.error('Could not load author verification badges:', error));
+    }
 
     // Back to top button
     const siteHeader = document.querySelector('.site-header');

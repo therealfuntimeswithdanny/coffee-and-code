@@ -167,7 +167,72 @@ async function loadAuthorProfileEditor(did: string) {
   const editButton = accountPage.querySelector<HTMLButtonElement>('[data-edit-author-profile]');
   const form = accountPage.querySelector<HTMLFormElement>('[data-author-profile-form]');
   const status = accountPage.querySelector<HTMLElement>('[data-author-profile-status]');
-  if (!section || !editButton || !form) return;
+  const syncButton = accountPage.querySelector<HTMLButtonElement>('[data-sync-bluesky-profile]');
+  const previewName = accountPage.querySelector<HTMLElement>('[data-author-preview-name]');
+  const previewHandle = accountPage.querySelector<HTMLElement>('[data-author-preview-handle]');
+  const previewPronouns = accountPage.querySelector<HTMLElement>('[data-author-preview-pronouns]');
+  const previewBio = accountPage.querySelector<HTMLElement>('[data-author-preview-bio]');
+  const previewAvatar = accountPage.querySelector<HTMLImageElement>('[data-author-preview-avatar]');
+  const previewAvatarPlaceholder = accountPage.querySelector<HTMLElement>('[data-author-preview-avatar-placeholder]');
+  const previewBanner = accountPage.querySelector<HTMLImageElement>('[data-author-preview-banner]');
+  const previewBannerPlaceholder = accountPage.querySelector<HTMLElement>('[data-author-preview-banner-placeholder]');
+  if (!section || !editButton || !form || !syncButton || !previewName || !previewHandle || !previewPronouns || !previewBio
+    || !previewAvatar || !previewAvatarPlaceholder || !previewBanner || !previewBannerPlaceholder) return;
+
+  let syncedBlueskyProfile: { avatar?: unknown; banner?: unknown } | undefined;
+  let previewAvatarUrl: string | undefined;
+  let previewBannerUrl: string | undefined;
+  const releasePreviewUrl = (url?: string) => {
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+  };
+  const setPreviewImage = (image: HTMLImageElement, placeholder: HTMLElement, url?: string) => {
+    if (image === previewAvatar) {
+      releasePreviewUrl(previewAvatarUrl);
+      previewAvatarUrl = url?.startsWith('blob:') ? url : undefined;
+    } else {
+      releasePreviewUrl(previewBannerUrl);
+      previewBannerUrl = url?.startsWith('blob:') ? url : undefined;
+    }
+    if (url) {
+      image.src = url;
+      image.hidden = false;
+      placeholder.hidden = true;
+    } else {
+      image.removeAttribute('src');
+      image.hidden = true;
+      placeholder.hidden = false;
+    }
+  };
+  const previewBlob = async (blob: unknown, image: HTMLImageElement, placeholder: HTMLElement) => {
+    if (!blob || typeof blob !== 'object' || !('ref' in blob) || !blob.ref || typeof blob.ref !== 'object'
+      || !('$link' in blob.ref) || typeof blob.ref.$link !== 'string') {
+      setPreviewImage(image, placeholder);
+      return;
+    }
+    const activeSession = session;
+    if (!activeSession || activeSession.did !== did) return;
+    const query = new URLSearchParams({ did, cid: blob.ref.$link });
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.sync.getBlob?${query}`);
+    if (!response.ok) throw new Error(`Could not load a profile image (${response.status}).`);
+    const url = URL.createObjectURL(await response.blob());
+    setPreviewImage(image, placeholder, url);
+  };
+  const updatePreview = () => {
+    const displayName = form.elements.namedItem('displayName') as HTMLInputElement;
+    const pronouns = form.elements.namedItem('pronouns') as HTMLInputElement;
+    const description = form.elements.namedItem('description') as HTMLTextAreaElement;
+    previewName.textContent = displayName.value.trim() || 'Your name';
+    previewAvatar.alt = `${displayName.value.trim() || 'Your profile'} avatar`;
+    previewPronouns.textContent = pronouns.value.trim();
+    previewPronouns.hidden = !pronouns.value.trim();
+    previewBio.textContent = description.value.trim();
+    previewBio.hidden = !description.value.trim();
+  };
+  const previewSelectedFile = (inputName: 'avatar' | 'banner', image: HTMLImageElement, placeholder: HTMLElement) => {
+    const input = form.elements.namedItem(inputName) as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) setPreviewImage(image, placeholder, URL.createObjectURL(file));
+  };
 
   try {
     const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.author.profile', rkey: 'self' });
@@ -178,11 +243,18 @@ async function loadAuthorProfileEditor(did: string) {
 
     accountAuthorRecord = value;
     accountAuthorDid = did;
+    const publicProfile: { handle?: string } = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
+      .then(async (profileResponse) => profileResponse.ok
+        ? await profileResponse.json() as { handle?: string }
+        : {})
+      .catch(() => ({}));
+    previewHandle.textContent = publicProfile.handle ? `@${publicProfile.handle}` : `@${did}`;
     section.hidden = false;
     editButton.hidden = false;
     editButton.onclick = () => {
       if (!accountAuthorRecord || accountAuthorDid !== session?.did) return;
       form.reset();
+      syncedBlueskyProfile = undefined;
       const displayName = form.elements.namedItem('displayName') as HTMLInputElement;
       const pronouns = form.elements.namedItem('pronouns') as HTMLInputElement;
       const description = form.elements.namedItem('description') as HTMLTextAreaElement;
@@ -192,14 +264,71 @@ async function loadAuthorProfileEditor(did: string) {
       if (status) status.textContent = '';
       form.hidden = false;
       editButton.hidden = true;
+      updatePreview();
+      void previewBlob(accountAuthorRecord.avatar, previewAvatar, previewAvatarPlaceholder).catch((error) => {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not load the author photo preview.';
+      });
+      void previewBlob(accountAuthorRecord.banner, previewBanner, previewBannerPlaceholder).catch((error) => {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not load the author banner preview.';
+      });
       const currentPins = Array.isArray(accountAuthorRecord.pinnedPosts)
         ? accountAuthorRecord.pinnedPosts.filter((uri): uri is string => typeof uri === 'string')
         : [];
       void loadAuthorPostPicker(did, form, currentPins);
     };
+    form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[name="displayName"], [name="pronouns"], [name="description"]')
+      .forEach((input) => input.addEventListener('input', updatePreview));
+    form.querySelector<HTMLInputElement>('input[name="avatar"]')?.addEventListener('change', () => previewSelectedFile('avatar', previewAvatar, previewAvatarPlaceholder));
+    form.querySelector<HTMLInputElement>('input[name="banner"]')?.addEventListener('change', () => previewSelectedFile('banner', previewBanner, previewBannerPlaceholder));
+    syncButton.onclick = async () => {
+      if (accountAuthorDid !== session?.did) return;
+      syncButton.disabled = true;
+      if (status) status.textContent = 'Loading your Bluesky profile…';
+      try {
+        const query = new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' });
+        const response = await repoRequest(`com.atproto.repo.getRecord?${query}`);
+        const result = await response.json() as { value?: Record<string, unknown> };
+        const profile = result.value;
+        if (!profile || profile.$type !== 'app.bsky.actor.profile') {
+          throw new Error('Your Bluesky profile record could not be found.');
+        }
+        const displayName = form.elements.namedItem('displayName') as HTMLInputElement;
+        const pronouns = form.elements.namedItem('pronouns') as HTMLInputElement;
+        const description = form.elements.namedItem('description') as HTMLTextAreaElement;
+        displayName.value = typeof profile.displayName === 'string' ? profile.displayName : '';
+        pronouns.value = typeof profile.pronouns === 'string' ? profile.pronouns : '';
+        description.value = typeof profile.description === 'string' ? profile.description : '';
+        (form.elements.namedItem('avatar') as HTMLInputElement).value = '';
+        (form.elements.namedItem('banner') as HTMLInputElement).value = '';
+        (form.elements.namedItem('removeAvatar') as HTMLInputElement).checked = false;
+        (form.elements.namedItem('removeBanner') as HTMLInputElement).checked = false;
+        syncedBlueskyProfile = { avatar: profile.avatar, banner: profile.banner };
+        await Promise.all([
+          previewBlob(profile.avatar, previewAvatar, previewAvatarPlaceholder),
+          previewBlob(profile.banner, previewBanner, previewBannerPlaceholder),
+        ]);
+        updatePreview();
+        if (status) status.textContent = 'Bluesky profile synced. Review the preview, then save your author profile.';
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not sync your Bluesky profile.';
+      } finally {
+        syncButton.disabled = false;
+      }
+    };
     accountPage.querySelector<HTMLButtonElement>('[data-cancel-author-edit]')!.onclick = () => {
+      form.reset();
+      const displayName = form.elements.namedItem('displayName') as HTMLInputElement;
+      const pronouns = form.elements.namedItem('pronouns') as HTMLInputElement;
+      const description = form.elements.namedItem('description') as HTMLTextAreaElement;
+      displayName.value = typeof accountAuthorRecord?.displayName === 'string' ? accountAuthorRecord.displayName : '';
+      pronouns.value = typeof accountAuthorRecord?.pronouns === 'string' ? accountAuthorRecord.pronouns : '';
+      description.value = typeof accountAuthorRecord?.description === 'string' ? accountAuthorRecord.description : '';
       form.hidden = true;
       editButton.hidden = false;
+      syncedBlueskyProfile = undefined;
+      updatePreview();
+      void previewBlob(accountAuthorRecord?.avatar, previewAvatar, previewAvatarPlaceholder);
+      void previewBlob(accountAuthorRecord?.banner, previewBanner, previewBannerPlaceholder);
       if (status) status.textContent = '';
     };
     form.onsubmit = async (event) => {
@@ -215,7 +344,7 @@ async function loadAuthorProfileEditor(did: string) {
       // Read only checked controls from the picker. These values came from the
       // author's published-post list, so stale/malformed pins in an older
       // profile record cannot block a save.
-      const pins = [...form.querySelectorAll<HTMLInputElement>('input[name="pinnedPost"]:checked')]
+      const pins = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="pinnedPost"]:checked'))
         .map((input) => input.value.trim())
         .filter(Boolean);
       const uniquePins = [...new Set(pins)];
@@ -247,8 +376,16 @@ async function loadAuthorProfileEditor(did: string) {
       try {
         if (avatarFile) next.avatar = await uploadAuthorImage(avatarFile);
         else if (removeAvatar) delete next.avatar;
+        else if (syncedBlueskyProfile) {
+          if (syncedBlueskyProfile.avatar) next.avatar = syncedBlueskyProfile.avatar;
+          else delete next.avatar;
+        }
         if (bannerFile) next.banner = await uploadAuthorImage(bannerFile);
         else if (removeBanner) delete next.banner;
+        else if (syncedBlueskyProfile) {
+          if (syncedBlueskyProfile.banner) next.banner = syncedBlueskyProfile.banner;
+          else delete next.banner;
+        }
         if (status && (avatarFile || bannerFile)) status.textContent = 'Saving your author profile…';
         await repoRequest('com.atproto.repo.putRecord', {
           repo: did,

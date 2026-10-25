@@ -4,6 +4,7 @@
   "client_uri": "https://coffeencode.cc",
   "logo_uri": "https://coffeencode.cc/favicon.png",
   "policy_uri": "https://coffeencode.cc/privacy",
+  "tos_uri": "https://coffeencode.cc/terms",
   "redirect_uris": [
     "https://coffeencode.cc/auth"
   ],

@@ -69,7 +69,7 @@ pages.get('/auth', (c) => {
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Your account provider will show the permissions Coffee &amp; Code requests. Public likes, dislikes, views, saves, comments, and replies are saved to your AT Protocol account. <a href="/privacy">Read our privacy policy</a>.</p>
+      <p class="auth-page__permissions">Your account provider will show the permissions Coffee &amp; Code requests. Public likes, dislikes, views, saves, comments, and replies are saved to your AT Protocol account. Read our <a href="/terms">terms of service</a> and <a href="/privacy">privacy policy</a>.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;
@@ -90,16 +90,34 @@ pages.get('/account', (c) => {
           <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
           <button type="button" class="auth-signout" data-edit-author-profile hidden>Edit author profile</button>
           <form class="account-author-form" data-author-profile-form hidden>
-            <label>Display name<input name="displayName" maxlength="100"></label>
-            <label>Pronouns<input name="pronouns" maxlength="50" placeholder="Optional"></label>
-            <label>Bio<textarea name="description" maxlength="1000" rows="5"></textarea></label>
-            <label>Profile photo<input name="avatar" type="file" accept="image/*"></label>
-            <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
-            <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
-            <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-            <fieldset class="account-author-form__pins"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
-            <div class="account-author-form__actions"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
-            <p class="account-author-form__status" data-author-profile-status role="status" aria-live="polite"></p>
+            <div class="account-author-form__workspace">
+              <div class="account-author-form__fields">
+                <button type="button" class="account-author-form__sync" data-sync-bluesky-profile><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Sync from Bluesky profile</button>
+                <p class="account-author-form__sync-note">Review synced details and save them to your Coffee &amp; Code author profile.</p>
+                <label>Display name<input name="displayName" maxlength="100"></label>
+                <label>Pronouns<input name="pronouns" maxlength="50" placeholder="Optional"></label>
+                <label class="account-author-form__wide">Bio<textarea name="description" maxlength="1000" rows="5"></textarea></label>
+                <label>Profile photo<input name="avatar" type="file" accept="image/*"></label>
+                <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
+                <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
+                <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
+                <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
+                <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
+                <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
+              </div>
+              <aside class="account-author-preview" aria-label="Author profile preview">
+                <p class="eyebrow">Preview</p>
+                <div class="account-author-preview__banner"><img data-author-preview-banner alt="" hidden><span data-author-preview-banner-placeholder>Author profile</span></div>
+                <div class="account-author-preview__identity">
+                  <img class="account-author-preview__avatar" data-author-preview-avatar alt="" hidden>
+                  <span class="account-author-preview__avatar account-author-preview__avatar--placeholder" data-author-preview-avatar-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span>
+                  <div><h3 data-author-preview-name></h3><p data-author-preview-handle></p></div>
+                </div>
+                <p class="account-author-preview__pronouns" data-author-preview-pronouns></p>
+                <p class="account-author-preview__bio" data-author-preview-bio></p>
+                <p class="account-author-preview__footnote">This is how your author profile will appear to readers.</p>
+              </aside>
+            </div>
           </form>
         </section>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
@@ -187,7 +205,7 @@ pages.get('/authors', async (c) => {
       const avatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
       return `<a class="author-card" href="/author/${encodeURIComponent(author.did)}">
         ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar" width="64" height="64" loading="lazy" decoding="async">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
-        <span class="author-card__details"><strong>${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
+        <span class="author-card__details"><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
       </a>`;
     })
     .join('');
@@ -269,7 +287,7 @@ pages.get('/author/:handle', async (c) => {
       ${authorBanner ? `<img src="${escapeHtml(authorBanner)}" alt="" class="author-page__banner" width="1200" height="400" decoding="async">` : ''}
       <header class="author-page__header">
         ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar" width="88" height="88" decoding="async">` : ''}
-        <div><p class="eyebrow">Author</p><h1 id="author-title">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
+        <div><p class="eyebrow">Author</p><h1 id="author-title" data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
       </header>
       ${author.description ? `<p class="author-page__description">${escapeHtml(author.description)}</p>` : ''}
       ${pinnedItems ? `<section class="author-page__pinned" aria-labelledby="author-pinned-title"><div class="section-heading"><span id="author-pinned-title">Pinned posts</span><span>${pinnedArticles.length}</span></div><div class="author-page__pinned-grid">${pinnedItems}</div></section>` : ''}
@@ -457,6 +475,60 @@ pages.get('/privacy', (c) => {
   `;
 
   return c.html(renderLayout(c, 'Privacy policy', body, metaTags));
+});
+
+pages.get('/terms', (c) => {
+  const body = `
+    <article class="privacy-page" aria-labelledby="terms-title">
+      <p class="eyebrow">Using our services</p>
+      <h1 id="terms-title">Terms of service</h1>
+      <p class="privacy-page__updated">Last updated October 25, 2026</p>
+      <p>These terms apply when you use Coffee &amp; Code at <a href="https://coffeencode.cc">coffeencode.cc</a> and, where applicable, an account hosted by the Coffee &amp; Code Personal Data Server (PDS). The services are operated by MBD Company. By using them, you agree to these terms. If you do not agree, do not use the services.</p>
+
+      <h2>Accounts and account providers</h2>
+      <p>You may read the publication without an account. Sign-in uses an AT Protocol account and the PDS that hosts it. If you create or use an account hosted by Coffee &amp; Code, you are responsible for keeping your sign-in credentials secure and for activity performed through your account. Do not share credentials or attempt to access another person’s account.</p>
+      <p>When you sign in with an account hosted by another provider, that provider’s terms and policies also apply. Coffee &amp; Code does not control external PDS providers, Bluesky, or other independent AT Protocol services.</p>
+
+      <h2>Your content and public activity</h2>
+      <p>You retain responsibility for content and records you create. When you use account features, the site may write likes, dislikes, views, saves, recommendations, comments, replies, and related records to your AT Protocol repository as described in the permissions shown by your account provider. These records may be public, copied, indexed, or displayed by other services on the network. Do not submit content or personal information that you do not want to be public.</p>
+      <p>You must have the rights and permissions needed to submit content and must not use the services to violate another person’s rights or applicable law. You are responsible for reviewing and managing records through your PDS and for maintaining copies of content you wish to keep.</p>
+
+      <h2>Acceptable use</h2>
+      <p>You agree not to misuse the services. This includes attempting to disrupt, damage, or gain unauthorized access to the site, PDS, accounts, or network; interfering with another person’s use; sending malicious code or spam; or using the services for unlawful, deceptive, abusive, or rights-infringing activity.</p>
+
+      <h2>Availability and changes</h2>
+      <p>The site and PDS are provided as available. Features may change, be interrupted, or be discontinued. We may suspend or limit access when reasonably necessary to protect users, the services, or the network, to address misuse or security issues, or to comply with law. We will make reasonable efforts to provide notice where practical.</p>
+
+      <h2>Network and third-party services</h2>
+      <p>AT Protocol is a distributed network. Records removed from your repository may remain in copies held by other services, and Coffee &amp; Code cannot control how independent services process or display them. Links to or integrations with third-party services are provided for convenience and are subject to those services’ own terms and policies.</p>
+
+      <h2>Disclaimers and liability</h2>
+      <p>To the extent permitted by applicable law, the services are provided without warranties of any kind. MBD Company is not responsible for the acts or services of independent PDS providers or other network participants. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited.</p>
+
+      <h2>Changes to these terms</h2>
+      <p>We may update these terms as the services change. The date above indicates when they were most recently revised. Continued use after an update means you accept the revised terms.</p>
+
+      <h2>Contact</h2>
+      <p>For questions about these terms or the Coffee &amp; Code PDS, contact the operator through <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Coffee &amp; Code on Bluesky</a>.</p>
+    </article>`;
+
+  const pageUrl = new URL(c.req.url).toString();
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const metaTags = `
+    <meta name="description" content="Terms for using Coffee &amp; Code and the Coffee &amp; Code Personal Data Server.">
+    <meta property="og:title" content="Terms of service | Coffee and Code">
+    <meta property="og:description" content="Terms for using Coffee &amp; Code and its hosted PDS.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+
+  return c.html(renderLayout(c, 'Terms of service', body, metaTags));
 });
 
 export default pages;

@@ -28,7 +28,7 @@ function heroArticleMeta(post: StandardDocument) {
   if (!post.author) return articleMeta(post);
   const authorName = post.author.displayName || post.author.handle;
   const authorLink = `/author/${encodeURIComponent(post.author.did)}`;
-  return `<span class="article-meta article-meta--byline" data-reaction-subject="${escapeHtml(post.uri)}"><span>Written by <a href="${authorLink}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter">Reads <span data-at-view-count>—</span></span><span class="comment-counter">Comments <span data-at-comment-count>—</span></span></span>`;
+  return `<span class="article-meta article-meta--byline" data-reaction-subject="${escapeHtml(post.uri)}"><span>Written by <a href="${authorLink}" data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</a> on ${formatDate(post.publishedAt)}</span><span class="view-counter">Reads <span data-at-view-count>—</span></span><span class="comment-counter">Comments <span data-at-comment-count>—</span></span></span>`;
 }
 
 function escapeHtml(value: string) {

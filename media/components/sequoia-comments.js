@@ -33,6 +33,7 @@ const styles = `
 .comment-action:disabled { opacity:.55; cursor:wait; }
 .comment-edit-form { margin-top:.6rem; }
 .comment-status { color:var(--sequoia-secondary-color,#6b7280); font-size:.875rem; }
+.comment-verification { color:#3897f0; display:inline-block; height:1em; margin-left:.25em; vertical-align:-.12em; width:1em; }
 @media (max-width:480px) { .comment { grid-template-columns:2rem minmax(0,1fr); gap:.55rem; padding:.8rem 0; }.avatar,.avatar-placeholder { width:2rem; height:2rem; flex-basis:2rem; }.comment-children { padding-left:.5rem; } }
 `;
 
@@ -130,7 +131,33 @@ class SequoiaComments extends HTMLElement {
     const ownActions = this.viewerDid && comment.did === this.viewerDid
       ? `<button type="button" class="comment-action" data-edit-comment="${escapeHtml(comment.uri)}">Edit</button><button type="button" class="comment-action comment-action--danger" data-delete-comment="${escapeHtml(comment.uri)}">Delete</button>`
       : '';
-    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" href="https://bsky.app/profile/${encodeURIComponent(comment.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}">♥ ${comment.liked ? 'Liked' : 'Like'} <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
+    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" data-author-verification-did="${escapeHtml(comment.did)}" href="https://bsky.app/profile/${encodeURIComponent(comment.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}">♥ ${comment.liked ? 'Liked' : 'Like'} <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
+  }
+
+  async loadVerificationBadges() {
+    const authorElements = [...this.container.querySelectorAll('[data-author-verification-did]')];
+    const dids = [...new Set(authorElements.map((element) => element.dataset.authorVerificationDid).filter(Boolean))];
+    if (!dids.length) return;
+    const query = new URLSearchParams();
+    dids.forEach((did) => query.append('did', did));
+    const response = await fetch(`/api/verifications?${query}`, { cache: 'force-cache' });
+    if (!response.ok) throw new Error('Could not load comment author verifications.');
+    const result = await response.json();
+    const verifiedDids = new Set(result.verifiedDids);
+    authorElements.forEach((element) => {
+      if (!verifiedDids.has(element.dataset.authorVerificationDid)) return;
+      const badge = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      badge.setAttribute('class', 'comment-verification');
+      badge.setAttribute('viewBox', '0 0 20 20');
+      badge.setAttribute('fill', 'currentColor');
+      badge.setAttribute('role', 'img');
+      badge.setAttribute('aria-label', 'Verified author');
+      badge.title = 'Verified author';
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M10 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm4.1 6.2-4.7 5.6a1 1 0 0 1-1.5.1L5.8 11.4a1 1 0 0 1 1.4-1.4l1.3 1.3 4.1-4.9a1 1 0 0 1 1.5 1.3Z');
+      badge.append(path);
+      element.append(badge);
+    });
   }
 
   render() {
@@ -171,6 +198,7 @@ class SequoiaComments extends HTMLElement {
       const current = this.container.querySelector('.comments-more');
       if (current) { current.disabled = false; current.textContent = 'Load older comments'; }
     });
+    void this.loadVerificationBadges().catch((error) => console.error('Could not load comment author verification badges:', error));
   }
 
   async toggleLike(button) {
@@ -253,6 +281,7 @@ class SequoiaComments extends HTMLElement {
       comment.text = text;
       this.pendingEdits.set(comment.uri, text);
       this.render();
+        void this.loadVerificationBadges().catch((error) => console.error(error));
       this.scheduleRefresh();
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : 'Could not save this edit.';

@@ -117,7 +117,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
   const railAuthors = [...authorsByDid.values()]
     .sort((a, b) => (a.displayName || a.handle).localeCompare(b.displayName || b.handle))
     .slice(0, 6)
-    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.did)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong>${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
+    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.did)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
     .join('');
   const structuredData = {
     '@context': 'https://schema.org',
@@ -170,7 +170,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
       <header class="article__header">
         <h1>${safeTitle}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
-        ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by ${escapeHtml(authorName)} on ${formatDate(post.publishedAt)}</span></a>` : ''}
+        ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by <span data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</span> on ${formatDate(post.publishedAt)}</span></a>` : ''}
         <div class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story reads and reactions">
           <span class="reaction-button engagement-stat"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Reads <span class="reaction-count" data-at-view-count>—</span></span>
           <div class="article-reactions__buttons" aria-label="React to this story">
