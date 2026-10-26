@@ -165,7 +165,7 @@ async function selectedOAuthClient() {
 }
 
 const savedMetadataVersion = storedMetadataVersion();
-const initialMetadataVersion = savedMetadataVersion || 'v7';
+const initialMetadataVersion = savedMetadataVersion || 'latest';
 if (metadataVersionSelect) metadataVersionSelect.value = savedMetadataVersion || 'latest';
 advancedToggle?.addEventListener('click', () => {
   if (!advancedToggle || !advancedOptions) return;

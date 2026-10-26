@@ -4,8 +4,8 @@
   "defs": {
     "main": {
       "type": "permission-set",
-      "title": "Coffee & Code",
-      "detail": "Save stories, record your reading activity, and create and manage your comments and author/public profile.",
+      "title": "Coffee & Code Profile",
+      "detail": "Manage your likes, dislikes, comments, reads, saves, and author profile created for the Coffee & Code website.",
       "permissions": [
         {
           "type": "permission",
