@@ -38,15 +38,8 @@ assert(metadata.response_types?.includes('code'), 'code response type is require
 const requestedScopes = new Set(metadata.scope?.split(' ') ?? []);
 for (const scope of [
   'atproto',
-  'repo:cc.coffeencode.interact.like?action=create&action=delete',
-  'repo:cc.coffeencode.interact.dislike?action=create&action=delete',
-  'repo:cc.coffeencode.interact.view?action=create',
+  'include:cc.coffeencode.fullPermissions',
   'repo:site.standard.graph.recommend?action=create',
-  'repo:cc.coffeencode.comment?action=create&action=update&action=delete',
-  'repo:cc.coffeencode.comment.like?action=create&action=delete',
-  'repo:cc.coffeencode.handle.claim?action=create',
-  'repo:cc.coffeencode.author.profile?action=create&action=update',
-  'repo:cc.coffeencode.save?action=create&action=delete',
   'blob:*/*',
 ]) {
   assert(requestedScopes.has(scope), `required permission scope is missing: ${scope}`);
