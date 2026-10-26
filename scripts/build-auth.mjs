@@ -3,13 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
-const latestClientMetadataPath = new URL('../media/oauth-client-metadata-v8.json', import.meta.url);
+const v8ClientMetadataPath = new URL('../media/oauth-client-metadata-v8.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
-const latestClientMetadata = JSON.parse(await readFile(latestClientMetadataPath, 'utf8'));
+const v8ClientMetadata = JSON.parse(await readFile(v8ClientMetadataPath, 'utf8'));
 const permissionSet = JSON.parse(await readFile(permissionSetPath, 'utf8'));
 const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
-const expectedLatestClientId = 'https://coffeencode.cc/oauth-client-metadata-v8.json';
+const expectedV8ClientId = 'https://coffeencode.cc/oauth-client-metadata-v8.json';
 const expectedRedirectUri = 'https://coffeencode.cc/auth';
 
 function assert(condition, message) {
@@ -26,11 +26,11 @@ function assertHttpsUrl(value, label) {
 }
 
 assert(metadata.client_id === expectedClientId, 'client_id must match the deployed metadata URL');
-assert(latestClientMetadata.client_id === expectedLatestClientId, 'latest client_id must match the cache-busting metadata URL');
-assert(latestClientMetadata.scope === metadata.scope, 'latest and canonical metadata must request the same scopes');
-assert(latestClientMetadata.tos_uri === metadata.tos_uri, 'latest and canonical metadata must use the same terms page');
-assertHttpsUrl(latestClientMetadata.client_id, 'latest client_id');
-assert(latestClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'latest redirect URI must match the /auth callback');
+assert(v8ClientMetadata.client_id === expectedV8ClientId, 'version 8 client_id must match its metadata URL');
+assert(v8ClientMetadata.scope === metadata.scope, 'version 8 and canonical metadata must request the same scopes');
+assert(v8ClientMetadata.tos_uri === metadata.tos_uri, 'version 8 and canonical metadata must use the same terms page');
+assertHttpsUrl(v8ClientMetadata.client_id, 'version 8 client_id');
+assert(v8ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 8 redirect URI must match the /auth callback');
 assert(metadata.tos_uri === 'https://coffeencode.cc/terms', 'tos_uri must match the terms page');
 assertHttpsUrl(metadata.client_id, 'client_id');
 assertHttpsUrl(metadata.client_uri, 'client_uri');

@@ -70,12 +70,13 @@ pages.get('/auth', (c) => {
             <label for="auth-metadata-version">OAuth permission version</label>
             <select id="auth-metadata-version" data-auth-metadata-version>
               <option value="latest">Latest permissions (recommended)</option>
-              <option value="v7">Version 7</option>
-              <option value="v6">Version 6</option>
-              <option value="v5">Version 5</option>
-              <option value="v4">Version 4</option>
-              <option value="v3">Version 3</option>
-              <option value="v2">Version 2</option>
+              <option value="v8">Version 8 — Named permission set</option>
+              <option value="v7">Version 7 — Saved stories</option>
+              <option value="v6">Version 6 — Profile creation</option>
+              <option value="v5">Version 5 — Profile editing and image uploads</option>
+              <option value="v4">Version 4 — Comment editing and deletion</option>
+              <option value="v3">Version 3 — Handle claims</option>
+              <option value="v2">Version 2 — Reactions, comments, and views</option>
             </select>
             <p>Older versions request different permissions and may not support every feature. Your choice is remembered for the sign-in redirect.</p>
           </div>

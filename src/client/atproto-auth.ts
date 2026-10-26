@@ -4,7 +4,8 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawLatestClientMetadata from '../../media/oauth-client-metadata-v8.json';
+import rawLatestClientMetadata from '../../media/oauth-client-metadata.json';
+import rawClientMetadataV8 from '../../media/oauth-client-metadata-v8.json';
 import rawClientMetadataV7 from '../../media/oauth-client-metadata-v7.json';
 import rawClientMetadataV6 from '../../media/oauth-client-metadata-v6.json';
 import rawClientMetadataV5 from '../../media/oauth-client-metadata-v5.json';
@@ -12,10 +13,11 @@ import rawClientMetadataV4 from '../../media/oauth-client-metadata-v4.json';
 import rawClientMetadataV3 from '../../media/oauth-client-metadata-v3.json';
 import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 
-type MetadataVersion = 'latest' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
+type MetadataVersion = 'latest' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
 type MetadataVersionControl = HTMLElement & { value: string };
 const oauthMetadataVersions: Record<MetadataVersion, OAuthClientMetadataInput> = {
   latest: rawLatestClientMetadata as OAuthClientMetadataInput,
+  v8: rawClientMetadataV8 as OAuthClientMetadataInput,
   v7: rawClientMetadataV7 as OAuthClientMetadataInput,
   v6: rawClientMetadataV6 as OAuthClientMetadataInput,
   v5: rawClientMetadataV5 as OAuthClientMetadataInput,
@@ -103,7 +105,7 @@ function clearAuthError() {
 }
 
 function isMetadataVersion(value: string | null | undefined): value is MetadataVersion {
-  return value === 'latest' || value === 'v7' || value === 'v6' || value === 'v5'
+  return value === 'latest' || value === 'v8' || value === 'v7' || value === 'v6' || value === 'v5'
     || value === 'v4' || value === 'v3' || value === 'v2';
 }
 
