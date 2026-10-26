@@ -64,6 +64,22 @@ pages.get('/auth', (c) => {
           </form>
           <p class="auth-page__resolution">Your handle is sent to Coffee &amp; Code's resolver to find your account provider. You’ll enter your password on that provider’s site.</p>
         </section>
+        <div class="auth-advanced">
+          <button type="button" class="auth-advanced__toggle" data-auth-advanced-toggle aria-expanded="false" aria-controls="auth-advanced-options">Advanced sign-in options</button>
+          <div class="auth-advanced__options" id="auth-advanced-options" data-auth-advanced-options hidden>
+            <label for="auth-metadata-version">OAuth permission version</label>
+            <select id="auth-metadata-version" data-auth-metadata-version>
+              <option value="latest">Latest permissions (recommended)</option>
+              <option value="v7">Version 7</option>
+              <option value="v6">Version 6</option>
+              <option value="v5">Version 5</option>
+              <option value="v4">Version 4</option>
+              <option value="v3">Version 3</option>
+              <option value="v2">Version 2</option>
+            </select>
+            <p>Older versions request different permissions and may not support every feature. Your choice is remembered for the sign-in redirect.</p>
+          </div>
+        </div>
       </div>
       <div class="auth-account" data-auth-account hidden>
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>

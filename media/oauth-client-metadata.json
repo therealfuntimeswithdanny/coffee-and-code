@@ -4,6 +4,7 @@
   "client_uri": "https://coffeencode.cc",
   "logo_uri": "https://coffeencode.cc/favicon.png",
   "policy_uri": "https://coffeencode.cc/privacy",
+  "tos_uri": "https://coffeencode.cc/terms",
   "redirect_uris": [
     "https://coffeencode.cc/auth"
   ],
@@ -14,7 +15,7 @@
   "response_types": [
     "code"
   ],
-  "scope": "atproto repo:cc.coffeencode.interact.like?action=create&action=delete repo:cc.coffeencode.interact.dislike?action=create&action=delete repo:cc.coffeencode.interact.view?action=create repo:site.standard.graph.recommend?action=create repo:cc.coffeencode.comment?action=create repo:cc.coffeencode.comment.like?action=create&action=delete",
+  "scope": "atproto include:cc.coffeencode.fullPermissions repo:site.standard.graph.recommend?action=create blob:*/*",
   "token_endpoint_auth_method": "none",
   "application_type": "web",
   "dpop_bound_access_tokens": true

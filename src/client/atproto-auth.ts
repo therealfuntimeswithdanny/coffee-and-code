@@ -4,19 +4,34 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawClientMetadata from '../../media/oauth-client-metadata-v7.json';
+import rawLatestClientMetadata from '../../media/oauth-client-metadata.json';
+import rawClientMetadataV7 from '../../media/oauth-client-metadata-v7.json';
+import rawClientMetadataV6 from '../../media/oauth-client-metadata-v6.json';
+import rawClientMetadataV5 from '../../media/oauth-client-metadata-v5.json';
+import rawClientMetadataV4 from '../../media/oauth-client-metadata-v4.json';
+import rawClientMetadataV3 from '../../media/oauth-client-metadata-v3.json';
+import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 
-// The same file is published as a Cloudflare static asset at the client_id URL.
-// Embedding it here avoids a second metadata fetch in the browser and prevents
-// the browser config from drifting from the public document.
-const clientMetadata = rawClientMetadata as OAuthClientMetadataInput;
-const clientOrigin = new URL(clientMetadata.client_id!).origin;
+type MetadataVersion = 'latest' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
+type MetadataVersionControl = HTMLElement & { value: string };
+const oauthMetadataVersions: Record<MetadataVersion, OAuthClientMetadataInput> = {
+  latest: rawLatestClientMetadata as OAuthClientMetadataInput,
+  v7: rawClientMetadataV7 as OAuthClientMetadataInput,
+  v6: rawClientMetadataV6 as OAuthClientMetadataInput,
+  v5: rawClientMetadataV5 as OAuthClientMetadataInput,
+  v4: rawClientMetadataV4 as OAuthClientMetadataInput,
+  v3: rawClientMetadataV3 as OAuthClientMetadataInput,
+  v2: rawClientMetadataV2 as OAuthClientMetadataInput,
+};
+const metadataPreferenceKey = 'cc.oauth-metadata-version';
 const handleResolver = 'https://database.coffeencode.cc';
+const oauthClients = new Map<MetadataVersion, BrowserOAuthClient>();
 
 let client: BrowserOAuthClient | undefined;
 let session: OAuthSession | undefined;
 let initializationError: unknown;
 let callbackState: string | null | undefined;
+const clientInitializations = new WeakMap<BrowserOAuthClient, Promise<Awaited<ReturnType<BrowserOAuthClient['init']>>>>();
 
 function safeReturnPath(value: string | null | undefined) {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
@@ -43,6 +58,9 @@ const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
+const advancedToggle = document.querySelector<HTMLButtonElement>('[data-auth-advanced-toggle]');
+const advancedOptions = document.querySelector<HTMLElement>('[data-auth-advanced-options]');
+const metadataVersionSelect = document.querySelector<MetadataVersionControl>('[data-auth-metadata-version]');
 const coffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-coffee-account]');
 const createCoffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-create-coffee-account]');
 const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
@@ -83,6 +101,89 @@ function clearAuthError() {
   authError.hidden = true;
   authError.textContent = '';
 }
+
+function isMetadataVersion(value: string | null | undefined): value is MetadataVersion {
+  return value === 'latest' || value === 'v7' || value === 'v6' || value === 'v5'
+    || value === 'v4' || value === 'v3' || value === 'v2';
+}
+
+function storedMetadataVersion(): MetadataVersion | undefined {
+  try {
+    const value = window.localStorage.getItem(metadataPreferenceKey);
+    return isMetadataVersion(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function selectedMetadataVersion(): MetadataVersion {
+  const value = metadataVersionSelect?.value;
+  return isMetadataVersion(value) ? value : storedMetadataVersion() || 'latest';
+}
+
+function getOAuthClient(version: MetadataVersion) {
+  let oauthClient = oauthClients.get(version);
+  if (!oauthClient) {
+    oauthClient = new BrowserOAuthClient({
+      clientMetadata: oauthMetadataVersions[version],
+      handleResolver,
+      onSessionDeleted: (did) => {
+        if (session?.did !== did) return;
+        session = undefined;
+        renderAccount();
+      },
+    });
+    oauthClients.set(version, oauthClient);
+  }
+  return oauthClient;
+}
+
+function initializeOAuthClient(oauthClient: BrowserOAuthClient) {
+  let initialized = clientInitializations.get(oauthClient);
+  if (!initialized) {
+    initialized = oauthClient.init();
+    clientInitializations.set(oauthClient, initialized);
+  }
+  return initialized;
+}
+
+async function selectedOAuthClient() {
+  await oauthReady;
+  const version = selectedMetadataVersion();
+  try {
+    window.localStorage.setItem(metadataPreferenceKey, version);
+  } catch {
+    throw new Error('Your browser could not remember the selected OAuth version. Allow site storage and try again.');
+  }
+  const selectedClient = getOAuthClient(version);
+  client = selectedClient;
+  const initialized = await initializeOAuthClient(selectedClient);
+  session = initialized?.session;
+  if (initialized && 'state' in initialized) callbackState = initialized.state;
+  renderAccount();
+  return selectedClient;
+}
+
+const savedMetadataVersion = storedMetadataVersion();
+const initialMetadataVersion = savedMetadataVersion || 'v7';
+if (metadataVersionSelect) metadataVersionSelect.value = savedMetadataVersion || 'latest';
+advancedToggle?.addEventListener('click', () => {
+  if (!advancedToggle || !advancedOptions) return;
+  const expanded = advancedToggle.getAttribute('aria-expanded') === 'true';
+  advancedToggle.setAttribute('aria-expanded', String(!expanded));
+  advancedOptions.hidden = expanded;
+});
+metadataVersionSelect?.addEventListener('change', () => {
+  const previous = storedMetadataVersion() || 'latest';
+  try {
+    if (!isMetadataVersion(metadataVersionSelect.value)) throw new Error('Choose a valid OAuth permission version.');
+    window.localStorage.setItem(metadataPreferenceKey, metadataVersionSelect.value);
+    clearAuthError();
+  } catch (error) {
+    metadataVersionSelect.value = previous;
+    showAuthError(errorMessage(error));
+  }
+});
 
 function renderAccount() {
   const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
@@ -613,19 +714,11 @@ async function loadAccountSavedPosts(did: string) {
 }
 
 try {
+  const clientOrigin = new URL(oauthMetadataVersions.latest.client_id!).origin;
   if (window.location.origin !== clientOrigin) {
     throw new Error(`AT Protocol sign-in is configured for ${clientOrigin}.`);
   }
-
-  client = new BrowserOAuthClient({
-    clientMetadata,
-    handleResolver,
-    onSessionDeleted: (did) => {
-      if (session?.did !== did) return;
-      session = undefined;
-      renderAccount();
-    },
-  });
+  client = getOAuthClient(initialMetadataVersion);
 } catch (error) {
   initializationError = error;
 }
@@ -639,7 +732,7 @@ if (initializationError && authForm) {
 const oauthReady = (async () => {
   if (!client) return;
   try {
-    const initialized = await client.init();
+    const initialized = await initializeOAuthClient(client);
     if (initialized) {
       session = initialized.session;
       if ('state' in initialized) callbackState = initialized.state;
@@ -664,9 +757,9 @@ coffeeAccountButton?.addEventListener('click', async () => {
   coffeeAccountButton.disabled = true;
   coffeeAccountButton.textContent = 'Connecting…';
   try {
-    await oauthReady;
+    const signInClient = await selectedOAuthClient();
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-    await client.signInRedirect('https://account.coffeencode.cc', { state: returnPath });
+    await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath });
   } catch (error) {
     showAuthError(errorMessage(error));
     coffeeAccountButton.disabled = false;
@@ -707,9 +800,9 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
   createCoffeeAccountButton.disabled = true;
   createCoffeeAccountButton.textContent = 'Connecting…';
   try {
-    await oauthReady;
+    const signInClient = await selectedOAuthClient();
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-    await client.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create' });
+    await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create' });
   } catch (error) {
     showAuthError(errorMessage(error));
     createCoffeeAccountButton.disabled = false;
@@ -813,9 +906,9 @@ if (authForm) {
     }
 
     try {
-      await oauthReady;
+      const signInClient = await selectedOAuthClient();
       const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-      await client.signInRedirect(handle, { state: returnPath });
+      await signInClient.signInRedirect(handle, { state: returnPath });
     } catch (error) {
       showAuthError(errorMessage(error));
       if (submit) {

@@ -1,0 +1,61 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.fullPermissions",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code",
+      "detail": "Save stories, record your reading activity, and create and manage your comments and author/public profile.",
+      "permissions": [
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.interact.like",
+            "cc.coffeencode.interact.dislike",
+            "cc.coffeencode.comment.like",
+            "cc.coffeencode.save"
+          ],
+          "action": [
+            "create",
+            "delete"
+          ]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.interact.view",
+            "cc.coffeencode.handle.claim"
+          ],
+          "action": [
+            "create"
+          ]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.comment"
+          ],
+          "action": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.author.profile"
+          ],
+          "action": [
+            "create",
+            "update"
+          ]
+        }
+      ]
+    }
+  }
+}
