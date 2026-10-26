@@ -4,7 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawLatestClientMetadata from '../../media/oauth-client-metadata.json';
+import rawLatestClientMetadata from '../../media/oauth-client-metadata-v8.json';
 import rawClientMetadataV7 from '../../media/oauth-client-metadata-v7.json';
 import rawClientMetadataV6 from '../../media/oauth-client-metadata-v6.json';
 import rawClientMetadataV5 from '../../media/oauth-client-metadata-v5.json';
