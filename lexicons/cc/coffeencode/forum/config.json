@@ -1,0 +1,39 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.config",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "description": "Forum configuration. Lives in the forum owner's repo at rkey 'self'. The owner is implicitly a moderator.",
+      "record": {
+        "type": "object",
+        "required": ["name", "createdAt"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 640, "maxGraphemes": 64 },
+          "description": { "type": "string", "maxLength": 20000, "maxGraphemes": 2000, "description": "Markdown description of the forum." },
+          "moderators": {
+            "type": "array",
+            "maxLength": 50,
+            "items": { "type": "string", "format": "did" },
+            "description": "DIDs allowed to publish moderation actions for this forum."
+          },
+          "rules": {
+            "type": "array",
+            "maxLength": 20,
+            "items": { "type": "ref", "ref": "cc.coffeencode.forum.defs#rule" }
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 50,
+            "items": { "type": "string", "maxLength": 320, "maxGraphemes": 32 },
+            "description": "Suggested tags for posts."
+          },
+          "icon": { "type": "blob", "accept": ["image/png", "image/jpeg", "image/webp"], "maxSize": 1000000 },
+          "banner": { "type": "blob", "accept": ["image/png", "image/jpeg", "image/webp"], "maxSize": 2000000 },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

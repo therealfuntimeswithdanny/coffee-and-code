@@ -10,6 +10,7 @@ import reactionsRouter from './routes/reactions';
 import commentsRouter from './routes/comments';
 import verificationsRouter from './routes/verifications';
 import usersRouter from './routes/users';
+import forumRouter from './routes/forum';
 import { renderLayout } from './templates/layout';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -24,6 +25,7 @@ app.route('/api/reactions', reactionsRouter);
 app.route('/api/comments', commentsRouter);
 app.route('/api/verifications', verificationsRouter);
 app.route('/user', usersRouter);
+app.route('/forum', forumRouter);
 // Keep the two-segment story route after named page and API routes.
 app.route('/', postsRouter);
 

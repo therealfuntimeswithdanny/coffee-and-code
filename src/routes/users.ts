@@ -9,6 +9,7 @@ import {
   resolveAtprotoIdentifier,
 } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
+import { fetchAuthorForumPosts } from './forum';
 
 const users = new Hono<{ Bindings: Env }>();
 const commentCollection = 'cc.coffeencode.comment';
@@ -142,6 +143,13 @@ users.get('/:identifier', async (c) => {
     `), 502);
   }
 
+  let forumPosts: Awaited<ReturnType<typeof fetchAuthorForumPosts>> = [];
+  try {
+    forumPosts = await fetchAuthorForumPosts(profile.handle, c.env.OWNER_PDS);
+  } catch (error) {
+    console.error(`Could not load forum posts for ${did}:`, error);
+  }
+
   let articles: StandardDocument[] = [];
   try {
     const publicationPds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
@@ -170,6 +178,13 @@ users.get('/:identifier', async (c) => {
   const shownComments = comments.length
     ? `<div class="user-comments">${commentItems}</div>`
     : '<p class="empty-state">No public comments yet.</p>';
+  const shownForumPosts = forumPosts.length
+    ? `<div class="user-forum-posts">${forumPosts.map((post) => `
+        <article class="user-forum-post">
+          <h3><a href="/forum/${encodeURIComponent(post.handle)}/${encodeURIComponent(post.rkey)}">${escapeHtml(post.title)}</a></h3>
+          <time datetime="${escapeHtml(post.createdAt)}">${escapeHtml(formatCommentDate(post.createdAt))}</time>
+        </article>`).join('')}</div>`
+    : '<p class="empty-state">No forum posts yet.</p>';
   const pageUrl = new URL(c.req.url).toString();
   const body = `
     <section class="user-page" aria-labelledby="user-title">
@@ -182,6 +197,11 @@ users.get('/:identifier', async (c) => {
       </header>
       ${profile.description ? `<p class="user-page__description">${escapeHtml(profile.description)}</p>` : ''}
       ${profile.pronouns ? `<div class="user-page__details"><span>${escapeHtml(profile.pronouns)}</span></div>` : ''}
+      <section class="user-page__activity" aria-labelledby="user-forum-title">
+        <div class="section-heading"><span id="user-forum-title">Forum posts</span><span>${forumPosts.length}</span></div>
+        ${forumPosts.length === 100 ? '<p class="user-page__comment-limit">Showing the latest 100 forum posts.</p>' : ''}
+        ${shownForumPosts}
+      </section>
       <section class="user-page__activity" aria-labelledby="user-comments-title">
         <div class="section-heading"><span id="user-comments-title">Comments</span><span>${comments.length}</span></div>
         ${comments.length === 100 ? '<p class="user-page__comment-limit">Showing the latest 100 comments.</p>' : ''}

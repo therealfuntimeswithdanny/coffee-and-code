@@ -1,0 +1,41 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.defs",
+  "description": "Shared definitions for the forum lexicons.",
+  "defs": {
+    "image": {
+      "type": "object",
+      "required": ["image", "alt"],
+      "properties": {
+        "image": {
+          "type": "blob",
+          "accept": ["image/png", "image/jpeg", "image/webp", "image/gif"],
+          "maxSize": 2000000
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 10000,
+          "maxGraphemes": 1000,
+          "description": "Alt text for accessibility."
+        },
+        "aspectRatio": { "type": "ref", "ref": "#aspectRatio" }
+      }
+    },
+    "aspectRatio": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 1000, "maxGraphemes": 100 },
+        "description": { "type": "string", "maxLength": 5000, "maxGraphemes": 500 }
+      }
+    }
+  }
+}

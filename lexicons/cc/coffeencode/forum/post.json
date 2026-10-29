@@ -1,0 +1,46 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.post",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "A top-level forum post.",
+      "record": {
+        "type": "object",
+        "required": ["forum", "title", "content", "createdAt"],
+        "properties": {
+          "forum": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT-URI of the forum's cc.coffeencode.forum.config record."
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 3000, "maxGraphemes": 300 },
+          "content": { "type": "string", "maxLength": 300000, "maxGraphemes": 100000, "description": "Markdown body." },
+          "images": {
+            "type": "array",
+            "maxLength": 10,
+            "items": { "type": "ref", "ref": "cc.coffeencode.forum.defs#image" }
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 8,
+            "items": { "type": "string", "maxLength": 320, "maxGraphemes": 32 }
+          },
+          "langs": {
+            "type": "array",
+            "maxLength": 3,
+            "items": { "type": "string", "format": "language" }
+          },
+          "labels": {
+            "type": "union",
+            "refs": ["com.atproto.label.defs#selfLabels"],
+            "description": "Self-applied content labels (e.g. NSFW)."
+          },
+          "createdAt": { "type": "string", "format": "datetime" },
+          "editedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

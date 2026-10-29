@@ -19,6 +19,8 @@ import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 type MetadataVersion = 'latest' | 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
 type OAuthMetadataVersion = MetadataVersion | 'author';
 type MetadataVersionControl = HTMLElement & { value: string };
+type ForumImageInput = { file: File; alt: string };
+type ForumStrongRef = { uri: string; cid: string };
 const oauthMetadataVersions: Record<OAuthMetadataVersion, OAuthClientMetadataInput> = {
   latest: rawClientMetadata as OAuthClientMetadataInput,
   author: rawAuthorClientMetadata as OAuthClientMetadataInput,
@@ -96,6 +98,11 @@ declare global {
       editComment: (uri: string, record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
       deleteComment: (uri: string) => Promise<void>;
       toggleCommentLike: (commentUri: string, isLiked: boolean, likeRkey?: string) => Promise<string | undefined>;
+      createForumPost: (forumUri: string, title: string, content: string, tags: string[], images: ForumImageInput[]) => Promise<void>;
+      createForumReply: (root: ForumStrongRef, parent: ForumStrongRef, content: string, images: ForumImageInput[]) => Promise<void>;
+      getForumVotes: (subjectUris: string[]) => Promise<Record<string, 'up' | 'down'>>;
+      setForumVote: (subject: ForumStrongRef, direction: 'up' | 'down' | undefined) => Promise<void>;
+      createForumModeration: (forumUri: string, subject: ForumStrongRef, action: string, moderators: string[]) => Promise<void>;
     };
   }
 }
@@ -901,6 +908,46 @@ copyInviteButton?.addEventListener('click', async () => {
   }
 });
 
+async function listOwnForumVotes(activeSession: OAuthSession) {
+  const votes: Array<{ rkey: string; subjectUri: string; direction: 'up' | 'down'; createdAt: string }> = [];
+  const uriPrefix = `at://${activeSession.did}/cc.coffeencode.forum.vote/`;
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({
+      repo: activeSession.did,
+      collection: 'cc.coffeencode.forum.vote',
+      limit: '100',
+    });
+    if (cursor) query.set('cursor', cursor);
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.listRecords?${query.toString()}`);
+    if (!response.ok) throw new Error(`Could not load your forum votes (${response.status}).`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { subject?: { uri?: unknown }; direction?: unknown; createdAt?: unknown } }>;
+      cursor?: string;
+    };
+    for (const record of page.records || []) {
+      const rkey = typeof record.uri === 'string' && record.uri.startsWith(uriPrefix)
+        ? record.uri.slice(uriPrefix.length)
+        : '';
+      const direction = record.value?.direction;
+      const createdAt = record.value?.createdAt;
+      const subjectUri = record.value?.subject?.uri;
+      if (/^[a-zA-Z0-9._~:-]+$/.test(rkey) && typeof subjectUri === 'string'
+        && /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._~:-]+$/.test(subjectUri)
+        && (direction === 'up' || direction === 'down')
+        && typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt))) {
+        votes.push({ rkey, subjectUri, direction, createdAt });
+      }
+    }
+    cursor = page.cursor;
+    if (cursor && seenCursors.has(cursor)) throw new Error('The account provider returned a repeated forum vote cursor.');
+    if (cursor) seenCursors.add(cursor);
+    if (seenCursors.size > 1000) throw new Error('Your forum vote history is too large to load.');
+  } while (cursor);
+  return votes.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
 window.coffeeAndCodeAuth = {
   getDid: async () => {
     await oauthReady;
@@ -964,7 +1011,140 @@ window.coffeeAndCodeAuth = {
     if (match?.[1] !== rkey) throw new Error('Your like was created, but its record key could not be confirmed. Refresh the comments before changing it.');
     return rkey;
   },
+  createForumPost: async (forumUri: string, title: string, content: string, tags: string[], images: ForumImageInput[]) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const uploadedImages = await uploadForumImages(images, activeSession);
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection: 'cc.coffeencode.forum.post',
+      record: {
+        $type: 'cc.coffeencode.forum.post',
+        forum: forumUri,
+        title: title.trim(),
+        content,
+        ...(tags.length ? { tags } : {}),
+        ...(uploadedImages.length ? { images: uploadedImages } : {}),
+        createdAt: new Date().toISOString(),
+      },
+    });
+  },
+  createForumReply: async (root: ForumStrongRef, parent: ForumStrongRef, content: string, images: ForumImageInput[]) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const uploadedImages = await uploadForumImages(images, activeSession);
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection: 'cc.coffeencode.forum.reply',
+      record: {
+        $type: 'cc.coffeencode.forum.reply',
+        root,
+        parent,
+        content,
+        ...(uploadedImages.length ? { images: uploadedImages } : {}),
+        createdAt: new Date().toISOString(),
+      },
+    });
+  },
+  getForumVotes: async (subjectUris: string[]) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const subjects = new Set(subjectUris);
+    const current: Record<string, 'up' | 'down'> = {};
+    for (const vote of await listOwnForumVotes(activeSession)) {
+      if (subjects.has(vote.subjectUri)) current[vote.subjectUri] = vote.direction;
+    }
+    return current;
+  },
+  setForumVote: async (subject: ForumStrongRef, direction: 'up' | 'down' | undefined) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const votes = (await listOwnForumVotes(activeSession)).filter((vote) => vote.subjectUri === subject.uri);
+    const latest = votes[votes.length - 1];
+    for (const vote of votes) {
+      if (!direction || vote.rkey !== latest?.rkey) {
+        await repoRequest('com.atproto.repo.deleteRecord', {
+          repo: activeSession.did,
+          collection: 'cc.coffeencode.forum.vote',
+          rkey: vote.rkey,
+        });
+      }
+    }
+    if (!direction) return;
+    const record = {
+      $type: 'cc.coffeencode.forum.vote',
+      subject,
+      direction,
+      createdAt: new Date().toISOString(),
+    };
+    if (latest) {
+      await repoRequest('com.atproto.repo.putRecord', {
+        repo: activeSession.did,
+        collection: 'cc.coffeencode.forum.vote',
+        rkey: latest.rkey,
+        record,
+      });
+    } else {
+      await repoRequest('com.atproto.repo.createRecord', {
+        repo: activeSession.did,
+        collection: 'cc.coffeencode.forum.vote',
+        record,
+      });
+    }
+  },
+  createForumModeration: async (forumUri: string, subject: ForumStrongRef, action: string, moderators: string[]) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    if (!moderators.some((did) => did.toLowerCase() === activeSession.did.toLowerCase())) {
+      throw new Error('Your account is not a moderator of this forum.');
+    }
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection: 'cc.coffeencode.forum.moderation',
+      record: {
+        $type: 'cc.coffeencode.forum.moderation',
+        forum: forumUri,
+        subject,
+        action,
+        createdAt: new Date().toISOString(),
+      },
+    });
+  },
 };
+
+async function uploadForumImages(images: ForumImageInput[], activeSession: OAuthSession) {
+  if (images.length > 10) throw new Error('A forum post can contain at most 10 images.');
+  const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+  const uploaded = [];
+  for (const { file, alt } of images) {
+    if (!allowedTypes.has(file.type) || file.size > 2_000_000) {
+      throw new Error('Forum images must be PNG, JPEG, WebP, or GIF files no larger than 2 MB.');
+    }
+    if (!alt.trim() || alt.trim().length > 1000) {
+      throw new Error('Add alt text of no more than 1,000 characters for each image.');
+    }
+    const response = await activeSession.fetchHandler('/xrpc/com.atproto.repo.uploadBlob', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => undefined) as { error?: string; message?: string } | undefined;
+      const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
+      throw new Error(detail || `Image upload failed (${response.status}).`);
+    }
+    const payload = await response.json() as { blob?: unknown };
+    if (!payload.blob || typeof payload.blob !== 'object') {
+      throw new Error('The account provider did not return the uploaded image blob.');
+    }
+    uploaded.push({
+      $type: 'cc.coffeencode.forum.defs#image',
+      image: payload.blob,
+      alt: alt.trim(),
+    });
+  }
+  return uploaded;
+}
 
 if (authForm) {
   authForm.addEventListener('submit', async (event) => {

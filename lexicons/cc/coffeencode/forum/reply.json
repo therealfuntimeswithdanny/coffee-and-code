@@ -1,0 +1,44 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.reply",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "A reply to a post or to another reply. For a direct reply to a post, root and parent are the same.",
+      "record": {
+        "type": "object",
+        "required": ["root", "parent", "content", "createdAt"],
+        "properties": {
+          "root": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "The cc.coffeencode.forum.post that starts the thread."
+          },
+          "parent": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "The post or reply being replied to."
+          },
+          "content": { "type": "string", "maxLength": 100000, "maxGraphemes": 30000, "description": "Markdown body." },
+          "images": {
+            "type": "array",
+            "maxLength": 4,
+            "items": { "type": "ref", "ref": "cc.coffeencode.forum.defs#image" }
+          },
+          "langs": {
+            "type": "array",
+            "maxLength": 3,
+            "items": { "type": "string", "format": "language" }
+          },
+          "labels": {
+            "type": "union",
+            "refs": ["com.atproto.label.defs#selfLabels"]
+          },
+          "createdAt": { "type": "string", "format": "datetime" },
+          "editedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

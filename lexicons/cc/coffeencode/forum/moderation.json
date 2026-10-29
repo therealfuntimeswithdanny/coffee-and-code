@@ -1,0 +1,25 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.moderation",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "A moderation action, written to the moderator's own repo. Indexers must only honor it if the author's DID is the forum owner or listed in the config's moderators.",
+      "record": {
+        "type": "object",
+        "required": ["forum", "subject", "action", "createdAt"],
+        "properties": {
+          "forum": { "type": "string", "format": "at-uri" },
+          "subject": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+          "action": {
+            "type": "string",
+            "knownValues": ["pin", "unpin", "lock", "unlock", "hide", "unhide", "remove"]
+          },
+          "reason": { "type": "string", "maxLength": 5000, "maxGraphemes": 500 },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

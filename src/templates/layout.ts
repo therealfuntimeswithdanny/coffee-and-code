@@ -34,6 +34,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   <link rel="alternate" type="application/rss+xml" title="${pubName} RSS Feed" href="/rss.xml">
   <script type="module" src="/components/sequoia-comments.js"></script>
   <script type="module" src="/components/atproto-auth.js"></script>
+  <script type="module" src="/components/forum.js"></script>
   <script type="module" src="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js"></script>
   <script defer src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -549,10 +550,71 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       .header-links { gap: 4px; }
       .login-button { padding-left: 7px; padding-right: 7px; }
     }
+    .forum-page { margin: 0 auto; max-width: 900px; }
+    .forum-header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 22px; }
+    .forum-header h1, .forum-thread h1 { font-size: clamp(2.3rem, 6vw, 4rem); margin: 0 0 16px; }
+    .forum-description { color: var(--muted); }
+    .forum-rules, .forum-composer { background: var(--paper-deep); border: 1px solid var(--line); margin: 24px 0; padding: 20px; }
+    .forum-rules h2, .forum-composer h2 { font-size: 1.4rem; margin: 0 0 12px; }
+    .forum-rules ol { margin: 0; padding-left: 22px; }
+    .forum-rules li + li { margin-top: 12px; }
+    .forum-rules p { color: var(--muted); margin: 4px 0 0; }
+    .forum-filter { align-items: end; display: flex; flex-wrap: wrap; gap: 14px; margin: 28px 0 18px; }
+    .forum-page label { color: var(--muted); display: grid; font-size: 14px; gap: 5px; }
+    .forum-page input, .forum-page textarea, .forum-page select { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink); font: inherit; max-width: 100%; padding: 9px 10px; }
+    .forum-page input:focus, .forum-page textarea:focus, .forum-page select:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .forum-composer, .forum-reply-form { display: grid; gap: 14px; }
+    .forum-composer textarea, .forum-reply-form textarea { resize: vertical; width: 100%; }
+    .forum-composer select[multiple] { min-height: 100px; }
+    .forum-status { color: var(--accent); font-size: 14px; margin: 0; }
+    .forum-status[data-error="true"] { color: #ffb4a8; }
+    .forum-post-list { margin-top: 10px; }
+    .forum-post-card { border-bottom: 1px solid var(--line); padding: 22px 4px; }
+    .forum-post-card__byline { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 14px; gap: 10px; }
+    .forum-post-card__byline img { border-radius: 50%; height: 34px; object-fit: cover; width: 34px; }
+    .forum-post-card__byline time { margin-left: auto; }
+    .forum-post-card h2 { font-size: clamp(1.35rem, 3vw, 2rem); margin: 12px 0; }
+    .forum-post-card__excerpt { max-height: 180px; overflow: hidden; }
+    .forum-post-card__excerpt > :first-child { margin-top: 0; }
+    .forum-post-card__footer { align-items: center; display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; margin-top: 14px; }
+    .forum-post-card__footer > span { display: flex; flex-wrap: wrap; gap: 10px; }
+    .forum-post-card__footer > span a, .forum-badge { border: 1px solid var(--line); color: var(--accent); font-size: 12px; padding: 2px 8px; }
+    .forum-votes { align-items: center; display: inline-flex; gap: 7px; }
+    .forum-votes button, .forum-moderation button, .forum-reply-link { background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; font: inherit; padding: 4px 9px; }
+    .forum-votes button[aria-pressed="true"] { background: var(--accent); color: var(--paper); }
+    .forum-moderation { display: none; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .forum-moderation.is-visible { display: flex; }
+    .forum-thread { margin: 0 auto; max-width: 820px; }
+    .forum-thread > .read-link { display: inline-block; margin-bottom: 30px; }
+    .forum-thread > .forum-post-card__byline { margin: 18px 0 28px; }
+    .forum-thread__content { margin-top: 28px; }
+    .forum-thread__replies { margin-top: 48px; }
+    .forum-reply-form { background: var(--paper-deep); border: 1px solid var(--line); margin: 20px 0; padding: 18px; }
+    .forum-replies { margin-top: 18px; }
+    .forum-reply { border-left: 1px solid var(--line-strong); margin: 18px 0 18px calc(min(var(--reply-depth), 5) * 18px); padding: 4px 0 4px 16px; }
+    .forum-reply > header { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 14px; gap: 12px; justify-content: space-between; margin-bottom: 10px; }
+    .forum-reply .forum-moderation { margin: 8px 0; }
+    .forum-reply-link { font-size: 13px; margin-top: 6px; }
+    .forum-locked { color: var(--muted); }
+    .forum-images { display: flex; flex-wrap: wrap; gap: 14px; margin: 16px 0; }
+    .forum-images figure { margin: 0; max-width: 100%; width: min(100%, 520px); }
+    .forum-images img { border-radius: 3px; display: block; height: auto; max-height: 600px; object-fit: contain; width: 100%; }
+    .forum-images figcaption { color: var(--muted); font-size: 13px; margin-top: 5px; }
+    .forum-next-page { display: block; margin-top: 28px; text-align: right; }
+    .user-forum-post { border-bottom: 1px solid var(--line); padding: 14px 6px; }
+    .user-forum-post h3 { font-size: 19px; margin: 0 0 5px; }
+    .user-forum-post time { color: var(--muted); font-size: 13px; }
+    @media (max-width: 760px) {
+      .forum-filter { align-items: stretch; flex-direction: column; }
+      .forum-filter > * { width: 100%; }
+      .forum-post-card__byline time { margin-left: 0; }
+      .forum-reply { margin-left: calc(min(var(--reply-depth), 5) * 8px); padding-left: 10px; }
+      .forum-composer, .forum-rules { padding: 14px; }
+    }
   </style>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/authors">Authors</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles">Search</button><a class="rss-link" href="/rss.xml">RSS</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
+  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles"><i class="fa-solid fa-magnifying-glass"></i></button><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>

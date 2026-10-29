@@ -1,0 +1,20 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.vote",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "An upvote or downvote on a post or reply. Indexers should keep the latest vote per (author, subject).",
+      "record": {
+        "type": "object",
+        "required": ["subject", "direction", "createdAt"],
+        "properties": {
+          "subject": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+          "direction": { "type": "string", "knownValues": ["up", "down"] },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

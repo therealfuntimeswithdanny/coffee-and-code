@@ -78,6 +78,15 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 - Each compact author entry pairs a circular portrait (or simple placeholder) with the author's name and story count.
 - An individual author page has a portrait and name in its header, followed by a ruled **Stories** heading/count and the same story-entry pattern used in the archive.
 
+### Forum
+
+- The forum index lives at `/forum`; post and reply records remain in their authors' AT Protocol repositories.
+- Individual post pages use `/forum/{author-handle}/{rkey}` and are linked from author profiles.
+- Keep the forum visual language consistent with the publication: ruled discussion entries, clear author/date metadata, compact topic tags, and the same dark coffee palette.
+- Allow signed-in users to publish Markdown posts and threaded replies. Require alt text for uploaded images and sanitize rendered Markdown.
+- Show pin, lock, hide, and remove controls only to the forum owner and configured moderators. Hidden/removed content is omitted, and locked threads reject new replies.
+- Discover public records through the existing Constellation index service. Forum setup requires the published forum lexicons and an owner-authored `cc.coffeencode.forum.config` record at `self`.
+
 ### Not found
 
 - Use a restrained text-led message with a small 404 label, a clear headline, one short explanation, and links back to the publication and archive.
