@@ -155,8 +155,8 @@ class SequoiaComments extends HTMLElement {
       badge.setAttribute('viewBox', '0 0 20 20');
       badge.setAttribute('fill', 'currentColor');
       badge.setAttribute('role', 'img');
-      badge.setAttribute('aria-label', 'Verified author');
-      badge.title = 'Verified author';
+      badge.setAttribute('aria-label', 'This author is a real human and has been verified by Coffee & Code');
+      badge.title = 'This author is a real human and has been verified by Coffee & Code';
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', 'M10 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm4.1 6.2-4.7 5.6a1 1 0 0 1-1.5.1L5.8 11.4a1 1 0 0 1 1.4-1.4l1.3 1.3 4.1-4.9a1 1 0 0 1 1.5 1.3Z');
       badge.append(path);

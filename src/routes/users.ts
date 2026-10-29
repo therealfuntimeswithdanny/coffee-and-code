@@ -150,6 +150,7 @@ users.get('/:identifier', async (c) => {
     console.error('Could not load stories for the user comment timeline:', error);
   }
   const articlesByUri = new Map(articles.map((article) => [article.uri, article]));
+  const authorArticle = articles.find((article) => article.author?.did.toLowerCase() === did.toLowerCase());
   const name = profile.displayName || profile.handle;
   const avatar = profile.avatar ? proxyAvatarUrl(profile.avatar) : '';
   const banner = profile.banner ? proxyImageUrl(profile.banner, pds, 'feed_fullsize') : '';
@@ -162,6 +163,7 @@ users.get('/:identifier', async (c) => {
       <div class="user-comment__date"><time datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatCommentDate(comment.createdAt))}</time></div>
       <div class="user-comment__body"><p class="user-comment__context">${replyLabel} <a href="${escapeHtml(subjectLink)}">${escapeHtml(subjectTitle)}</a></p>
       <p class="user-comment__text">${escapeHtml(comment.text)}</p>
+      <a class="user-comment__permalink" href="${escapeHtml(subjectLink)}">Open post <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       <a class="user-comment__permalink" href="https://pdsls.dev/${comment.uri}">View comment record <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></div>
     </article>`;
   }).join('');
@@ -174,7 +176,8 @@ users.get('/:identifier', async (c) => {
       ${banner ? `<div class="user-page__banner"><img src="${escapeHtml(banner)}" alt="" width="1200" height="400"></div>` : '<div class="user-page__banner user-page__banner--empty"></div>'}
       <header class="user-page__header">
         ${avatar ? `<img class="user-page__avatar" src="${escapeHtml(avatar)}" alt="" width="104" height="104">` : '<span class="user-page__avatar user-page__avatar--empty" aria-hidden="true"><i class="fa-solid fa-user"></i></span>'}
-        <div class="user-page__identity"><p class="eyebrow">AT Protocol profile</p><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
+        <div class="user-page__identity"><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
+        ${authorArticle?.author ? `<a class="user-page__bluesky" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
         <a class="user-page__bluesky" href="https://bsky.app/profile/${encodeURIComponent(profile.handle)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </header>
       ${profile.description ? `<p class="user-page__description">${escapeHtml(profile.description)}</p>` : ''}
