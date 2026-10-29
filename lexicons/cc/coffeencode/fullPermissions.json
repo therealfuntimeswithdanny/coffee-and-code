@@ -5,7 +5,7 @@
     "main": {
       "type": "permission-set",
       "title": "Coffee & Code Profile",
-      "detail": "Manage your likes, dislikes, comments, reads, saves, and author profile created for the Coffee & Code website.",
+      "detail": "Manage your likes, dislikes, comments, reads, saves, follows, and author profile created for the Coffee & Code website.",
       "permissions": [
         {
           "type": "permission",
@@ -53,6 +53,18 @@
           "action": [
             "create",
             "update"
+          ]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "app.bsky.graph.follow",
+            "site.standard.graph.subscription"
+          ],
+          "action": [
+            "create",
+            "delete"
           ]
         }
       ]

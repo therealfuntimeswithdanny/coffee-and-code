@@ -22,6 +22,7 @@ export interface StandardDocument {
   mimeType?: string; // MIME type of the content
   repoDid?: string;
   pdsUrl?: string;
+  publicationUri?: string;
   author?: AuthorProfile;
 }
 

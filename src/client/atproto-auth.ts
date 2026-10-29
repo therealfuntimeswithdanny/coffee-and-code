@@ -4,7 +4,8 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
-import rawLatestClientMetadata from '../../media/oauth-client-metadata.json';
+import rawClientMetadataV10 from '../../media/oauth-client-metadata-v10.json';
+import rawClientMetadataV9 from '../../media/oauth-client-metadata-v9.json';
 import rawClientMetadataV8 from '../../media/oauth-client-metadata-v8.json';
 import rawClientMetadataV7 from '../../media/oauth-client-metadata-v7.json';
 import rawClientMetadataV6 from '../../media/oauth-client-metadata-v6.json';
@@ -13,10 +14,12 @@ import rawClientMetadataV4 from '../../media/oauth-client-metadata-v4.json';
 import rawClientMetadataV3 from '../../media/oauth-client-metadata-v3.json';
 import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 
-type MetadataVersion = 'latest' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
+type MetadataVersion = 'latest' | 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
 type MetadataVersionControl = HTMLElement & { value: string };
 const oauthMetadataVersions: Record<MetadataVersion, OAuthClientMetadataInput> = {
-  latest: rawLatestClientMetadata as OAuthClientMetadataInput,
+  latest: rawClientMetadataV10 as OAuthClientMetadataInput,
+  v10: rawClientMetadataV10 as OAuthClientMetadataInput,
+  v9: rawClientMetadataV9 as OAuthClientMetadataInput,
   v8: rawClientMetadataV8 as OAuthClientMetadataInput,
   v7: rawClientMetadataV7 as OAuthClientMetadataInput,
   v6: rawClientMetadataV6 as OAuthClientMetadataInput,
@@ -105,7 +108,7 @@ function clearAuthError() {
 }
 
 function isMetadataVersion(value: string | null | undefined): value is MetadataVersion {
-  return value === 'latest' || value === 'v8' || value === 'v7' || value === 'v6' || value === 'v5'
+  return value === 'latest' || value === 'v10' || value === 'v9' || value === 'v8' || value === 'v7' || value === 'v6' || value === 'v5'
     || value === 'v4' || value === 'v3' || value === 'v2';
 }
 
@@ -349,6 +352,9 @@ async function loadAuthorProfileEditor(did: string) {
       const missingRecord = response.status === 404
         || (response.status === 400 && payload?.error === 'RecordNotFound');
       if (!missingRecord) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Your account needs updated author-profile permissions. Sign out, then sign in again and approve the requested permissions.');
+        }
         const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
         throw new Error(detail || `Could not load your author profile (${response.status}).`);
       }
@@ -996,6 +1002,186 @@ async function getOwnRecords(document: string, did: string) {
   if (!response.ok) throw new Error('Could not load your reaction state.');
   return await response.json() as { liked: boolean; disliked: boolean; recommended: boolean; saved: boolean };
 }
+
+type OwnRepoRecord = { uri: string; value: Record<string, unknown> };
+
+async function findOwnRepoRecord(collection: string, field: string, target: string, did: string): Promise<OwnRepoRecord | undefined> {
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({ repo: did, collection, limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const payload = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: unknown }>;
+      cursor?: unknown;
+    };
+    const found = (payload.records || []).find((record) => typeof record.uri === 'string'
+      && typeof record.value === 'object'
+      && record.value !== null
+      && !Array.isArray(record.value)
+      && (record.value as Record<string, unknown>)[field] === target);
+    if (found && typeof found.uri === 'string' && typeof found.value === 'object'
+      && found.value !== null && !Array.isArray(found.value)) {
+      return { uri: found.uri, value: found.value as Record<string, unknown> };
+    }
+    if (typeof payload.cursor !== 'string' || !payload.cursor || seenCursors.has(payload.cursor)) return undefined;
+    cursor = payload.cursor;
+    seenCursors.add(cursor);
+  } while (cursor);
+  return undefined;
+}
+
+function recordKeyFromUri(uri: string) {
+  const match = uri.match(/^at:\/\/[^/]+\/[^/]+\/([a-zA-Z0-9._~:-]+)$/);
+  if (!match) throw new Error('The account provider returned an invalid follow record URI.');
+  return match[1];
+}
+
+async function createFollowRecord(collection: string, record: Record<string, unknown>, did: string) {
+  const response = await repoRequest('com.atproto.repo.createRecord', { repo: did, collection, record });
+  const result = await response.json() as { uri?: unknown };
+  if (typeof result.uri !== 'string') throw new Error('The account provider did not return the new follow record URI.');
+  return result.uri;
+}
+
+async function deleteFollowRecord(collection: string, uri: string, did: string) {
+  await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection, rkey: recordKeyFromUri(uri) });
+}
+
+document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((container) => {
+  const button = container.querySelector<HTMLButtonElement>('[data-author-follow-button]');
+  const status = container.querySelector<HTMLElement>('[data-author-follow-status]');
+  const did = container.dataset.authorDid;
+  const publication = container.dataset.publicationUri;
+  const followCollection = 'app.bsky.graph.follow';
+  const subscriptionCollection = 'site.standard.graph.subscription';
+  if (!button || !did || !publication) return;
+
+  let followRecord: OwnRepoRecord | undefined;
+  let subscriptionRecord: OwnRepoRecord | undefined;
+  let followStateReady = false;
+  button.disabled = true;
+  const renderFollowState = () => {
+    const followed = Boolean(followRecord && subscriptionRecord);
+    button.textContent = followed ? 'Following' : 'Follow';
+    button.setAttribute('aria-pressed', String(followed));
+  };
+  const loadFollowState = async () => {
+    await oauthReady;
+    if (!session) {
+      followStateReady = true;
+      if (status) status.textContent = 'Sign in to follow this author on Bluesky and Coffee & Code.';
+      return;
+    }
+    const activeDid = session.did;
+    const [nextFollow, nextSubscription] = await Promise.all([
+      findOwnRepoRecord(followCollection, 'subject', did, activeDid),
+      findOwnRepoRecord(subscriptionCollection, 'publication', publication, activeDid),
+    ]);
+    if (session?.did !== activeDid) return;
+    followRecord = nextFollow;
+    subscriptionRecord = nextSubscription;
+    followStateReady = true;
+    renderFollowState();
+    if (status) status.textContent = '';
+  };
+
+  void loadFollowState().catch((error) => {
+    console.error('Could not load author follow state:', error);
+    if (status) status.textContent = error instanceof Error ? error.message : 'Could not load follow status.';
+  }).finally(() => {
+    button.disabled = false;
+  });
+
+  button.addEventListener('click', async () => {
+    await oauthReady;
+    if (!session) {
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
+      return;
+    }
+    if (!followStateReady) {
+      button.disabled = true;
+      if (status) status.textContent = 'Checking your current follow status…';
+      try {
+        await loadFollowState();
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not check your follow status.';
+        return;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    const activeDid = session.did;
+    button.disabled = true;
+    if (status) status.textContent = 'Updating your follows…';
+    const shouldFollow = !(followRecord && subscriptionRecord);
+    const compensations: Array<() => Promise<void>> = [];
+    try {
+      if (shouldFollow) {
+        if (!followRecord) {
+          const uri = await createFollowRecord(followCollection, {
+            $type: followCollection,
+            subject: did,
+            createdAt: new Date().toISOString(),
+          }, activeDid);
+          compensations.push(() => deleteFollowRecord(followCollection, uri, activeDid));
+        }
+        if (!subscriptionRecord) {
+          const uri = await createFollowRecord(subscriptionCollection, {
+            $type: subscriptionCollection,
+            publication,
+          }, activeDid);
+          compensations.push(() => deleteFollowRecord(subscriptionCollection, uri, activeDid));
+        }
+      } else {
+        const oldSubscription = subscriptionRecord!;
+        await deleteFollowRecord(subscriptionCollection, oldSubscription.uri, activeDid);
+        compensations.push(async () => {
+          await createFollowRecord(subscriptionCollection, {
+            ...oldSubscription.value,
+            $type: subscriptionCollection,
+          }, activeDid);
+        });
+        const oldFollow = followRecord!;
+        await deleteFollowRecord(followCollection, oldFollow.uri, activeDid);
+        compensations.push(async () => {
+          await createFollowRecord(followCollection, {
+            ...oldFollow.value,
+            $type: followCollection,
+          }, activeDid);
+        });
+      }
+
+      await loadFollowState();
+      if (status) status.textContent = shouldFollow ? 'Following on Bluesky and Coffee & Code.' : 'Unfollowed on Bluesky and Coffee & Code.';
+    } catch (error) {
+      const rollbackErrors: unknown[] = [];
+      for (const compensate of compensations.reverse()) {
+        try {
+          await compensate();
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      try {
+        await loadFollowState();
+      } catch (refreshError) {
+        followStateReady = false;
+        rollbackErrors.push(refreshError);
+      }
+      const message = error instanceof Error ? error.message : 'Could not update your follow.';
+      if (status) {
+        status.textContent = rollbackErrors.length
+          ? `${message} The follow records may be out of sync; refresh and check your account.`
+          : message;
+      }
+    } finally {
+      button.disabled = false;
+    }
+  });
+});
 
 document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
   const documentUri = container.dataset.viewSubject;

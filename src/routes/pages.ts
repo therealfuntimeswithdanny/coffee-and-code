@@ -69,7 +69,9 @@ pages.get('/auth', (c) => {
           <div class="auth-advanced__options" id="auth-advanced-options" data-auth-advanced-options hidden>
             <label for="auth-metadata-version">OAuth permission version</label>
             <select id="auth-metadata-version" data-auth-metadata-version>
-              <option value="latest">Latest permissions (recommended)</option>
+              <option value="latest">Latest permissions (v10, recommended)</option>
+              <option value="v10">Version 10 — Author follows and subscriptions</option>
+              <option value="v9">Version 9 — Author profile editing</option>
               <option value="v8">Version 8 — Named permission set</option>
               <option value="v7">Version 7 — Saved stories</option>
               <option value="v6">Version 6 — Profile creation</option>
@@ -313,6 +315,7 @@ pages.get('/author/:handle', async (c) => {
   const authorPosts = allPosts.filter((post) => post.author?.did.toLowerCase() === identifier.toLowerCase()
     || post.author?.handle.toLowerCase() === identifier.toLowerCase());
   const author = authorPosts[0]?.author;
+  const publicationUri = authorPosts.find((post) => post.publicationUri)?.publicationUri;
 
   if (!author) {
     return c.html(renderLayout(c, 'Author Not Found', '<section class="not-found"><p class="eyebrow">404</p><h1>Author not found</h1><p>This author has not published in this publication.</p><a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
@@ -363,7 +366,6 @@ pages.get('/author/:handle', async (c) => {
         </div>
       </article>`)
     .join('');
-
   const body = `
     <section class="author-page" aria-labelledby="author-title">
       ${authorBanner ? `<img src="${escapeHtml(authorBanner)}" alt="" class="author-page__banner" width="1200" height="400" decoding="async">` : ''}
@@ -371,6 +373,10 @@ pages.get('/author/:handle', async (c) => {
         ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar" width="88" height="88" decoding="async">` : ''}
         <div><p class="eyebrow">Author</p><h1 id="author-title" data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
       </header>
+      <div class="author-follow" ${publicationUri ? `data-author-follow data-author-did="${escapeHtml(author.did)}" data-publication-uri="${escapeHtml(publicationUri)}"` : ''}>
+        <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
+        <span class="author-follow__status" data-author-follow-status role="status" aria-live="polite">${publicationUri ? '' : 'Following is unavailable for this author.'}</span>
+      </div>
       ${author.description ? `<p class="author-page__description">${escapeHtml(author.description)}</p>` : ''}
       ${pinnedItems ? `<section class="author-page__pinned" aria-labelledby="author-pinned-title"><div class="section-heading"><span id="author-pinned-title">Pinned posts</span><span>${pinnedArticles.length}</span></div><div class="author-page__pinned-grid">${pinnedItems}</div></section>` : ''}
       <div class="section-heading"><span>Stories</span><span>${authorPosts.length}</span></div>

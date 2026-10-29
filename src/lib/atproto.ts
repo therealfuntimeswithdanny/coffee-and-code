@@ -386,6 +386,7 @@ export async function fetchArticles(
               mimeType,
               repoDid: did,
               pdsUrl,
+              publicationUri,
             });
           }
         }
@@ -459,6 +460,7 @@ export async function fetchArticles(
             mimeType,
             repoDid: did,
             pdsUrl,
+            publicationUri: typeof rec.value.site === 'string' ? rec.value.site : undefined,
             author: ownerProfile,
           });
         }

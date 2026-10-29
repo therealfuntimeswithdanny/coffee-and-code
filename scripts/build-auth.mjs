@@ -4,12 +4,18 @@ import { build } from 'esbuild';
 
 const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
 const v8ClientMetadataPath = new URL('../media/oauth-client-metadata-v8.json', import.meta.url);
+const v9ClientMetadataPath = new URL('../media/oauth-client-metadata-v9.json', import.meta.url);
+const v10ClientMetadataPath = new URL('../media/oauth-client-metadata-v10.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
 const v8ClientMetadata = JSON.parse(await readFile(v8ClientMetadataPath, 'utf8'));
+const v9ClientMetadata = JSON.parse(await readFile(v9ClientMetadataPath, 'utf8'));
+const v10ClientMetadata = JSON.parse(await readFile(v10ClientMetadataPath, 'utf8'));
 const permissionSet = JSON.parse(await readFile(permissionSetPath, 'utf8'));
 const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
 const expectedV8ClientId = 'https://coffeencode.cc/oauth-client-metadata-v8.json';
+const expectedV9ClientId = 'https://coffeencode.cc/oauth-client-metadata-v9.json';
+const expectedV10ClientId = 'https://coffeencode.cc/oauth-client-metadata-v10.json';
 const expectedRedirectUri = 'https://coffeencode.cc/auth';
 
 function assert(condition, message) {
@@ -27,10 +33,19 @@ function assertHttpsUrl(value, label) {
 
 assert(metadata.client_id === expectedClientId, 'client_id must match the deployed metadata URL');
 assert(v8ClientMetadata.client_id === expectedV8ClientId, 'version 8 client_id must match its metadata URL');
+assert(v9ClientMetadata.client_id === expectedV9ClientId, 'version 9 client_id must match its metadata URL');
+assert(v10ClientMetadata.client_id === expectedV10ClientId, 'version 10 client_id must match its metadata URL');
+assert(v10ClientMetadata.tos_uri === metadata.tos_uri, 'version 10 and canonical metadata must use the same terms page');
+assert(v9ClientMetadata.scope === metadata.scope, 'version 9 and canonical metadata must request the same scopes');
+assert(v9ClientMetadata.tos_uri === metadata.tos_uri, 'version 9 and canonical metadata must use the same terms page');
 assert(v8ClientMetadata.scope === metadata.scope, 'version 8 and canonical metadata must request the same scopes');
 assert(v8ClientMetadata.tos_uri === metadata.tos_uri, 'version 8 and canonical metadata must use the same terms page');
 assertHttpsUrl(v8ClientMetadata.client_id, 'version 8 client_id');
+assertHttpsUrl(v9ClientMetadata.client_id, 'version 9 client_id');
+assertHttpsUrl(v10ClientMetadata.client_id, 'version 10 client_id');
 assert(v8ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 8 redirect URI must match the /auth callback');
+assert(v9ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 9 redirect URI must match the /auth callback');
+assert(v10ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 10 redirect URI must match the /auth callback');
 assert(metadata.tos_uri === 'https://coffeencode.cc/terms', 'tos_uri must match the terms page');
 assertHttpsUrl(metadata.client_id, 'client_id');
 assertHttpsUrl(metadata.client_uri, 'client_uri');
@@ -43,10 +58,11 @@ assertHttpsUrl(metadata.redirect_uris[0], 'redirect_uris[0]');
 assert(metadata.grant_types?.includes('authorization_code'), 'authorization_code grant is required');
 assert(metadata.grant_types?.includes('refresh_token'), 'refresh_token grant is required');
 assert(metadata.response_types?.includes('code'), 'code response type is required');
-const requestedScopes = new Set(metadata.scope?.split(' ') ?? []);
+const requestedScopes = new Set(v10ClientMetadata.scope?.split(' ') ?? []);
 for (const scope of [
   'atproto',
   'include:cc.coffeencode.fullPermissions',
+  'repo:cc.coffeencode.author.profile?action=create&action=update',
   'repo:site.standard.graph.recommend?action=create',
   'blob:*/*',
 ]) {
@@ -64,6 +80,8 @@ const expectedRepoActions = new Map([
   ['cc.coffeencode.handle.claim', ['create']],
   ['cc.coffeencode.comment', ['create', 'update', 'delete']],
   ['cc.coffeencode.author.profile', ['create', 'update']],
+  ['app.bsky.graph.follow', ['create', 'delete']],
+  ['site.standard.graph.subscription', ['create', 'delete']],
 ]);
 const actualRepoActions = new Map();
 for (const permission of permissionSet.defs.main.permissions ?? []) {
