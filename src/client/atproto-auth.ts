@@ -5,6 +5,7 @@ import {
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
 import rawClientMetadata from '../../media/oauth-client-metadata.json';
+import rawAuthorClientMetadata from '../../media/oauth-client-metadata-author.json';
 import rawClientMetadataV10 from '../../media/oauth-client-metadata-v10.json';
 import rawClientMetadataV9 from '../../media/oauth-client-metadata-v9.json';
 import rawClientMetadataV8 from '../../media/oauth-client-metadata-v8.json';
@@ -16,9 +17,11 @@ import rawClientMetadataV3 from '../../media/oauth-client-metadata-v3.json';
 import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 
 type MetadataVersion = 'latest' | 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
+type OAuthMetadataVersion = MetadataVersion | 'author';
 type MetadataVersionControl = HTMLElement & { value: string };
-const oauthMetadataVersions: Record<MetadataVersion, OAuthClientMetadataInput> = {
+const oauthMetadataVersions: Record<OAuthMetadataVersion, OAuthClientMetadataInput> = {
   latest: rawClientMetadata as OAuthClientMetadataInput,
+  author: rawAuthorClientMetadata as OAuthClientMetadataInput,
   v10: rawClientMetadataV10 as OAuthClientMetadataInput,
   v9: rawClientMetadataV9 as OAuthClientMetadataInput,
   v8: rawClientMetadataV8 as OAuthClientMetadataInput,
@@ -30,8 +33,9 @@ const oauthMetadataVersions: Record<MetadataVersion, OAuthClientMetadataInput> =
   v2: rawClientMetadataV2 as OAuthClientMetadataInput,
 };
 const metadataPreferenceKey = 'cc.oauth-metadata-version';
+const pendingMetadataVersionKey = 'cc.oauth-pending-metadata-version';
 const handleResolver = 'https://database.coffeencode.cc';
-const oauthClients = new Map<MetadataVersion, BrowserOAuthClient>();
+const oauthClients = new Map<OAuthMetadataVersion, BrowserOAuthClient>();
 
 let client: BrowserOAuthClient | undefined;
 let session: OAuthSession | undefined;
@@ -122,12 +126,30 @@ function storedMetadataVersion(): MetadataVersion | undefined {
   }
 }
 
+function storedPendingMetadataVersion(): OAuthMetadataVersion | undefined {
+  try {
+    const value = window.localStorage.getItem(pendingMetadataVersionKey);
+    if (value === 'author' || isMetadataVersion(value)) return value;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function clearPendingMetadataVersion() {
+  try {
+    window.localStorage.removeItem(pendingMetadataVersionKey);
+  } catch (error) {
+    console.error('Could not clear the pending OAuth metadata version:', error);
+  }
+}
+
 function selectedMetadataVersion(): MetadataVersion {
   const value = metadataVersionSelect?.value;
   return isMetadataVersion(value) ? value : storedMetadataVersion() || 'latest';
 }
 
-function getOAuthClient(version: MetadataVersion) {
+function getOAuthClient(version: OAuthMetadataVersion) {
   let oauthClient = oauthClients.get(version);
   if (!oauthClient) {
     oauthClient = new BrowserOAuthClient({
@@ -153,13 +175,22 @@ function initializeOAuthClient(oauthClient: BrowserOAuthClient) {
   return initialized;
 }
 
-async function selectedOAuthClient() {
+async function selectedOAuthClient(handle?: string) {
   await oauthReady;
-  const version = selectedMetadataVersion();
+  const preferredVersion = selectedMetadataVersion();
   try {
-    window.localStorage.setItem(metadataPreferenceKey, version);
+    window.localStorage.setItem(metadataPreferenceKey, preferredVersion);
   } catch {
     throw new Error('Your browser could not remember the selected OAuth version. Allow site storage and try again.');
+  }
+  let version: OAuthMetadataVersion = preferredVersion;
+  if (preferredVersion === 'latest' && handle) {
+    const query = new URLSearchParams({ handle });
+    const response = await fetch(`/api/authors/check?${query}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not check whether this account is a Coffee & Code author. Please try again.');
+    const result = await response.json() as { isAuthor?: unknown };
+    if (typeof result.isAuthor !== 'boolean') throw new Error('Author check returned an invalid response.');
+    if (result.isAuthor) version = 'author';
   }
   const selectedClient = getOAuthClient(version);
   client = selectedClient;
@@ -167,11 +198,16 @@ async function selectedOAuthClient() {
   session = initialized?.session;
   if (initialized && 'state' in initialized) callbackState = initialized.state;
   renderAccount();
+  try {
+    window.localStorage.setItem(pendingMetadataVersionKey, version);
+  } catch {
+    throw new Error('Your browser could not remember the OAuth client for the sign-in callback. Allow site storage and try again.');
+  }
   return selectedClient;
 }
 
 const savedMetadataVersion = storedMetadataVersion();
-const initialMetadataVersion = savedMetadataVersion || 'latest';
+const initialMetadataVersion = storedPendingMetadataVersion() || savedMetadataVersion || 'latest';
 if (metadataVersionSelect) metadataVersionSelect.value = savedMetadataVersion || 'latest';
 advancedToggle?.addEventListener('click', () => {
   if (!advancedToggle || !advancedOptions) return;
@@ -774,6 +810,8 @@ const oauthReady = (async () => {
   } catch (error) {
     initializationError = error;
     if (authForm) showAuthError(`Sign-in could not initialize: ${errorMessage(error)}`);
+  } finally {
+    if (storedPendingMetadataVersion() === initialMetadataVersion) clearPendingMetadataVersion();
   }
 
   renderAccount();
@@ -795,6 +833,7 @@ coffeeAccountButton?.addEventListener('click', async () => {
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
     await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath });
   } catch (error) {
+    clearPendingMetadataVersion();
     showAuthError(errorMessage(error));
     coffeeAccountButton.disabled = false;
     coffeeAccountButton.textContent = 'Continue with Coffee & Code';
@@ -838,6 +877,7 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
     await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create' });
   } catch (error) {
+    clearPendingMetadataVersion();
     showAuthError(errorMessage(error));
     createCoffeeAccountButton.disabled = false;
     createCoffeeAccountButton.textContent = 'Continue to account creation';
@@ -945,10 +985,11 @@ if (authForm) {
     }
 
     try {
-      const signInClient = await selectedOAuthClient();
+      const signInClient = await selectedOAuthClient(handle);
       const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
       await signInClient.signInRedirect(handle, { state: returnPath });
     } catch (error) {
+      clearPendingMetadataVersion();
       showAuthError(errorMessage(error));
       if (submit) {
         submit.disabled = false;

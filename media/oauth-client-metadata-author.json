@@ -1,0 +1,22 @@
+{
+  "client_id": "https://coffeencode.cc/oauth-client-metadata-author.json",
+  "client_name": "Coffee & Code",
+  "client_uri": "https://coffeencode.cc",
+  "logo_uri": "https://coffeencode.cc/favicon.png",
+  "tos_uri": "https://coffeencode.cc/terms",
+  "policy_uri": "https://coffeencode.cc/privacy",
+  "redirect_uris": [
+    "https://coffeencode.cc/auth"
+  ],
+  "scope": "atproto include:cc.coffeencode.authAuthor include:cc.coffeencode.authPublic include:site.standard.authSocial include:app.userinput.authBasic repo:app.bsky.graph.follow?action=create&action=delete repo:app.bsky.graph.block?action=create&action=delete repo:app.bsky.feed.post?action=create&action=delete repo:app.bsky.feed.threadgate?action=create&action=update&action=delete repo:app.bsky.feed.postgate?action=create&action=update&action=delete repo:at.margin.note?action=create&action=delete repo:at.margin.collectionItem?action=create&action=delete repo:at.margin.collection?action=create&action=update&action=delete repo:network.cosmik.collection?action=create&action=update&action=delete repo:network.cosmik.collectionLink?action=create&action=delete",
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "application_type": "web",
+  "token_endpoint_auth_method": "none",
+  "dpop_bound_access_tokens": true
+}

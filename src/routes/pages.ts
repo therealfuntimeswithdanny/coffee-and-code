@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, searchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
 
 const pages = new Hono<{ Bindings: Env }>();
@@ -37,6 +37,21 @@ pages.get('/api/account/posts', async (c) => {
   });
 });
 
+pages.get('/api/authors/check', async (c) => {
+  const identifier = (c.req.query('handle') || '').trim();
+  const isDid = /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(identifier);
+  const isHandle = /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(identifier);
+  if (!isDid && !isHandle) return c.json({ error: 'A valid account handle is required.' }, 400);
+
+  const authorDid = await resolveAtprotoIdentifier(identifier);
+  if (!authorDid) return c.json({ isAuthor: false }, 200, { 'Cache-Control': 'public, max-age=60' });
+
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const allArticles = await fetchArticles(pds, c.env.OWNER_DID);
+  const isAuthor = allArticles.some((post) => post.author?.did.toLowerCase() === authorDid.toLowerCase());
+  return c.json({ isAuthor }, 200, { 'Cache-Control': 'public, max-age=60' });
+});
+
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
@@ -48,6 +63,7 @@ pages.get('/auth', (c) => {
           <p class="auth-option__label">Hosted by Coffee &amp; Code</p>
           <h2 id="coffee-account-title">Coffee &amp; Code account</h2>
           <p>Log in to your Coffee &amp; Code account, or start creating one on our account server. Your password stays on the account server.</p>
+          <p class="auth-page__resolution">Authors: sign in with your Existing Bluesky account to get author permissions.</p>
           <button type="button" class="login-button auth-option__button" data-coffee-account>Continue with Coffee &amp; Code</button>
           <button type="button" class="auth-create-button" data-create-coffee-account>Create a Coffee &amp; Code account</button>
           <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>

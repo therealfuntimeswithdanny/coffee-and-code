@@ -1,6 +1,9 @@
 /oauth-client-metadata.json
   Content-Type: application/json
   Cache-Control: public, max-age=0, must-revalidate
+/oauth-client-metadata-author.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=0, must-revalidate
 /oauth-client-metadata-v2.json
   Content-Type: application/json
   Cache-Control: public, max-age=0, must-revalidate

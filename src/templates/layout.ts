@@ -250,6 +250,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .writers-callout { border-left-width: 3px; margin-top: 64px; padding: 30px 34px; }
     .writers-callout h2 { letter-spacing: -.04em; }
     .archive-section { margin-top: 74px; }
+    .archive-section > .archive-grid { margin-top: 8px; }
     .archive-grid { column-gap: 28px; row-gap: 36px; }
     .archive-story { border-top: 1px solid var(--line); min-height: 0; }
     .archive-story__image { margin: 0 -1px; }
