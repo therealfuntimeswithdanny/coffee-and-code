@@ -58,7 +58,7 @@ pages.get('/auth', (c) => {
           <h2 id="existing-account-title">Existing Bluesky account</h2>
           <p>Use Bluesky or another AT Protocol account you already have.</p>
           <form class="auth-form" data-auth-form>
-            <label for="auth-handle">Handle or DID</label>
+            <label for="auth-handle">Handle</label>
             <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
             <button type="submit" class="login-button auth-option__button">Continue with existing account</button>
           </form>
@@ -100,7 +100,7 @@ pages.get('/account', (c) => {
       <p class="eyebrow">Your profile</p>
       <h1 id="account-title">Your account</h1>
       <div class="auth-account" data-auth-account hidden>
-        <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p data-profile-bio></p><p class="account-page__did" data-profile-did></p></div></div>
+        <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p data-profile-bio></p></div></div>
         <section class="account-page__viewed" aria-labelledby="viewed-posts-title"><h2 id="viewed-posts-title">Posts you’ve viewed</h2><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
         <section class="account-page__viewed" aria-labelledby="saved-posts-title"><h2 id="saved-posts-title">Reading list</h2><p class="account-page__viewed-status" data-saved-status>Loading your saved posts…</p><ul data-saved-posts></ul></section>
         <section class="account-author-settings" data-author-settings hidden aria-labelledby="author-settings-title">
@@ -221,7 +221,7 @@ pages.get('/authors', async (c) => {
     .map(({ author, postCount }) => {
       const name = author.displayName || author.handle;
       const avatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
-      return `<a class="author-card" href="/author/${encodeURIComponent(author.did)}">
+      return `<a class="author-card" href="/author/${encodeURIComponent(author.handle)}">
         ${avatar ? `<img src="${avatar}" alt="" class="author-card__avatar" width="64" height="64" loading="lazy" decoding="async">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
         <span class="author-card__details"><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
       </a>`;
@@ -318,7 +318,7 @@ pages.get('/author/:handle', async (c) => {
     return c.html(renderLayout(c, 'Author Not Found', '<section class="not-found"><p class="eyebrow">404</p><h1>Author not found</h1><p>This author has not published in this publication.</p><a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
   }
 
-  const authorCanonicalPath = `/author/${encodeURIComponent(author.did)}`;
+  const authorCanonicalPath = `/author/${encodeURIComponent(author.handle)}`;
   const currentUrl = new URL(c.req.url);
   if (currentUrl.pathname !== authorCanonicalPath) {
     return c.redirect(`${authorCanonicalPath}${currentUrl.search}`, 301);

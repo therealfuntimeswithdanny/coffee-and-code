@@ -189,7 +189,7 @@ metadataVersionSelect?.addEventListener('change', () => {
 
 function renderAccount() {
   const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
-  const displayName = session?.sub || '';
+  const displayName = session ? 'Your account' : '';
   loginLinks.forEach((link) => { link.hidden = Boolean(session); });
   if (headerAccount) {
     headerAccount.hidden = !session;
@@ -204,7 +204,7 @@ function renderAccount() {
   if (session) {
     if (authOptions) authOptions.hidden = true;
     if (authAccount) authAccount.hidden = false;
-    if (authName) authName.textContent = session.sub;
+    if (authName) authName.textContent = 'Your account';
   } else {
     if (authOptions) authOptions.hidden = false;
     if (authAccount) authAccount.hidden = true;
@@ -218,25 +218,23 @@ function renderAccount() {
     const profileName = accountPage.querySelector<HTMLElement>('[data-profile-name]');
     const profileHandle = accountPage.querySelector<HTMLElement>('[data-profile-handle]');
     const profileBio = accountPage.querySelector<HTMLElement>('[data-profile-bio]');
-    const profileDid = accountPage.querySelector<HTMLElement>('[data-profile-did]');
     const profileAvatar = accountPage.querySelector<HTMLImageElement>('[data-profile-avatar]');
     const profilePlaceholder = accountPage.querySelector<HTMLElement>('[data-profile-placeholder]');
-    if (profileDid) profileDid.textContent = did;
     fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
       .then((profile: { avatar?: string; displayName?: string; handle?: string; description?: string }) => {
         if (session?.did !== did) return;
-        if (profileName) profileName.textContent = profile.displayName || profile.handle || did;
+        if (profileName) profileName.textContent = profile.displayName || profile.handle || 'Your account';
         if (profileHandle) profileHandle.textContent = profile.handle ? `@${profile.handle}` : '';
         if (profileBio) profileBio.textContent = profile.description || '';
         if (profileAvatar && profile.avatar) {
           profileAvatar.src = profile.avatar;
-          profileAvatar.alt = `${profile.displayName || profile.handle || did}'s profile picture`;
+          profileAvatar.alt = `${profile.displayName || profile.handle || 'Account'} profile picture`;
           profileAvatar.hidden = false;
           if (profilePlaceholder) profilePlaceholder.hidden = true;
         }
       })
-      .catch(() => { if (profileName) profileName.textContent = session?.sub || did; });
+      .catch(() => { if (profileName) profileName.textContent = 'Your account'; });
       void loadAccountViewedPosts(did);
       void loadAccountSavedPosts(did);
       void loadAuthorProfileEditor(did);
@@ -257,7 +255,7 @@ function renderAccount() {
       const avatar = profile.avatar;
       if (headerAccountAvatar && avatar) {
         headerAccountAvatar.src = avatar;
-        headerAccountAvatar.alt = `${profile.displayName || profile.handle || did}'s profile picture`;
+        headerAccountAvatar.alt = `${profile.displayName || profile.handle || 'Account'} profile picture`;
         headerAccountAvatar.hidden = false;
         if (headerAccountPlaceholder) headerAccountPlaceholder.hidden = true;
       }
@@ -340,10 +338,33 @@ async function loadAuthorProfileEditor(did: string) {
 
   try {
     const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.author.profile', rkey: 'self' });
-    const response = await repoRequest(`com.atproto.repo.getRecord?${query.toString()}`);
-    const result = await response.json() as { value?: Record<string, unknown> };
-    const value = result.value;
-    if (session?.did !== did || value?.$type !== 'cc.coffeencode.author.profile') return;
+    const activeSession = requireSession();
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+    let value: Record<string, unknown> | undefined;
+    if (response.ok) {
+      const result = await response.json() as { value?: Record<string, unknown> };
+      value = result.value;
+    } else {
+      const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+      const missingRecord = response.status === 404
+        || (response.status === 400 && payload?.error === 'RecordNotFound');
+      if (!missingRecord) {
+        const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
+        throw new Error(detail || `Could not load your author profile (${response.status}).`);
+      }
+    }
+
+    if (session?.did !== did) return;
+    if (value && value.$type !== 'cc.coffeencode.author.profile') {
+      throw new Error('Your author profile record has an unexpected record type.');
+    }
+    if (!value) {
+      const postsResponse = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
+      if (!postsResponse.ok) throw new Error(`Could not check your published stories (${postsResponse.status}).`);
+      const posts = await postsResponse.json() as Array<{ uri?: string }>;
+      if (session?.did !== did || posts.length === 0) return;
+      value = { $type: 'cc.coffeencode.author.profile' };
+    }
 
     accountAuthorRecord = value;
     accountAuthorDid = did;
@@ -507,8 +528,12 @@ async function loadAuthorProfileEditor(did: string) {
         submit.disabled = false;
       }
     };
-  } catch {
-    // A missing record means this account is not an author account.
+  } catch (error) {
+    console.error('Could not load author profile editor:', error);
+    if (status) {
+      form.hidden = false;
+      status.textContent = error instanceof Error ? error.message : 'Could not load your author profile.';
+    }
   }
 }
 

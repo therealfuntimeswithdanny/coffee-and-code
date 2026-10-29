@@ -168,35 +168,9 @@ async function fetchConfiguredHandles(pdsUrl: string, ownerDid: string): Promise
   return handles;
 }
 
-function canonicalDocumentPath(value: unknown, did: string, rkey: string, handles: Map<string, string>): string {
-  const handle = handles.get(did.toLowerCase());
-  const fallback = `/${encodeURIComponent(handle || did)}/${encodeURIComponent(rkey)}`;
-  if (typeof value !== 'string' || value.length > 1024 || !value.startsWith('/') || value.startsWith('//')
-    || value.includes('\\') || /[?#\u0000-\u001f]/.test(value)
-    || !/^\/(?:[A-Za-z0-9._~-]|%[0-9a-fA-F]{2})+(?:\/(?:[A-Za-z0-9._~-]|%[0-9a-fA-F]{2})+)*$/.test(value)) {
-    return fallback;
-  }
-  const segments = value.split('/');
-  if (segments.some((segment) => {
-    try {
-      const decoded = decodeURIComponent(segment);
-      return decoded === '.' || decoded === '..';
-    } catch {
-      return true;
-    }
-  })) return fallback;
-  if (handle) {
-    let firstSegment: string;
-    try {
-      firstSegment = decodeURIComponent(segments[1]);
-    } catch {
-      return fallback;
-    }
-    if (firstSegment.toLowerCase() === did.toLowerCase()) {
-      return `/${encodeURIComponent(handle)}${value.slice(segments[1].length + 1)}`;
-    }
-  }
-  return value;
+function canonicalDocumentPath(did: string, authorHandle: string | undefined, rkey: string, handles: Map<string, string>): string {
+  const handle = handles.get(did.toLowerCase()) || authorHandle || 'unknown';
+  return `/post/${encodeURIComponent(handle)}/${encodeURIComponent(rkey)}`;
 }
 
 function documentTags(value: unknown): string[] {
@@ -266,14 +240,28 @@ export async function fetchAuthorProfile(did: string, fallbackPds: string): Prom
 
     const profileData: unknown = response?.ok ? await response.json() : undefined;
     const profile = isRecord(profileData) ? profileData : {};
+    let handle = typeof profile.handle === 'string' ? profile.handle : undefined;
+    if (!handle) {
+      try {
+        const describeUrl = new URL(`${pdsUrl}/xrpc/com.atproto.repo.describeRepo`);
+        describeUrl.searchParams.set('repo', did);
+        const describeResponse = await fetchWithRetry(describeUrl.toString());
+        if (describeResponse.ok) {
+          const description: unknown = await describeResponse.json();
+          if (isRecord(description) && typeof description.handle === 'string') handle = description.handle;
+        }
+      } catch (error) {
+        console.error(`Error resolving account handle for ${did}:`, error);
+      }
+    }
     const custom = isRecord(record?.value) && record.value.$type === 'cc.coffeencode.author.profile'
       ? record.value
       : undefined;
-    if (!custom && typeof profile.handle !== 'string') return undefined;
+    if (!handle) return undefined;
 
     return {
       did,
-      handle: typeof profile.handle === 'string' ? profile.handle : did,
+      handle,
       displayName: typeof custom?.displayName === 'string'
         ? custom.displayName
         : typeof profile.displayName === 'string'
@@ -329,17 +317,23 @@ async function fetchRecord(pdsUrl: string, repo: string, collection: string, rke
   }
 }
 
-async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[] }> {
+async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[]; pinnedUris: string[] }> {
   const publicationsRecord = await fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self');
 
   return {
     publicationUris: Array.isArray(publicationsRecord?.value?.publications)
       ? publicationsRecord.value.publications.filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
       : [],
+    pinnedUris: Array.isArray(publicationsRecord?.value?.pinned)
+      ? publicationsRecord.value.pinned.filter((uri: unknown): uri is string => typeof uri === 'string' && /^at:\/\/[^/]+\/site\.standard\.document\/[^/]+$/.test(uri))
+      : [],
   };
 }
 
-export async function fetchArticles(fallbackPds: string, fallbackDid: string): Promise<StandardDocument[]> {
+export async function fetchArticles(
+  fallbackPds: string,
+  fallbackDid: string,
+): Promise<StandardDocument[]> {
   const articles: StandardDocument[] = [];
   const did = fallbackDid;
   const pdsUrl = fallbackPds;
@@ -349,7 +343,8 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
       fetchConfiguredHandles(pdsUrl, fallbackDid),
     ]);
     const publicationUris = configuredLists.publicationUris;
-    const authors = new Map<string, AuthorProfile | undefined>();
+    const pinnedOrderByUri = new Map(configuredLists.pinnedUris.map((uri, index) => [uri, index]));
+    const articleAuthors = new Map<string, string>();
 
     // Fetch documents from each configured publication's repository.
     if (publicationUris.length) {
@@ -374,15 +369,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               : typeof rec.value.author?.did === 'string'
                 ? rec.value.author.did
                 : did;
-            if (!authors.has(articleAuthorDid)) {
-              authors.set(articleAuthorDid, await fetchAuthorProfile(articleAuthorDid, fallbackPds));
-            }
-            const resolvedAuthorDid = authors.get(articleAuthorDid)?.did || articleAuthorDid;
-            const domainHandle = configuredHandles.get(resolvedAuthorDid.toLowerCase());
-            const alternatePaths = domainHandle
-              ? [`/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`]
-              : undefined;
-
+            articleAuthors.set(rec.uri || '', articleAuthorDid);
             articles.push({
               uri: rec.uri || '',
               cid: rec.cid || '',
@@ -391,20 +378,14 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               content: content,
               publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
               tags: documentTags(rec.value.tags),
-              path: canonicalDocumentPath(
-                rec.value.path,
-                resolvedAuthorDid,
-                rkey || '',
-                configuredHandles,
-              ),
-              alternatePaths,
+              pinnedOrder: pinnedOrderByUri.get(rec.uri || ''),
+              path: canonicalDocumentPath(articleAuthorDid, undefined, rkey || '', configuredHandles),
               description: rec.value.description || rec.value.summary || '',
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
               mimeType,
               repoDid: did,
               pdsUrl,
-              author: authors.get(articleAuthorDid),
             });
           }
         }
@@ -412,11 +393,37 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
         console.error('Error fetching publication documents:', e);
       }
 
-      return articles.sort((a, b) => {
+      articles.sort((a, b) => {
         const timeA = new Date(a.publishedAt).getTime() || 0;
         const timeB = new Date(b.publishedAt).getTime() || 0;
         return timeB - timeA;
       });
+      const pinnedAuthorDids = [...new Set(articles
+        .filter((article) => article.pinnedOrder !== undefined)
+        .sort((a, b) => a.pinnedOrder! - b.pinnedOrder!)
+        .map((article) => articleAuthors.get(article.uri))
+        .filter((authorDid): authorDid is string => Boolean(authorDid)))];
+      const recentAuthorDids = [...new Set(articles
+        .map((article) => articleAuthors.get(article.uri))
+        .filter((authorDid): authorDid is string => Boolean(authorDid)))];
+      const authorDids = [...new Set([...pinnedAuthorDids, ...recentAuthorDids])];
+      const authorProfiles = await Promise.all(authorDids.map(async (authorDid) => [
+        authorDid,
+        await fetchAuthorProfile(authorDid, fallbackPds),
+      ] as const));
+      const authors = new Map(authorProfiles);
+      articles.forEach((article) => {
+        const authorDid = articleAuthors.get(article.uri);
+        if (authorDid) {
+          article.author = authors.get(authorDid);
+          article.path = canonicalDocumentPath(authorDid, article.author?.handle, article.rkey, configuredHandles);
+          const domainHandle = configuredHandles.get(authorDid.toLowerCase());
+          article.alternatePaths = domainHandle && article.author?.handle && domainHandle !== article.author.handle
+            ? [`/post/${encodeURIComponent(article.author.handle)}/${encodeURIComponent(article.rkey)}`]
+            : undefined;
+        }
+      });
+      return articles;
     }
 
     // 1. Fetch site.standard.document records (if no publications are configured)
@@ -442,8 +449,10 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
             content: content,
             publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
             tags: documentTags(rec.value.tags),
-            path: canonicalDocumentPath(rec.value.path, authorDid, rkey || '', configuredHandles),
-            alternatePaths: domainHandle ? [`/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`] : undefined,
+            path: canonicalDocumentPath(authorDid, ownerProfile?.handle, rkey || '', configuredHandles),
+            alternatePaths: domainHandle
+              ? [`/post/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`]
+              : undefined,
             description: rec.value.description || rec.value.summary || '',
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
             format,
@@ -482,7 +491,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               title: title,
               content: rawText,
               publishedAt: rec.value.createdAt || new Date().toISOString(),
-              path: `/${encodeURIComponent(ownerProfile?.did || did)}/${rkey}`,
+              path: `/post/${encodeURIComponent(ownerProfile?.handle || 'unknown')}/${encodeURIComponent(rkey)}`,
               description: rawText ? (rawText.length > 160 ? rawText.substring(0, 160) + '...' : rawText) : '',
               repoDid: did,
               pdsUrl,

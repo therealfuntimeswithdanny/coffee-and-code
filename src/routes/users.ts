@@ -110,7 +110,7 @@ users.get('/:identifier', async (c) => {
   if (!did) {
     return c.html(renderLayout(c, 'Profile Not Found', `
       <section class="not-found"><p class="eyebrow">404</p><h1>Profile not found</h1>
-      <p>That DID or handle could not be resolved to an AT Protocol account.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+      <p>That handle could not be resolved to an account.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
     `), 404);
   }
 
@@ -123,6 +123,12 @@ users.get('/:identifier', async (c) => {
       <section class="not-found"><p class="eyebrow">404</p><h1>Profile not found</h1>
       <p>This account does not have a readable Coffee &amp; Code or Bluesky profile.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
     `), 404);
+  }
+
+  const canonicalPath = `/user/${encodeURIComponent(profile.handle)}`;
+  const currentUrl = new URL(c.req.url);
+  if (currentUrl.pathname !== canonicalPath) {
+    return c.redirect(`${canonicalPath}${currentUrl.search}`, 301);
   }
 
   let comments: UserComment[];
@@ -169,10 +175,10 @@ users.get('/:identifier', async (c) => {
       <header class="user-page__header">
         ${avatar ? `<img class="user-page__avatar" src="${escapeHtml(avatar)}" alt="" width="104" height="104">` : '<span class="user-page__avatar user-page__avatar--empty" aria-hidden="true"><i class="fa-solid fa-user"></i></span>'}
         <div class="user-page__identity"><p class="eyebrow">AT Protocol profile</p><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
-        <a class="user-page__bluesky" href="https://bsky.app/profile/${encodeURIComponent(did)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        <a class="user-page__bluesky" href="https://bsky.app/profile/${encodeURIComponent(profile.handle)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </header>
       ${profile.description ? `<p class="user-page__description">${escapeHtml(profile.description)}</p>` : ''}
-      <div class="user-page__details">${profile.pronouns ? `<span>${escapeHtml(profile.pronouns)}</span>` : ''}<span class="user-page__did">${escapeHtml(did)}</span></div>
+      ${profile.pronouns ? `<div class="user-page__details"><span>${escapeHtml(profile.pronouns)}</span></div>` : ''}
       <section class="user-page__activity" aria-labelledby="user-comments-title">
         <div class="section-heading"><span id="user-comments-title">Comments</span><span>${comments.length}</span></div>
         ${comments.length === 100 ? '<p class="user-page__comment-limit">Showing the latest 100 comments.</p>' : ''}

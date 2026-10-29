@@ -108,7 +108,7 @@ async function renderPost(
   const articleSubtitle = articleDescription?.trim() || '';
   const tagLinks = (post.tags || []).map((tag) => `
     <a class="article-tag" href="/tags?tag=${encodeURIComponent(tag)}">${escapeHtml(tag)}</a>`).join('');
-  const authorLink = post.author ? `/author/${encodeURIComponent(post.author.did)}` : '';
+  const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
   const authorAvatar = post.author?.avatar ? proxyAvatarUrl(post.author.avatar) : '';
   const safeTitle = escapeHtml(post.title);
@@ -137,7 +137,7 @@ async function renderPost(
   const railAuthors = [...authorsByDid.values()]
     .sort((a, b) => (a.displayName || a.handle).localeCompare(b.displayName || b.handle))
     .slice(0, 6)
-    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.did)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
+    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.handle)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
     .join('');
   const structuredData = {
     '@context': 'https://schema.org',
@@ -151,7 +151,7 @@ async function renderPost(
       ? {
           '@type': 'Person',
           name: authorName,
-          url: `${pageOrigin}/author/${encodeURIComponent(post.author.did)}`,
+          url: `${pageOrigin}/author/${encodeURIComponent(post.author.handle)}`,
         }
       : { '@type': 'Organization', name: c.env.PUB_NAME },
     publisher: {
@@ -164,7 +164,7 @@ async function renderPost(
   const structuredDataJson = JSON.stringify(structuredData).replace(/</g, '\\u003c');
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
-    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
+    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
     <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.OWNER_DID)}">
     <meta property="og:title" content="${safeTitle}">
@@ -223,6 +223,12 @@ async function renderPost(
 
 posts.get('/', (c) => c.redirect('/'));
 posts.get('/post/:rkey', (c) => renderPost(c, c.req.param('rkey')));
+posts.get('/post/:handle/:rkey', (c) => renderPost(
+  c,
+  c.req.param('rkey'),
+  c.req.param('handle'),
+  new URL(c.req.url).pathname,
+));
 posts.get('/:rkey', (c) => renderPost(c, c.req.param('rkey'), undefined, new URL(c.req.url).pathname));
 posts.get('/:handle/:rkey', (c) => renderPost(
   c,

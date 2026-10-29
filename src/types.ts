@@ -14,6 +14,7 @@ export interface StandardDocument {
   publishedAt: string;
   path: string;
   tags?: string[];
+  pinnedOrder?: number;
   alternatePaths?: string[];
   description?: string;
   cover?: string;

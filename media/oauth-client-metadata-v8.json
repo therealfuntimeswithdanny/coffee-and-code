@@ -15,7 +15,7 @@
   "response_types": [
     "code"
   ],
-  "scope": "atproto include:cc.coffeencode.fullPermissions repo:site.standard.graph.recommend?action=create blob:*/*",
+  "scope": "atproto include:cc.coffeencode.fullPermissions repo:cc.coffeencode.author.profile?action=create&action=update repo:site.standard.graph.recommend?action=create blob:*/*",
   "token_endpoint_auth_method": "none",
   "application_type": "web",
   "dpop_bound_access_tokens": true
