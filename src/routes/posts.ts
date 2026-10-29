@@ -25,7 +25,9 @@ async function renderPost(
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
   const candidates = allPosts.filter((p) => p.rkey === rkey);
-  const post = (requestedPath ? candidates.find((item) => item.path === requestedPath) : undefined)
+  const post = (requestedPath
+    ? candidates.find((item) => item.path === requestedPath || item.alternatePaths?.includes(requestedPath))
+    : undefined)
     || (!requestedHandle
     ? candidates[0]
     : candidates.find((item) => {

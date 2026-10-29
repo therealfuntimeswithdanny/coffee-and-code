@@ -13,6 +13,7 @@ export interface StandardDocument {
   content: string;
   publishedAt: string;
   path: string;
+  alternatePaths?: string[];
   description?: string;
   cover?: string;
   format?: string; // Content format: 'markdown', 'html', 'plaintext', 'richtext'

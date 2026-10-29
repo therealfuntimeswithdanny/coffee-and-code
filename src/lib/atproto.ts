@@ -148,8 +148,29 @@ function documentCoverUrl(value: any, content: string, did: string, pdsUrl: stri
   return firstContentImage(content);
 }
 
-function canonicalDocumentPath(value: unknown, did: string, rkey: string): string {
-  const fallback = `/${encodeURIComponent(did)}/${encodeURIComponent(rkey)}`;
+function validDomainHandle(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 253 || value !== value.toLowerCase()) return false;
+  return value.split('.').every((label) => label.length > 0 && label.length <= 63
+    && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
+}
+
+async function fetchConfiguredHandles(pdsUrl: string, ownerDid: string): Promise<Map<string, string>> {
+  const record = await fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.config.handles', 'self');
+  const configured = record?.value?.handles;
+  const handles = new Map<string, string>();
+  if (!isRecord(configured)) return handles;
+
+  for (const [did, handle] of Object.entries(configured)) {
+    if (/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did) && validDomainHandle(handle)) {
+      handles.set(did.toLowerCase(), handle);
+    }
+  }
+  return handles;
+}
+
+function canonicalDocumentPath(value: unknown, did: string, rkey: string, handles: Map<string, string>): string {
+  const handle = handles.get(did.toLowerCase());
+  const fallback = `/${encodeURIComponent(handle || did)}/${encodeURIComponent(rkey)}`;
   if (typeof value !== 'string' || value.length > 1024 || !value.startsWith('/') || value.startsWith('//')
     || value.includes('\\') || /[?#\u0000-\u001f]/.test(value)
     || !/^\/(?:[A-Za-z0-9._~-]|%[0-9a-fA-F]{2})+(?:\/(?:[A-Za-z0-9._~-]|%[0-9a-fA-F]{2})+)*$/.test(value)) {
@@ -164,6 +185,17 @@ function canonicalDocumentPath(value: unknown, did: string, rkey: string): strin
       return true;
     }
   })) return fallback;
+  if (handle) {
+    let firstSegment: string;
+    try {
+      firstSegment = decodeURIComponent(segments[1]);
+    } catch {
+      return fallback;
+    }
+    if (firstSegment.toLowerCase() === did.toLowerCase()) {
+      return `/${encodeURIComponent(handle)}${value.slice(segments[1].length + 1)}`;
+    }
+  }
   return value;
 }
 
@@ -298,7 +330,10 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
   const did = fallbackDid;
   const pdsUrl = fallbackPds;
   try {
-    const configuredLists = await fetchConfiguredLists(pdsUrl, fallbackDid);
+    const [configuredLists, configuredHandles] = await Promise.all([
+      fetchConfiguredLists(pdsUrl, fallbackDid),
+      fetchConfiguredHandles(pdsUrl, fallbackDid),
+    ]);
     const publicationUris = configuredLists.publicationUris;
     const authors = new Map<string, AuthorProfile | undefined>();
 
@@ -328,6 +363,11 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
             if (!authors.has(articleAuthorDid)) {
               authors.set(articleAuthorDid, await fetchAuthorProfile(articleAuthorDid, fallbackPds));
             }
+            const resolvedAuthorDid = authors.get(articleAuthorDid)?.did || articleAuthorDid;
+            const domainHandle = configuredHandles.get(resolvedAuthorDid.toLowerCase());
+            const alternatePaths = domainHandle
+              ? [`/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`]
+              : undefined;
 
             articles.push({
               uri: rec.uri || '',
@@ -336,7 +376,13 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               title: rec.value.title || 'Untitled Post',
               content: content,
               publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-              path: canonicalDocumentPath(rec.value.path, authors.get(articleAuthorDid)?.did || articleAuthorDid, rkey || ''),
+              path: canonicalDocumentPath(
+                rec.value.path,
+                resolvedAuthorDid,
+                rkey || '',
+                configuredHandles,
+              ),
+              alternatePaths,
               description: rec.value.description || rec.value.summary || '',
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
@@ -370,6 +416,8 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
           if (!rec?.value) continue;
           const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
           const { content, format, mimeType } = extractDocumentContent(rec.value);
+          const authorDid = ownerProfile?.did || did;
+          const domainHandle = configuredHandles.get(authorDid.toLowerCase());
 
           articles.push({
             uri: rec.uri || '',
@@ -378,7 +426,8 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
             title: rec.value.title || 'Untitled Post',
             content: content,
             publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-            path: canonicalDocumentPath(rec.value.path, ownerProfile?.did || did, rkey || ''),
+            path: canonicalDocumentPath(rec.value.path, authorDid, rkey || '', configuredHandles),
+            alternatePaths: domainHandle ? [`/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`] : undefined,
             description: rec.value.description || rec.value.summary || '',
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
             format,
