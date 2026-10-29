@@ -242,6 +242,70 @@ pages.get('/authors', async (c) => {
   return c.html(renderLayout(c, 'Authors', body));
 });
 
+pages.get('/tags', async (c) => {
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
+  const selectedTag = (c.req.query('tag') || '').trim();
+  const tagQuery = (c.req.query('q') || '').trim().toLocaleLowerCase();
+  const escapeHtml = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const tagCounts = new Map<string, { label: string; count: number }>();
+  allPosts.forEach((post) => {
+    const postTags = new Set((post.tags || []).map((tag) => tag.toLocaleLowerCase()));
+    postTags.forEach((key) => {
+      const label = (post.tags || []).find((tag) => tag.toLocaleLowerCase() === key) || key;
+      const existing = tagCounts.get(key);
+      tagCounts.set(key, { label: existing?.label || label, count: (existing?.count || 0) + 1 });
+    });
+  });
+  const tags = [...tagCounts.entries()]
+    .map(([key, value]) => ({ key, ...value }))
+    .filter(({ label }) => !tagQuery || label.toLocaleLowerCase().includes(tagQuery))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const selectedTagKey = selectedTag.toLocaleLowerCase();
+  const matchingPosts = selectedTag
+    ? allPosts.filter((post) => post.tags?.some((tag) => tag.toLocaleLowerCase() === selectedTagKey))
+    : [];
+  const tagLinks = tags.map(({ label, count }) => `
+    <a class="tag-directory__item${selectedTagKey === label.toLocaleLowerCase() ? ' is-selected' : ''}" href="/tags?tag=${encodeURIComponent(label)}">
+      <span>${escapeHtml(label)}</span><span>${count} ${count === 1 ? 'post' : 'posts'}</span>
+    </a>`).join('');
+  const postItems = matchingPosts.map((post) => `
+    <article class="archive-story">
+      <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+      </a>
+      <div>
+        <p class="eyebrow">${escapeHtml(formatDate(post.publishedAt))}</p>
+        <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
+        ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
+        <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
+      </div>
+      <a href="${escapeHtml(post.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+    </article>`).join('');
+  const body = `
+    <section class="tags-page" aria-labelledby="tags-title">
+      <p class="eyebrow">Explore topics</p>
+      <h1 id="tags-title">Browse by tag</h1>
+      <p class="tags-page__intro">Find stories by the topics they cover.</p>
+      <form class="tags-search" action="/tags" method="get">
+        ${selectedTag ? `<input type="hidden" name="tag" value="${escapeHtml(selectedTag)}">` : ''}
+        <label for="tag-search">Search tags</label>
+        <input id="tag-search" type="search" name="q" value="${escapeHtml(c.req.query('q') || '')}" placeholder="For example, Apple or MacBook">
+        <button type="submit" class="search-button">Search tags</button>
+      </form>
+      ${tagLinks ? `<nav class="tag-directory" aria-label="Available tags">${tagLinks}</nav>` : '<p class="empty-state">No tags match your search.</p>'}
+      ${selectedTag ? `<section class="tag-results" aria-labelledby="tag-results-title"><div class="section-heading"><span id="tag-results-title">Posts tagged “${escapeHtml(selectedTag)}”</span><span>${matchingPosts.length}</span></div>${postItems ? `<div class="archive-grid">${postItems}</div>` : '<p class="empty-state">No posts use this tag.</p>'}</section>` : ''}
+    </section>
+  `;
+  return c.html(renderLayout(c, 'Browse by Tag', body, '', 'Browse by Tag | Coffee & Code'));
+});
+
 pages.get('/author/:handle', async (c) => {
   const identifier = c.req.param('handle');
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);

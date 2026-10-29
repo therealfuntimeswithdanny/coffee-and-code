@@ -199,6 +199,20 @@ function canonicalDocumentPath(value: unknown, did: string, rkey: string, handle
   return value;
 }
 
+function documentTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map((tag) => tag.trim())
+    .filter((tag) => {
+      const key = tag.toLocaleLowerCase();
+      if (!tag || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {
   try {
     const res = await fetchWithRetry(`https://plc.directory/${did}`, {
@@ -376,6 +390,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               title: rec.value.title || 'Untitled Post',
               content: content,
               publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+              tags: documentTags(rec.value.tags),
               path: canonicalDocumentPath(
                 rec.value.path,
                 resolvedAuthorDid,
@@ -426,6 +441,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
             title: rec.value.title || 'Untitled Post',
             content: content,
             publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+            tags: documentTags(rec.value.tags),
             path: canonicalDocumentPath(rec.value.path, authorDid, rkey || '', configuredHandles),
             alternatePaths: domainHandle ? [`/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`] : undefined,
             description: rec.value.description || rec.value.summary || '',

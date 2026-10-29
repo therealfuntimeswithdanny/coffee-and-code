@@ -13,6 +13,7 @@ export interface StandardDocument {
   content: string;
   publishedAt: string;
   path: string;
+  tags?: string[];
   alternatePaths?: string[];
   description?: string;
   cover?: string;

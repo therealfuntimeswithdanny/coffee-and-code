@@ -56,7 +56,17 @@ async function renderPost(
     return c.redirect(`${post.path}${requestUrl.search}`, 301);
   }
 
-  const recommendations = allPosts.filter((item) => item.path !== post.path).slice(0, 3);
+  const postTagKeys = new Set((post.tags || []).map((tag) => tag.toLocaleLowerCase()));
+  const recommendations = allPosts
+    .filter((item) => item.path !== post.path && item.tags?.some((tag) => postTagKeys.has(tag.toLocaleLowerCase())))
+    .map((item) => ({
+      post: item,
+      sharedTagCount: item.tags?.filter((tag) => postTagKeys.has(tag.toLocaleLowerCase())).length || 0,
+    }))
+    .sort((a, b) => b.sharedTagCount - a.sharedTagCount
+      || (Date.parse(b.post.publishedAt) || 0) - (Date.parse(a.post.publishedAt) || 0))
+    .slice(0, 3)
+    .map(({ post: item }) => item);
 
   // Render content based on detected format
   const renderedContent = await renderContent(post.content || '', post.format, post.mimeType);
@@ -96,6 +106,8 @@ async function renderPost(
 
   const articleDescription = getDescription();
   const articleSubtitle = articleDescription?.trim() || '';
+  const tagLinks = (post.tags || []).map((tag) => `
+    <a class="article-tag" href="/tags?tag=${encodeURIComponent(tag)}">${escapeHtml(tag)}</a>`).join('');
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.did)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
   const authorAvatar = post.author?.avatar ? proxyAvatarUrl(post.author.avatar) : '';
@@ -116,7 +128,7 @@ async function renderPost(
         <span class="recommendation-card__date">${formatDate(item.publishedAt)}</span>
       </div>
     </article>`).join('');
-  const latestRail = allPosts.filter((item) => item.path !== post.path).slice(0, 4).map((item) => `
+  const relatedRail = recommendations.map((item) => `
     <li><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></li>`).join('');
   const authorsByDid = new Map<string, NonNullable<typeof allPosts[number]['author']>>();
   allPosts.forEach((item) => {
@@ -180,6 +192,7 @@ async function renderPost(
         <h1>${safeTitle}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by <span data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</span> on ${formatDate(post.publishedAt)}</span></a>` : ''}
+        ${tagLinks ? `<nav class="article-tags" aria-label="Article tags">${tagLinks}</nav>` : ''}
         <div class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story reads and reactions">
           <span class="reaction-button engagement-stat"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Reads <span class="reaction-count" data-at-view-count>—</span></span>
           <div class="article-reactions__buttons" aria-label="React to this story">
@@ -200,7 +213,7 @@ async function renderPost(
         <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </footer>
     </article>
-    <aside class="article-rail" aria-label="Latest stories and authors"><section aria-labelledby="article-latest-title"><h2 id="article-latest-title">Recent posts</h2><ul>${latestRail}</ul><a href="/archive" class="read-link">Browse all posts <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>${railAuthors ? `<section class="article-rail__authors" aria-labelledby="article-authors-title"><h2 id="article-authors-title">Authors</h2><ul>${railAuthors}</ul><a href="/authors" class="read-link">Meet all authors <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>` : ''}</aside>
+    <aside class="article-rail" aria-label="Related posts and authors">${relatedRail ? `<section aria-labelledby="article-related-title"><h2 id="article-related-title">Related posts</h2><ul>${relatedRail}</ul><a href="/tags" class="read-link">Explore all tags <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>` : ''}${railAuthors ? `<section class="article-rail__authors" aria-labelledby="article-authors-title"><h2 id="article-authors-title">Authors</h2><ul>${railAuthors}</ul><a href="/authors" class="read-link">Meet all authors <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>` : ''}</aside>
     </div>
     ${recommendations.length ? `<section class="recommendations" aria-labelledby="recommendations-title"><div class="section-heading"><span id="recommendations-title">Continue reading</span><a href="/archive">All stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div><div class="recommendations__grid">${recommendationHtml}</div></section>` : ''}
   `;

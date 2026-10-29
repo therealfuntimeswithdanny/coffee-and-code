@@ -135,6 +135,21 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .article__dek { color: var(--muted); font-size: clamp(1.2rem, 2vw, 1.45rem); }
     .article__author { color: var(--ink); }
     .article__author:hover { color: var(--accent); }
+    .article-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+    .article-tag { border: 1px solid var(--line); color: var(--accent); font-size: 13px; padding: 4px 10px; text-decoration: none; }
+    .article-tag:hover, .tag-directory__item:hover, .tag-directory__item.is-selected { background: var(--paper-deep); border-color: var(--accent); color: var(--accent); }
+    .tags-page { margin: 0 auto; max-width: 1180px; }
+    .tags-page > h1 { font-family: Lora, serif; font-size: clamp(2.5rem, 6vw, 4.5rem); margin: 0; }
+    .tags-page__intro { color: var(--muted); font-size: 18px; margin: 10px 0 28px; }
+    .tags-search { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+    .tags-search label { flex-basis: 100%; font-weight: 600; }
+    .tags-search input { background: var(--paper); border: 1px solid var(--line); color: var(--ink); flex: 1 1 240px; font: inherit; min-height: 44px; padding: 8px 12px; }
+    .tags-search button { min-height: 44px; }
+    .tag-directory { display: flex; flex-wrap: wrap; gap: 10px; }
+    .tag-directory__item { align-items: center; border: 1px solid var(--line); color: var(--ink); display: inline-flex; gap: 12px; padding: 10px 14px; text-decoration: none; }
+    .tag-directory__item span + span { color: var(--muted); font-size: 12px; }
+    .tag-results { margin-top: 54px; }
+    .tag-results .archive-grid { margin-top: 22px; }
     .prose { max-width: 740px; }
     .prose p, .prose li, .prose-paragraph { color: var(--muted); font-size: 19px; line-height: 1.82; }
     .prose h2, .prose-heading--2 { color: var(--ink); font-size: 2.1rem; }
@@ -482,7 +497,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   </style>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/authors">Authors</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles">Search</button><a class="rss-link" href="/rss.xml">RSS</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
+  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/authors">Authors</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles">Search</button><a class="rss-link" href="/rss.xml">RSS</a><a class="pds-link" href="https://bsky.app/profile/${did}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
