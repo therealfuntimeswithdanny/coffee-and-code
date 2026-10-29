@@ -166,7 +166,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .tag-directory__item span + span { color: var(--muted); font-size: 12px; }
     .tag-results { margin-top: 54px; }
     .tag-results .archive-grid { margin-top: 22px; }
-    .prose { max-width: 740px; }
+    .prose { max-width: 100%; }
     .prose p, .prose li, .prose-paragraph { color: var(--muted); font-size: 19px; line-height: 1.82; }
     .prose h2, .prose-heading--2 { color: var(--ink); font-size: 2.1rem; }
     .prose blockquote, .prose-blockquote { border-color: var(--accent); color: var(--ink); }
@@ -264,7 +264,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .article__header h1 { letter-spacing: -.06em; }
     .article__dek { color: #ddd5c4; }
     .article__author { color: var(--ink); }
-    .prose { max-width: 720px; }
+    .prose { max-width: 100%; }
     .prose p, .prose li, .prose-paragraph { color: #eee9dc; font-size: 19px; line-height: 1.84; }
     .prose h2, .prose h3, .prose h4, .prose-heading { color: var(--ink); }
     .prose a, .prose-link { color: var(--accent); }
@@ -273,8 +273,12 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .article-rail h2 { margin-bottom: 16px; }
     .article-engagement { border-bottom: 1px solid var(--line); display: grid; gap: 10px; margin: 0 0 28px; padding: 0 0 22px; }
     .article-engagement .engagement-stat { background: var(--paper-deep); border: 1px solid var(--line); cursor: default; }
-    .article-engagement .article-reactions__buttons { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+    .article-engagement .article-reactions__buttons { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .article-engagement .reaction-button { justify-content: center; min-width: 0; }
+    .article-engagement .article-reactions__buttons .engagement-stat { grid-column: 1; grid-row: 1; }
+    .article-engagement .article-reactions__buttons [data-reaction="like"] { grid-column: 2; grid-row: 1; }
+    .article-engagement .article-reactions__buttons [data-reaction="dislike"] { grid-column: 1; grid-row: 2; }
+    .article-engagement .article-reactions__buttons [data-save-post] { grid-column: 2; grid-row: 2; }
     .article-engagement .article-reactions__buttons a { grid-column: 1 / -1; grid-row: 3; }
     .article-engagement .article-reactions__status { min-height: 0; }
     .article-rail li a { font-size: 14px; }
@@ -286,7 +290,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .recommendation-card h3 { font-size: 20px; letter-spacing: -.025em; }
     .recommendation-card__body > p:not(.eyebrow) { color: #d2cbb9; }
     .recommendation-card__date { display: inline-block; margin-top: 5px; }
-    .article-engagement { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .article-engagement { display: grid; gap: 8px; margin-top: 18px; }
     .article-view-counter { margin-top: 0; }
     .article-reactions__buttons { display: inline-flex; flex-wrap: wrap; gap: 6px; }
     .reaction-button { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); cursor: pointer; display: inline-flex; font: 600 13px 'Source Sans 3', sans-serif; gap: 6px; min-height: 32px; padding: 4px 8px; transition: background 160ms, border-color 160ms, color 160ms; }
@@ -476,8 +480,8 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       .article__cover img, .prose img, .prose video, .prose iframe { height: auto; max-width: 100%; }
       .prose .prose-embed { background: var(--paper-deep); border: 1px solid var(--line); display: block; margin: 24px auto; max-width: 100%; }
       .prose pre, .prose-pre { max-width: 100%; overflow-x: auto; }
-      .article-engagement { flex-wrap: wrap; }
-      .article-reactions__buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+      .article-engagement { display: grid; }
+      .article-engagement .article-reactions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .article-reactions__status { flex-basis: 100%; }
     }
     @media (max-width: 760px) {
