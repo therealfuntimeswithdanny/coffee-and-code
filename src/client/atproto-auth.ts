@@ -4,6 +4,7 @@ import {
   type OAuthClientMetadataInput,
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
+import rawClientMetadata from '../../media/oauth-client-metadata.json';
 import rawClientMetadataV10 from '../../media/oauth-client-metadata-v10.json';
 import rawClientMetadataV9 from '../../media/oauth-client-metadata-v9.json';
 import rawClientMetadataV8 from '../../media/oauth-client-metadata-v8.json';
@@ -17,7 +18,7 @@ import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 type MetadataVersion = 'latest' | 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
 type MetadataVersionControl = HTMLElement & { value: string };
 const oauthMetadataVersions: Record<MetadataVersion, OAuthClientMetadataInput> = {
-  latest: rawClientMetadataV10 as OAuthClientMetadataInput,
+  latest: rawClientMetadata as OAuthClientMetadataInput,
   v10: rawClientMetadataV10 as OAuthClientMetadataInput,
   v9: rawClientMetadataV9 as OAuthClientMetadataInput,
   v8: rawClientMetadataV8 as OAuthClientMetadataInput,

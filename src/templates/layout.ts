@@ -272,11 +272,10 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .article-rail { background: rgba(59,42,29,.42); border-top-color: var(--accent); padding: 15px 18px 18px; top: 108px; }
     .article-rail h2 { margin-bottom: 16px; }
     .article-engagement { border-bottom: 1px solid var(--line); display: grid; gap: 10px; margin: 0 0 28px; padding: 0 0 22px; }
-    .article-engagement h2 { font-size: 19px; margin: 0; }
-    .article-engagement .engagement-stat { background: transparent; border: 0; justify-self: start; padding-left: 0; }
+    .article-engagement .engagement-stat { background: var(--paper-deep); border: 1px solid var(--line); cursor: default; }
     .article-engagement .article-reactions__buttons { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
     .article-engagement .reaction-button { justify-content: center; min-width: 0; }
-    .article-engagement .article-reactions__buttons a { grid-column: 1 / -1; }
+    .article-engagement .article-reactions__buttons a { grid-column: 1 / -1; grid-row: 3; }
     .article-engagement .article-reactions__status { min-height: 0; }
     .article-rail li a { font-size: 14px; }
     .recommendations { margin-top: 76px; }

@@ -69,7 +69,7 @@ pages.get('/auth', (c) => {
           <div class="auth-advanced__options" id="auth-advanced-options" data-auth-advanced-options hidden>
             <label for="auth-metadata-version">OAuth permission version</label>
             <select id="auth-metadata-version" data-auth-metadata-version>
-              <option value="latest">Latest permissions (v10, recommended)</option>
+              <option value="latest">Latest permissions (recommended)</option>
               <option value="v10">Version 10 — Author follows and subscriptions</option>
               <option value="v9">Version 9 — Author profile editing</option>
               <option value="v8">Version 8 — Named permission set</option>

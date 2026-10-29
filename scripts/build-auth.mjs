@@ -35,10 +35,9 @@ assert(metadata.client_id === expectedClientId, 'client_id must match the deploy
 assert(v8ClientMetadata.client_id === expectedV8ClientId, 'version 8 client_id must match its metadata URL');
 assert(v9ClientMetadata.client_id === expectedV9ClientId, 'version 9 client_id must match its metadata URL');
 assert(v10ClientMetadata.client_id === expectedV10ClientId, 'version 10 client_id must match its metadata URL');
+assert(v10ClientMetadata.scope === metadata.scope, 'version 10 and canonical metadata must request the same scopes');
 assert(v10ClientMetadata.tos_uri === metadata.tos_uri, 'version 10 and canonical metadata must use the same terms page');
-assert(v9ClientMetadata.scope === metadata.scope, 'version 9 and canonical metadata must request the same scopes');
 assert(v9ClientMetadata.tos_uri === metadata.tos_uri, 'version 9 and canonical metadata must use the same terms page');
-assert(v8ClientMetadata.scope === metadata.scope, 'version 8 and canonical metadata must request the same scopes');
 assert(v8ClientMetadata.tos_uri === metadata.tos_uri, 'version 8 and canonical metadata must use the same terms page');
 assertHttpsUrl(v8ClientMetadata.client_id, 'version 8 client_id');
 assertHttpsUrl(v9ClientMetadata.client_id, 'version 9 client_id');
@@ -63,6 +62,7 @@ for (const scope of [
   'atproto',
   'include:cc.coffeencode.fullPermissions',
   'repo:cc.coffeencode.author.profile?action=create&action=update',
+  'repo:app.bsky.graph.follow?action=create&action=delete',
   'repo:site.standard.graph.recommend?action=create',
   'blob:*/*',
 ]) {
