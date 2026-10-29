@@ -6,6 +6,7 @@ import {
 } from '@atproto/oauth-client-browser';
 import rawClientMetadata from '../../media/oauth-client-metadata.json';
 import rawAuthorClientMetadata from '../../media/oauth-client-metadata-author.json';
+import rawModeratorClientMetadata from '../../media/oauth-client-metadata-moderator.json';
 import rawClientMetadataV10 from '../../media/oauth-client-metadata-v10.json';
 import rawClientMetadataV9 from '../../media/oauth-client-metadata-v9.json';
 import rawClientMetadataV8 from '../../media/oauth-client-metadata-v8.json';
@@ -17,13 +18,15 @@ import rawClientMetadataV3 from '../../media/oauth-client-metadata-v3.json';
 import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 
 type MetadataVersion = 'latest' | 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
-type OAuthMetadataVersion = MetadataVersion | 'author';
+type OAuthMetadataVersion = MetadataVersion | 'author' | 'moderator' | 'authorModerator';
 type MetadataVersionControl = HTMLElement & { value: string };
 type ForumImageInput = { file: File; alt: string };
 type ForumStrongRef = { uri: string; cid: string };
 const oauthMetadataVersions: Record<OAuthMetadataVersion, OAuthClientMetadataInput> = {
   latest: rawClientMetadata as OAuthClientMetadataInput,
   author: rawAuthorClientMetadata as OAuthClientMetadataInput,
+  moderator: rawModeratorClientMetadata as OAuthClientMetadataInput,
+  authorModerator: rawAuthorClientMetadata as OAuthClientMetadataInput,
   v10: rawClientMetadataV10 as OAuthClientMetadataInput,
   v9: rawClientMetadataV9 as OAuthClientMetadataInput,
   v8: rawClientMetadataV8 as OAuthClientMetadataInput,
@@ -73,7 +76,6 @@ const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const advancedToggle = document.querySelector<HTMLButtonElement>('[data-auth-advanced-toggle]');
 const advancedOptions = document.querySelector<HTMLElement>('[data-auth-advanced-options]');
 const metadataVersionSelect = document.querySelector<MetadataVersionControl>('[data-auth-metadata-version]');
-const coffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-coffee-account]');
 const createCoffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-create-coffee-account]');
 const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
 const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
@@ -136,7 +138,7 @@ function storedMetadataVersion(): MetadataVersion | undefined {
 function storedPendingMetadataVersion(): OAuthMetadataVersion | undefined {
   try {
     const value = window.localStorage.getItem(pendingMetadataVersionKey);
-    if (value === 'author' || isMetadataVersion(value)) return value;
+    if (value === 'author' || value === 'moderator' || value === 'authorModerator' || isMetadataVersion(value)) return value;
   } catch {
     return undefined;
   }
@@ -193,11 +195,20 @@ async function selectedOAuthClient(handle?: string) {
   let version: OAuthMetadataVersion = preferredVersion;
   if (preferredVersion === 'latest' && handle) {
     const query = new URLSearchParams({ handle });
-    const response = await fetch(`/api/authors/check?${query}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error('Could not check whether this account is a Coffee & Code author. Please try again.');
-    const result = await response.json() as { isAuthor?: unknown };
-    if (typeof result.isAuthor !== 'boolean') throw new Error('Author check returned an invalid response.');
-    if (result.isAuthor) version = 'author';
+    const [moderatorResponse, authorResponse] = await Promise.all([
+      fetch(`/api/forum/moderators/check?${query}`, { cache: 'no-store' }),
+      fetch(`/api/authors/check?${query}`, { cache: 'no-store' }),
+    ]);
+    if (!moderatorResponse.ok) throw new Error('Could not check whether this account is a forum moderator. Please try again.');
+    if (!authorResponse.ok) throw new Error('Could not check whether this account is a Coffee & Code author. Please try again.');
+    const [moderatorResult, authorResult] = await Promise.all([
+      moderatorResponse.json() as Promise<{ isModerator?: unknown }>,
+      authorResponse.json() as Promise<{ isAuthor?: unknown }>,
+    ]);
+    if (typeof moderatorResult.isModerator !== 'boolean') throw new Error('Forum moderator check returned an invalid response.');
+    if (typeof authorResult.isAuthor !== 'boolean') throw new Error('Author check returned an invalid response.');
+    if (moderatorResult.isModerator) version = authorResult.isAuthor ? 'author' : 'moderator';
+    else if (authorResult.isAuthor) version = 'author';
   }
   const selectedClient = getOAuthClient(version);
   client = selectedClient;
@@ -827,26 +838,6 @@ const oauthReady = (async () => {
   }
 })();
 
-coffeeAccountButton?.addEventListener('click', async () => {
-  clearAuthError();
-  if (!client) {
-    showAuthError(`Sign-in could not initialize: ${errorMessage(initializationError)}`);
-    return;
-  }
-  coffeeAccountButton.disabled = true;
-  coffeeAccountButton.textContent = 'Connecting…';
-  try {
-    const signInClient = await selectedOAuthClient();
-    const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-    await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath });
-  } catch (error) {
-    clearPendingMetadataVersion();
-    showAuthError(errorMessage(error));
-    coffeeAccountButton.disabled = false;
-    coffeeAccountButton.textContent = 'Continue with Coffee & Code';
-  }
-});
-
 createCoffeeAccountButton?.addEventListener('click', async () => {
   clearAuthError();
   if (!client) {
@@ -880,7 +871,7 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
   createCoffeeAccountButton.disabled = true;
   createCoffeeAccountButton.textContent = 'Connecting…';
   try {
-    const signInClient = await selectedOAuthClient();
+    const signInClient = await selectedOAuthClient('account.coffeencode.cc');
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
     await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create' });
   } catch (error) {
@@ -1173,7 +1164,7 @@ if (authForm) {
       showAuthError(errorMessage(error));
       if (submit) {
         submit.disabled = false;
-        submit.textContent = 'Continue with existing account';
+        submit.textContent = 'Continue';
       }
     }
   });

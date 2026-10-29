@@ -1,0 +1,37 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.authModerator",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code Forum Moderator",
+      "detail": "Manage forum configuration, posts, replies, votes, and moderation records.",
+      "permissions": [
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["cc.coffeencode.forum.config"],
+          "action": ["create", "update", "delete"]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["cc.coffeencode.forum.post", "cc.coffeencode.forum.reply"],
+          "action": ["create", "update", "delete"]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["cc.coffeencode.forum.vote"],
+          "action": ["create", "delete"]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["cc.coffeencode.forum.moderation"],
+          "action": ["create", "delete"]
+        }
+      ]
+    }
+  }
+}

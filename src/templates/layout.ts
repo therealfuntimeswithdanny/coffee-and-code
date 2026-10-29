@@ -306,7 +306,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .auth-page { margin: 24px auto 60px; max-width: 760px; }
     .auth-page h1, .privacy-page h1 { font-size: clamp(2.2rem, 6vw, 3.5rem); margin: 0; }
     .auth-page__intro { color: #eee9dc; font-size: 18px; line-height: 1.6; margin: 16px 0 28px; }
-    .auth-options { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .auth-options { display: grid; gap: 16px; grid-template-columns: minmax(0,1fr); }
     .auth-option { background: var(--paper-deep); border: 1px solid var(--line); display: flex; flex-direction: column; padding: 24px; }
     .auth-option--coffee { border-color: var(--accent); }
     .auth-option__label { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .12em; margin: 0 0 10px; text-transform: uppercase; }
@@ -560,6 +560,10 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .forum-rules li + li { margin-top: 12px; }
     .forum-rules p { color: var(--muted); margin: 4px 0 0; }
     .forum-filter { align-items: end; display: flex; flex-wrap: wrap; gap: 14px; margin: 28px 0 18px; }
+    .forum-index-actions { display: flex; justify-content: flex-end; margin: 26px 0 14px; }
+    .forum-search { margin-bottom: 30px; }
+    .forum-search__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .forum-search .archive-search__filters input { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; padding: 9px 12px; width: 100%; }
     .forum-page label { color: var(--muted); display: grid; font-size: 14px; gap: 5px; }
     .forum-page input, .forum-page textarea, .forum-page select { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink); font: inherit; max-width: 100%; padding: 9px 10px; }
     .forum-page input:focus, .forum-page textarea:focus, .forum-page select:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -585,6 +589,17 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .forum-moderation { display: none; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
     .forum-moderation.is-visible { display: flex; }
     .forum-thread { margin: 0 auto; max-width: 820px; }
+    .forum-create-page { max-width: 820px; }
+    .forum-back-link { display: inline-block; margin-bottom: 24px; }
+    .forum-create-intro { color: var(--muted); font-size: 19px; margin: 0; max-width: 620px; }
+    .forum-editor { display: grid; gap: 18px; margin-top: 24px; padding: 24px; }
+    .forum-editor label { font-size: 13px; gap: 7px; }
+    .forum-editor input, .forum-editor textarea { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--ink); font: inherit; font-size: 16px; padding: 11px 13px; width: 100%; }
+    .forum-editor textarea { line-height: 1.65; resize: vertical; }
+    .forum-editor input:focus, .forum-editor textarea:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .forum-markdown-note, .forum-field-hint { color: var(--muted); font-size: 13px; margin: -10px 0 0; }
+    .forum-field-hint { font-weight: 400; letter-spacing: 0; text-transform: none; }
+    .forum-editor__actions { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 18px; padding-top: 18px; }
     .forum-thread > .read-link { display: inline-block; margin-bottom: 30px; }
     .forum-thread > .forum-post-card__byline { margin: 18px 0 28px; }
     .forum-thread__content { margin-top: 28px; }
@@ -607,6 +622,8 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     @media (max-width: 760px) {
       .forum-filter { align-items: stretch; flex-direction: column; }
       .forum-filter > * { width: 100%; }
+      .forum-search__filters { grid-template-columns: 1fr; }
+      .forum-editor { padding: 14px; }
       .forum-post-card__byline time { margin-left: 0; }
       .forum-reply { margin-left: calc(min(var(--reply-depth), 5) * 8px); padding-left: 10px; }
       .forum-composer, .forum-rules { padding: 14px; }

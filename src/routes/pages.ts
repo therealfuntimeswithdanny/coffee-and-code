@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { getPdsEndpoint, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
+import { isForumModerator } from './forum';
 
 const pages = new Hono<{ Bindings: Env }>();
 
@@ -52,33 +53,39 @@ pages.get('/api/authors/check', async (c) => {
   return c.json({ isAuthor }, 200, { 'Cache-Control': 'public, max-age=60' });
 });
 
+pages.get('/api/forum/moderators/check', async (c) => {
+  const identifier = (c.req.query('handle') || '').trim();
+  const isDid = /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(identifier);
+  const isHandle = /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(identifier);
+  if (!isDid && !isHandle) return c.json({ error: 'A valid account handle is required.' }, 400);
+
+  try {
+    const isModerator = await isForumModerator(identifier, c.env.OWNER_PDS);
+    return c.json({ isModerator }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    console.error('Could not check forum moderator status:', error);
+    return c.json({ error: 'Forum moderator status is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+});
+
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
       <p class="eyebrow">Welcome back</p>
       <h1 id="auth-title">Log in to Coffee &amp; Code</h1>
-      <p class="auth-page__intro">Choose your Coffee &amp; Code account or continue with an existing Bluesky account.</p>
+      <p class="auth-page__intro">Sign in with your AT Protocol handle.</p>
       <div class="auth-options" data-auth-options>
-        <section class="auth-option auth-option--coffee" aria-labelledby="coffee-account-title">
-          <p class="auth-option__label">Hosted by Coffee &amp; Code</p>
-          <h2 id="coffee-account-title">Coffee &amp; Code account</h2>
-          <p>Log in to your Coffee &amp; Code account, or start creating one on our account server. Your password stays on the account server.</p>
-          <p class="auth-page__resolution">Authors: sign in with your Existing Bluesky account to get author permissions.</p>
-          <button type="button" class="login-button auth-option__button" data-coffee-account>Continue with Coffee &amp; Code</button>
-          <button type="button" class="auth-create-button" data-create-coffee-account>Create a Coffee &amp; Code account</button>
-          <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
-          <div class="auth-invite" data-invite-panel hidden><code data-invite-code></code><button type="button" class="auth-signout" data-copy-invite>Copy invite code</button></div>
-        </section>
-        <section class="auth-option" aria-labelledby="existing-account-title">
-          <p class="auth-option__label">Already have an account?</p>
-          <h2 id="existing-account-title">Existing Bluesky account</h2>
-          <p>Use Bluesky or another AT Protocol account you already have.</p>
+        <section class="auth-option auth-option--coffee" aria-labelledby="existing-account-title">
+          <h2 id="existing-account-title">Sign in</h2>
           <form class="auth-form" data-auth-form>
             <label for="auth-handle">Handle</label>
             <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
-            <button type="submit" class="login-button auth-option__button">Continue with existing account</button>
+            <button type="submit" class="login-button auth-option__button">Continue</button>
           </form>
-          <p class="auth-page__resolution">Your handle is sent to Coffee &amp; Code's resolver to find your account provider. You’ll enter your password on that provider’s site.</p>
+          <p class="auth-page__resolution">AT Protocol is an open social networking protocol. Bluesky is built on it, so you can sign in here with your Bluesky handle. You can also use an account from another AT Protocol service. You’ll enter your password on your account provider’s site.</p>
+          <button type="button" class="auth-create-button" data-create-coffee-account>Create a Coffee &amp; Code account</button>
+          <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
+          <div class="auth-invite" data-invite-panel hidden><code data-invite-code></code><button type="button" class="auth-signout" data-copy-invite>Copy invite code</button></div>
         </section>
         <div class="auth-advanced">
           <button type="button" class="auth-advanced__toggle" data-auth-advanced-toggle aria-expanded="false" aria-controls="auth-advanced-options">Advanced sign-in options</button>

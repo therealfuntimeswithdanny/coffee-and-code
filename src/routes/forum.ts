@@ -165,6 +165,14 @@ async function getForumConfig(fallbackPds: string): Promise<ForumConfig | undefi
   };
 }
 
+export async function isForumModerator(identifier: string, fallbackPds: string): Promise<boolean> {
+  const did = await resolveAtprotoIdentifier(identifier);
+  if (!did) return false;
+  const config = await getForumConfig(fallbackPds);
+  if (!config) throw new Error('The forum configuration is unavailable.');
+  return config.moderators.some((moderatorDid) => moderatorDid.toLowerCase() === did.toLowerCase());
+}
+
 async function getBacklinks(subject: string, source: string): Promise<Backlink[]> {
   const records: Backlink[] = [];
   let cursor: string | undefined;
@@ -440,6 +448,7 @@ forum.get('/', async (c) => {
   if (!config) return errorPage(c, 'Forum unavailable', 'Forum configuration is missing.', 503);
 
   const queryTag = (c.req.query('tag') || '').trim().slice(0, 32);
+  const query = (c.req.query('q') || '').trim().slice(0, 200);
   const sort = c.req.query('sort') === 'top' ? 'top' : 'new';
   const page = Math.max(1, Number(c.req.query('page')) || 1);
   let posts: ForumPost[];
@@ -452,7 +461,9 @@ forum.get('/', async (c) => {
     states = moderationStates(moderations);
     posts = allPosts.filter((post) => {
       const state = states.get(post.uri);
-      return !state?.hidden && (!queryTag || post.tags.some((tag) => tag.toLowerCase() === queryTag.toLowerCase()));
+      const matchesTag = !queryTag || post.tags.some((tag) => tag.toLowerCase() === queryTag.toLowerCase());
+      const searchText = `${post.title}\n${post.content}\n${post.tags.join(' ')}`.toLowerCase();
+      return !state?.hidden && matchesTag && (!query || searchText.includes(query.toLowerCase()));
     });
     posts.sort((a, b) => Number(Boolean(states.get(b.uri)?.pinned)) - Number(Boolean(states.get(a.uri)?.pinned))
       || b.createdAt.localeCompare(a.createdAt));
@@ -496,27 +507,72 @@ forum.get('/', async (c) => {
         ${config.description ? `<div class="prose forum-description">${renderMarkdown(config.description)}</div>` : ''}
       </header>
       ${config.rules.length ? `<aside class="forum-rules"><h2>Community rules</h2><ol>${config.rules.map((rule) => `<li><strong>${escapeHtml(rule.title)}</strong>${rule.description ? `<p>${escapeHtml(rule.description)}</p>` : ''}</li>`).join('')}</ol></aside>` : ''}
-      <form class="forum-filter" method="get" action="/forum">
-        <label>Tag <input name="tag" value="${escapeHtml(queryTag)}" list="forum-filter-tags" maxlength="32" placeholder="All topics"><datalist id="forum-filter-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist></label>
-        <label>Sort <select name="sort"><option value="new"${sort === 'new' ? ' selected' : ''}>New</option><option value="top"${sort === 'top' ? ' selected' : ''}>Top</option></select></label>
-        <button type="submit" class="read-link">Apply filters</button>
-      </form>
-      <form class="forum-composer" data-forum-post data-forum-uri="${escapeHtml(config.uri)}" data-tags="${escapeHtml(config.tags.join(','))}">
-        <h2>Start a discussion</h2>
-        <p class="forum-status" data-forum-status role="status"></p>
-        <label>Title <input name="title" maxlength="300" required></label>
-        <label>Post <textarea name="content" rows="7" maxlength="100000" required></textarea></label>
-        <label>Tags (comma-separated) <input name="tags" list="forum-suggested-tags" maxlength="256"><datalist id="forum-suggested-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist></label>
-        <label>Images <input name="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
-        <label>Image alt text (one line per selected image) <textarea name="imageAlts" rows="2"></textarea></label>
-        <button type="submit" class="login-button">Publish post</button>
-      </form>
+      <div class="forum-index-actions"><a class="login-button" href="/forum/create">Start a discussion</a></div>
+      <div class="archive-search forum-search">
+        <form class="search-form" method="get" action="/forum">
+          <label class="archive-search__query">Search discussions
+            <input type="search" name="q" value="${escapeHtml(query)}" placeholder="Title, post text, or topic" class="search-input" autocomplete="off">
+          </label>
+          <div class="archive-search__filters forum-search__filters">
+            <label>Topic
+              <input type="search" name="tag" value="${escapeHtml(queryTag)}" list="forum-filter-tags" maxlength="32" placeholder="All topics">
+              <datalist id="forum-filter-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+            </label>
+            <label>Order
+              <select name="sort"><option value="new"${sort === 'new' ? ' selected' : ''}>Newest first</option><option value="top"${sort === 'top' ? ' selected' : ''}>Top</option></select>
+            </label>
+          </div>
+          <div class="archive-search__actions"><button type="submit" class="search-button">Apply filters</button><a href="/forum" class="read-link">Clear</a></div>
+        </form>
+      </div>
       <div class="section-heading"><span>Discussions</span><span>${posts.length}</span></div>
       ${postCards ? `<div class="forum-post-list">${postCards}</div>` : '<p class="empty-state">No discussions yet. Be the first to post.</p>'}
-      ${posts.length > page * pageLimit ? `<a class="read-link forum-next-page" href="${escapeHtml(`${pageUrl.pathname}?${new URLSearchParams({ ...(queryTag ? { tag: queryTag } : {}), sort, page: String(page + 1) })}`)}">Older discussions <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
+      ${posts.length > page * pageLimit ? `<a class="read-link forum-next-page" href="${escapeHtml(`${pageUrl.pathname}?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(queryTag ? { tag: queryTag } : {}), sort, page: String(page + 1) })}`)}">Older discussions <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
     </section>`;
   const metaTags = `<meta name="description" content="${escapeHtml(config.description || `Community discussions at ${config.name}.`)}"><meta property="og:title" content="${escapeHtml(config.name)} — Forum"><meta property="og:type" content="website">`;
   return c.html(renderLayout(c, `${escapeHtml(config.name)} Forum`, body, metaTags));
+});
+
+forum.get('/create', async (c) => {
+  const setup = await configOrResponse(c);
+  if (setup.response) return setup.response;
+  const config = setup.config;
+  if (!config) return errorPage(c, 'Forum unavailable', 'Forum configuration is missing.', 503);
+  const body = `
+    <section class="forum-page forum-create-page" aria-labelledby="forum-create-title">
+      <a class="read-link forum-back-link" href="/forum"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back to forum</a>
+      <header class="forum-header">
+        <p class="eyebrow">${escapeHtml(config.name)}</p>
+        <h1 id="forum-create-title">Start a discussion</h1>
+        <p class="forum-create-intro">Share a project, ask a question, or start a conversation with the community.</p>
+      </header>
+      <form class="archive-search forum-editor" data-forum-post data-forum-uri="${escapeHtml(config.uri)}">
+        <p class="forum-status" data-forum-status role="status"></p>
+        <label class="archive-search__query">Title
+          <input type="text" name="title" maxlength="300" placeholder="Give your discussion a clear title" required>
+        </label>
+        <label class="forum-editor__body">Your post
+          <textarea name="content" rows="14" maxlength="100000" placeholder="Write your post in Markdown…" required></textarea>
+        </label>
+        <p class="forum-markdown-note">Markdown is supported. Links and formatting will be safely rendered.</p>
+        <label>Topics (comma-separated)
+          <input type="text" name="tags" list="forum-create-tags" maxlength="256" placeholder="For example: projects, web development">
+          <datalist id="forum-create-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+        </label>
+        <label>Images
+          <input name="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+        </label>
+        <label>Image alt text <span class="forum-field-hint">Add one description per image, one per line.</span>
+          <textarea name="imageAlts" rows="3" placeholder="Describe each image for readers using assistive technology"></textarea>
+        </label>
+        <div class="forum-editor__actions">
+          <button type="submit" class="search-button">Publish discussion</button>
+          <a href="/forum" class="read-link">Cancel</a>
+        </div>
+      </form>
+    </section>`;
+  const metaTags = `<meta name="description" content="Start a discussion in ${escapeHtml(config.name)}."><meta property="og:title" content="Start a discussion — ${escapeHtml(config.name)}"><meta property="og:type" content="website">`;
+  return c.html(renderLayout(c, 'Start a Discussion', body, metaTags));
 });
 
 forum.get('/:handle/:rkey', async (c) => {
