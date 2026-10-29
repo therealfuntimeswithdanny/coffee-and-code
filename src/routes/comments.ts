@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env } from '../types';
-import { getPdsEndpoint } from '../lib/atproto';
+import { getPdsEndpoint, proxyAvatarUrl } from '../lib/atproto';
 
 const comments = new Hono<{ Bindings: Env }>();
 const constellationUrl = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
@@ -175,7 +175,7 @@ comments.get('/', async (c) => {
       const profile = profileByDid.get(record.did);
       record.handle = profile?.handle || record.did;
       record.displayName = profile?.displayName;
-      record.avatar = profile?.avatar;
+      record.avatar = profile?.avatar ? proxyAvatarUrl(profile.avatar) : undefined;
     });
 
     return c.json({

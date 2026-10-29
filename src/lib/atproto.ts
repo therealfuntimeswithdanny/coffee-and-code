@@ -28,6 +28,17 @@ function cdnBlobUrl(parts: { did: string; cid: string; extension?: string }, pre
   return `${imageCdnUrl}/blob/${encodeURIComponent(parts.did)}/${blob}/${encodeURIComponent(preset)}`;
 }
 
+function proxyBlueskyCdnUrl(imageUrl: string): string | undefined {
+  try {
+    const url = new URL(imageUrl);
+    if (url.hostname !== 'cdn.bsky.app') return undefined;
+    url.hostname = new URL(imageCdnUrl).hostname;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 // Retry helper with exponential backoff
 async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): Promise<Response> {
   let lastError: Error | null = null;
@@ -56,6 +67,8 @@ async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): P
 
 export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed_fullsize'): string {
   if (imageUrl.startsWith(`${imageCdnUrl}/blob/`)) return imageUrl;
+  const bskyCdnUrl = proxyBlueskyCdnUrl(imageUrl);
+  if (bskyCdnUrl) return bskyCdnUrl;
   const blob = atprotoBlobParts(imageUrl, baseUrl);
   if (blob) return cdnBlobUrl(blob, preset);
 
@@ -66,6 +79,8 @@ export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed
 }
 
 export function proxyAvatarUrl(avatarUrl: string): string {
+  const bskyCdnUrl = proxyBlueskyCdnUrl(avatarUrl);
+  if (bskyCdnUrl) return bskyCdnUrl;
   const blob = atprotoBlobParts(avatarUrl);
   return blob ? cdnBlobUrl(blob, 'avatar_medium') : avatarUrl;
 }
@@ -133,6 +148,25 @@ function documentCoverUrl(value: any, content: string, did: string, pdsUrl: stri
   return firstContentImage(content);
 }
 
+function canonicalDocumentPath(value: unknown, did: string, rkey: string): string {
+  const fallback = `/${encodeURIComponent(did)}/${encodeURIComponent(rkey)}`;
+  if (typeof value !== 'string' || value.length > 1024 || !value.startsWith('/') || value.startsWith('//')
+    || value.includes('\\') || /[?#\u0000-\u001f]/.test(value)
+    || !/^\/(?:[A-Za-z0-9._~-]|%[0-9a-fA-F]{2})+(?:\/(?:[A-Za-z0-9._~-]|%[0-9a-fA-F]{2})+)*$/.test(value)) {
+    return fallback;
+  }
+  const segments = value.split('/');
+  if (segments.some((segment) => {
+    try {
+      const decoded = decodeURIComponent(segment);
+      return decoded === '.' || decoded === '..';
+    } catch {
+      return true;
+    }
+  })) return fallback;
+  return value;
+}
+
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {
   try {
     const res = await fetchWithRetry(`https://plc.directory/${did}`, {
@@ -171,7 +205,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function fetchAuthorProfile(did: string, fallbackPds: string): Promise<AuthorProfile | undefined> {
+export async function fetchAuthorProfile(did: string, fallbackPds: string): Promise<AuthorProfile | undefined> {
   try {
     const pdsUrl = await getPdsEndpoint(did, fallbackPds);
     const [record, response] = await Promise.all([
@@ -217,6 +251,21 @@ async function fetchAuthorProfile(did: string, fallbackPds: string): Promise<Aut
     console.error('Error fetching author profile:', error);
     return undefined;
   }
+}
+
+export async function resolveAtprotoIdentifier(identifier: string): Promise<string | undefined> {
+  if (/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(identifier)) return identifier;
+  if (!/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(identifier)) return undefined;
+
+  const url = new URL('https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle');
+  url.searchParams.set('handle', identifier);
+  const response = await fetchWithRetry(url.toString());
+  if (response.status === 400 || response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`Handle resolution returned ${response.status}`);
+  const result = await response.json() as { did?: unknown };
+  return typeof result.did === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(result.did)
+    ? result.did
+    : undefined;
 }
 
 async function fetchRecord(pdsUrl: string, repo: string, collection: string, rkey: string): Promise<any | undefined> {
@@ -287,7 +336,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
               title: rec.value.title || 'Untitled Post',
               content: content,
               publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-              path: `/${encodeURIComponent(authors.get(articleAuthorDid)?.did || articleAuthorDid)}/${rkey}`,
+              path: canonicalDocumentPath(rec.value.path, authors.get(articleAuthorDid)?.did || articleAuthorDid, rkey || ''),
               description: rec.value.description || rec.value.summary || '',
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
@@ -329,7 +378,7 @@ export async function fetchArticles(fallbackPds: string, fallbackDid: string): P
             title: rec.value.title || 'Untitled Post',
             content: content,
             publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
-            path: `/${encodeURIComponent(ownerProfile?.did || did)}/${rkey}`,
+            path: canonicalDocumentPath(rec.value.path, ownerProfile?.did || did, rkey || ''),
             description: rec.value.description || rec.value.summary || '',
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
             format,

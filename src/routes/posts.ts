@@ -16,17 +16,23 @@ function formatDate(date?: string) {
   });
 }
 
-async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requestedHandle?: string) {
+async function renderPost(
+  c: Context<{ Bindings: Env }>,
+  rkey: string,
+  requestedHandle?: string,
+  requestedPath?: string,
+) {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
   const candidates = allPosts.filter((p) => p.rkey === rkey);
-  const post = !requestedHandle
+  const post = (requestedPath ? candidates.find((item) => item.path === requestedPath) : undefined)
+    || (!requestedHandle
     ? candidates[0]
     : candidates.find((item) => {
         const canonicalDid = item.author?.did || item.repoDid || '';
         return canonicalDid.toLowerCase() === requestedHandle.toLowerCase()
           || item.author?.handle.toLowerCase() === requestedHandle.toLowerCase();
-      }) || (candidates.length === 1 ? candidates[0] : undefined);
+      }) || (candidates.length === 1 ? candidates[0] : undefined));
 
   if (!post) {
     return c.html(renderLayout(c, 'Article Not Found', `
@@ -44,7 +50,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
   }
 
   const requestUrl = new URL(c.req.url);
-  if (!requestedHandle || requestUrl.pathname !== post.path) {
+  if (requestUrl.pathname !== post.path) {
     return c.redirect(`${post.path}${requestUrl.search}`, 301);
   }
 
@@ -144,6 +150,7 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
   const structuredDataJson = JSON.stringify(structuredData).replace(/</g, '\\u003c');
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
+    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
     <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.OWNER_DID)}">
     <meta property="og:title" content="${safeTitle}">
@@ -201,6 +208,18 @@ async function renderPost(c: Context<{ Bindings: Env }>, rkey: string, requested
 
 posts.get('/', (c) => c.redirect('/'));
 posts.get('/post/:rkey', (c) => renderPost(c, c.req.param('rkey')));
-posts.get('/:handle/:rkey', (c) => renderPost(c, c.req.param('rkey'), c.req.param('handle')));
+posts.get('/:rkey', (c) => renderPost(c, c.req.param('rkey'), undefined, new URL(c.req.url).pathname));
+posts.get('/:handle/:rkey', (c) => renderPost(
+  c,
+  c.req.param('rkey'),
+  c.req.param('handle'),
+  new URL(c.req.url).pathname,
+));
+posts.get('/*', (c) => {
+  const path = new URL(c.req.url).pathname;
+  const rkey = path.split('/').filter(Boolean).at(-1);
+  if (!rkey) return c.notFound();
+  return renderPost(c, decodeURIComponent(rkey), undefined, path);
+});
 
 export default posts;

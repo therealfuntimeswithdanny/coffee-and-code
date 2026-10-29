@@ -28,8 +28,12 @@ const styles = `
 .reply-button { margin-top:.4rem; font-size:.875rem; }
 .comment-like { margin-top:.4rem; margin-right:.45rem; border:1px solid var(--sequoia-border-color,#e5e7eb); background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:.875rem; padding:.35rem .55rem; }
 .comment-like[aria-pressed="true"] { color:var(--sequoia-accent-color,#2563eb); }
-.comment-action { margin:.4rem .4rem 0 0; border:1px solid var(--sequoia-border-color,#e5e7eb); background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:.875rem; padding:.35rem .55rem; }
-.comment-action--danger { color:#b42318; }
+.comment-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.45rem; }
+.comment-action { min-height:2rem; border:1px solid var(--sequoia-secondary-color,#6b7280); border-radius:var(--sequoia-border-radius,6px); background:var(--sequoia-bg-color,#fff); color:var(--sequoia-fg-color,#1f2937); cursor:pointer; font:inherit; font-size:.875rem; font-weight:600; padding:.3rem .65rem; }
+.comment-action:hover { background:var(--sequoia-border-color,#e5e7eb); }
+.comment-action:focus-visible { outline:2px solid var(--sequoia-accent-color,#2563eb); outline-offset:2px; }
+.comment-action--danger { border-color:#b42318; color:#b42318; }
+.comment-action--danger:hover { background:#fef3f2; }
 .comment-action:disabled { opacity:.55; cursor:wait; }
 .comment-edit-form { margin-top:.6rem; }
 .comment-status { color:var(--sequoia-secondary-color,#6b7280); font-size:.875rem; }
@@ -129,9 +133,9 @@ class SequoiaComments extends HTMLElement {
     const replies = childrenByParent.get(comment.uri) || [];
     const likeCount = Number.isFinite(Number(comment.likeCount)) && Number(comment.likeCount) >= 0 ? Number(comment.likeCount) : 0;
     const ownActions = this.viewerDid && comment.did === this.viewerDid
-      ? `<button type="button" class="comment-action" data-edit-comment="${escapeHtml(comment.uri)}">Edit</button><button type="button" class="comment-action comment-action--danger" data-delete-comment="${escapeHtml(comment.uri)}">Delete</button>`
+      ? `<div class="comment-actions" aria-label="Your comment controls"><button type="button" class="comment-action" data-edit-comment="${escapeHtml(comment.uri)}">Edit comment</button><button type="button" class="comment-action comment-action--danger" data-delete-comment="${escapeHtml(comment.uri)}">Delete comment</button></div>`
       : '';
-    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" data-author-verification-did="${escapeHtml(comment.did)}" href="https://bsky.app/profile/${encodeURIComponent(comment.did)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}">♥ ${comment.liked ? 'Liked' : 'Like'} <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
+    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" data-author-verification-did="${escapeHtml(comment.did)}" href="/user/${encodeURIComponent(comment.did)}">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}">♥ ${comment.liked ? 'Liked' : 'Like'} <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
   }
 
   async loadVerificationBadges() {
@@ -205,6 +209,7 @@ class SequoiaComments extends HTMLElement {
     const commentUri = button.dataset.likeComment;
     const isLiked = button.getAttribute('aria-pressed') === 'true';
     const status = button.closest('.comment-content')?.querySelector('.comment-status');
+    button.disabled = true;
     try {
       const did = await window.coffeeAndCodeAuth?.getDid();
       if (!did) {
@@ -212,7 +217,6 @@ class SequoiaComments extends HTMLElement {
         window.location.assign(`/auth?returnTo=${encodeURIComponent(returnTo)}`);
         return;
       }
-      button.disabled = true;
       if (!window.coffeeAndCodeAuth?.toggleCommentLike) throw new Error('Sign-in is still initializing. Please try again.');
       const current = this.comments.find((item) => item.uri === commentUri);
       const likeRkey = await window.coffeeAndCodeAuth.toggleCommentLike(commentUri, isLiked, current?.likeRkey);
@@ -226,11 +230,11 @@ class SequoiaComments extends HTMLElement {
       button.setAttribute('aria-pressed', String(!isLiked));
       button.dataset.likeRkey = likeRkey || '';
       button.firstChild.textContent = `♥ ${isLiked ? 'Like' : 'Liked'} `;
-      button.disabled = false;
       if (status) status.textContent = isLiked ? 'Like removed.' : 'You liked this comment.';
       this.scheduleRefresh();
     } catch (error) {
       if (status) status.textContent = error instanceof Error ? error.message : 'Could not update this like.';
+    } finally {
       button.disabled = false;
     }
   }

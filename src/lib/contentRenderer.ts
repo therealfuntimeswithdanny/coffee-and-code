@@ -99,12 +99,24 @@ export function renderPlaintext(content: string): string {
  * Renders HTML content with sanitization
  */
 export function renderHtml(content: string): string {
+  const withSafeEmbeds = content.replace(
+    /<iframe\b([^>]*)>(?:[\s\S]*?<\/iframe\s*>)?|<iframe\b([^>]*)\/?>/gi,
+    (_match, pairedAttributes: string | undefined, selfClosingAttributes: string | undefined) => {
+      const attributes = pairedAttributes ?? selfClosingAttributes ?? '';
+      const source = attributes.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2]
+        ?.replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'");
+      const title = attributes.match(/\btitle\s*=\s*(["'])(.*?)\1/i)?.[2];
+      return renderLeafletEmbed({ url: source, title });
+    },
+  );
+
   // Basic sanitization: remove script tags and event handlers
-  const sanitized = content
+  const sanitized = withSafeEmbeds
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
     .replace(/on\w+\s*=\s*[^\s>]*/gi, '')
-    .replace(/<iframe[^>]*>.*?<\/iframe>/gi, '')
     .replace(/<embed[^>]*>/gi, '')
     .replace(/<object[^>]*>.*?<\/object>/gi, '');
 
@@ -192,6 +204,44 @@ export async function renderMarkdown(content: string): Promise<string> {
   }
 }
 
+function safeEmbedUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function renderLeafletEmbed(block: any, useSrcdoc = false): string {
+  const aspectWidth = Number.isInteger(block.aspectRatio?.width) && block.aspectRatio.width > 0
+    ? Math.min(block.aspectRatio.width, 10000)
+    : undefined;
+  const aspectHeight = Number.isInteger(block.aspectRatio?.height) && block.aspectRatio.height > 0
+    ? Math.min(block.aspectRatio.height, 10000)
+    : undefined;
+  const ratio = aspectWidth && aspectHeight ? `${aspectWidth}/${aspectHeight}` : '16/9';
+  const height = Number.isInteger(block.height) && block.height >= 16 && block.height <= 1600
+    ? `height:${block.height}px;`
+    : `aspect-ratio:${ratio};height:auto;`;
+  const title = typeof block.title === 'string' && block.title.trim()
+    ? block.title.trim().slice(0, 200)
+    : typeof block.alt === 'string' && block.alt.trim()
+      ? block.alt.trim().slice(0, 200)
+      : 'Embedded content';
+
+  if (useSrcdoc || typeof block.html === 'string') {
+    if (typeof block.html !== 'string' || !block.html.trim()) return '';
+    return `<iframe class="prose-embed" title="${escapeHtml(title)}" srcdoc="${escapeHtml(block.html)}" sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" loading="lazy" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen style="width:100%;${height}"></iframe>`;
+  }
+
+  const src = safeEmbedUrl(block.url);
+  if (!src) return '';
+  return `<iframe class="prose-embed" title="${escapeHtml(title)}" src="${escapeHtml(src)}" sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" loading="lazy" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen style="width:100%;${height}"></iframe>`;
+}
+
 /**
  * Renders Leaflet document format (pub.leaflet.content)
  */
@@ -265,6 +315,14 @@ export function renderLeaflet(content: string): string {
                 return images
                   ? `<div class="prose-image-gallery" role="group" aria-label="Image gallery" tabindex="0">${images}</div>`
                   : '';
+              }
+
+              if (blockType === 'pub.leaflet.blocks.iframe') {
+                return renderLeafletEmbed(block);
+              }
+
+              if (blockType === 'pub.leaflet.blocks.html') {
+                return renderLeafletEmbed(block, true);
               }
 
               return '';

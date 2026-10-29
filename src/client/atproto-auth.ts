@@ -870,6 +870,9 @@ window.coffeeAndCodeAuth = {
     await oauthReady;
     const activeSession = requireSession();
     const collection = 'cc.coffeencode.comment.like';
+    if (!/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/cc\.coffeencode\.comment\/[a-zA-Z0-9._~:-]+$/.test(commentUri)) {
+      throw new Error('This comment link is invalid.');
+    }
     if (isLiked) {
       if (!likeRkey || !/^[a-zA-Z0-9._~:-]+$/.test(likeRkey)) {
         throw new Error('Could not find your comment-like record. Refresh the comments and try again.');
@@ -877,15 +880,17 @@ window.coffeeAndCodeAuth = {
       await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection, rkey: likeRkey });
       return undefined;
     }
+    const rkey = await recordKey(commentUri, 'comment');
     const response = await repoRequest('com.atproto.repo.createRecord', {
       repo: activeSession.did,
       collection,
+      rkey,
       record: { $type: collection, subject: { uri: commentUri }, createdAt: new Date().toISOString() },
     });
     const result = await response.json() as { uri?: string };
     const match = result.uri?.match(/^at:\/\/[^/]+\/cc\.coffeencode\.comment\.like\/([a-zA-Z0-9._~:-]+)$/);
-    if (!match) throw new Error('Your like was created, but its record key could not be confirmed. Refresh the comments before changing it.');
-    return match[1];
+    if (match?.[1] !== rkey) throw new Error('Your like was created, but its record key could not be confirmed. Refresh the comments before changing it.');
+    return rkey;
   },
 };
 
@@ -956,9 +961,9 @@ async function repoRequest(path: string, body?: unknown) {
   throw new Error(detail || `AT Protocol request failed (${response.status}).`);
 }
 
-async function recordKey(document: string) {
+async function recordKey(document: string, prefix = 'post') {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(document));
-  return `post-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  return `${prefix}-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
 async function getOwnRecords(document: string, did: string) {
