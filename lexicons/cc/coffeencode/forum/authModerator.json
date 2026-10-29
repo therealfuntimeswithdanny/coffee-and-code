@@ -1,0 +1,30 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.forum.authModerator",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code Forum (Moderator)",
+      "detail": "Everything a member can do, plus publish moderation actions (pin, lock, hide, remove) for the forum.",
+      "permissions": [
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["cc.coffeencode.forum.post", "cc.coffeencode.forum.reply"],
+          "action": ["create", "update", "delete"]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["cc.coffeencode.forum.vote", "cc.coffeencode.forum.moderation"],
+          "action": ["create", "delete"]
+        },
+        {
+          "type": "permission",
+          "resource": "blob",
+          "accept": ["image/*"]
+        }
+      ]
+    }
+  }
+}

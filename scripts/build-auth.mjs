@@ -9,7 +9,7 @@ const v8ClientMetadataPath = new URL('../media/oauth-client-metadata-v8.json', i
 const v9ClientMetadataPath = new URL('../media/oauth-client-metadata-v9.json', import.meta.url);
 const v10ClientMetadataPath = new URL('../media/oauth-client-metadata-v10.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
-const forumMemberPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authMemeber.json', import.meta.url);
+const forumMemberPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authMember.json', import.meta.url);
 const forumModeratorPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authModerator.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
 const authorClientMetadata = JSON.parse(await readFile(authorClientMetadataPath, 'utf8'));
@@ -81,7 +81,7 @@ assert(metadata.grant_types?.includes('authorization_code'), 'authorization_code
 assert(metadata.grant_types?.includes('refresh_token'), 'refresh_token grant is required');
 assert(metadata.response_types?.includes('code'), 'code response type is required');
 const requestedScopes = new Set((metadata.scope?.split(' ') ?? []).map(normalizeScope));
-const memberScope = 'include:cc.coffeencode.forum.authMemeber';
+const memberScope = 'include:cc.coffeencode.forum.authMember';
 const moderatorScope = 'include:cc.coffeencode.forum.authModerator';
 for (const scope of [
   'atproto',
@@ -131,7 +131,7 @@ assert(!moderatorRequestedScopes.has(normalizeScope('include:cc.coffeencode.auth
 assert(permissionSet.id === 'cc.coffeencode.fullPermissions', 'permission set id must match the requested include scope');
 assert(permissionSet.defs?.main?.type === 'permission-set', 'permission set must use the permission-set lexicon type');
 assert(permissionSet.defs.main.title && permissionSet.defs.main.detail, 'permission set must include a title and description');
-assert(forumMemberPermissionSet.id === 'cc.coffeencode.forum.authMemeber', 'forum member permission set id must match its requested include scope');
+assert(forumMemberPermissionSet.id === 'cc.coffeencode.forum.authMember', 'forum member permission set id must match its requested include scope');
 assert(forumModeratorPermissionSet.id === 'cc.coffeencode.forum.authModerator', 'forum moderator permission set id must match its requested include scope');
 const expectedForumMemberRepoActions = new Map([
   ['cc.coffeencode.forum.post', ['create', 'update', 'delete']],
@@ -139,7 +139,6 @@ const expectedForumMemberRepoActions = new Map([
   ['cc.coffeencode.forum.vote', ['create', 'delete']],
 ]);
 const expectedForumModeratorRepoActions = new Map([
-  ['cc.coffeencode.forum.config', ['create', 'update', 'delete']],
   ['cc.coffeencode.forum.post', ['create', 'update', 'delete']],
   ['cc.coffeencode.forum.reply', ['create', 'update', 'delete']],
   ['cc.coffeencode.forum.vote', ['create', 'delete']],
@@ -150,20 +149,28 @@ function validateForumPermissionSet(permissionSet, id, expectedActions, label) {
   assert(permissionSet.defs?.main?.type === 'permission-set', `${label} permission set must use the permission-set lexicon type`);
   assert(permissionSet.defs.main.title && permissionSet.defs.main.detail, `${label} permission set must include a title and description`);
   const actualActions = new Map();
+  let imageBlobPermissionCount = 0;
   for (const permission of permissionSet.defs.main.permissions ?? []) {
-    assert(permission.type === 'permission' && permission.resource === 'repo', `${label} permission set may only declare repo record permissions`);
+    assert(permission.type === 'permission', `${label} permission set entries must be permissions`);
+    if (permission.resource === 'blob') {
+      assert(JSON.stringify(permission.accept) === JSON.stringify(['image/*']), `${label} permission set blob access must be limited to images`);
+      imageBlobPermissionCount += 1;
+      continue;
+    }
+    assert(permission.resource === 'repo', `${label} permission set may only declare repo or image blob permissions`);
     for (const collection of permission.collection ?? []) {
       assert(!actualActions.has(collection), `duplicate ${label} permission declaration: ${collection}`);
       actualActions.set(collection, [...(permission.action ?? [])].sort());
     }
   }
+  assert(imageBlobPermissionCount === 1, `${label} permission set must include image upload access`);
   assert(actualActions.size === expectedActions.size, `${label} permission set collections must match required forum repo collections`);
   for (const [collection, actions] of expectedActions) {
     const grantedActions = actualActions.get(collection);
     assert(grantedActions?.join(',') === [...actions].sort().join(','), `${label} permission actions are incorrect for ${collection}`);
   }
 }
-validateForumPermissionSet(forumMemberPermissionSet, 'cc.coffeencode.forum.authMemeber', expectedForumMemberRepoActions, 'forum member');
+validateForumPermissionSet(forumMemberPermissionSet, 'cc.coffeencode.forum.authMember', expectedForumMemberRepoActions, 'forum member');
 validateForumPermissionSet(forumModeratorPermissionSet, 'cc.coffeencode.forum.authModerator', expectedForumModeratorRepoActions, 'forum moderator');
 const expectedRepoActions = new Map([
   ['cc.coffeencode.interact.like', ['create', 'delete']],
