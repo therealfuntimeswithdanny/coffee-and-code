@@ -56,6 +56,7 @@ assert(metadata.response_types?.includes('code'), 'code response type is require
 const requestedScopes = new Set((metadata.scope?.split(' ') ?? []).map(normalizeScope));
 const memberScope = 'include:cc.coffeencode.forum.authMember';
 const moderatorScope = 'include:cc.coffeencode.forum.authModerator';
+assert(!requestedScopes.has(normalizeScope(moderatorScope)), 'member client must not request the forum moderator permission set');
 for (const scope of [
   'atproto',
   'include:cc.coffeencode.authPublic',
@@ -79,12 +80,8 @@ const authorRequestedScopes = new Set((authorClientMetadata.scope?.split(' ') ??
 for (const scope of requestedScopes) {
   assert(authorRequestedScopes.has(scope), `author client is missing a standard permission scope: ${scope}`);
 }
-for (const scope of [
-  'include:cc.coffeencode.authAuthor',
-  moderatorScope,
-]) {
-  assert(authorRequestedScopes.has(normalizeScope(scope)), `author client permission scope is missing: ${scope}`);
-}
+assert(authorRequestedScopes.has(normalizeScope('include:cc.coffeencode.authAuthor')), 'author client permission scope is missing: include:cc.coffeencode.authAuthor');
+assert(!authorRequestedScopes.has(normalizeScope(moderatorScope)), 'author client must not request the forum moderator permission set');
 assert(permissionSet.id === 'cc.coffeencode.fullPermissions', 'permission set id must match the requested include scope');
 assert(permissionSet.defs?.main?.type === 'permission-set', 'permission set must use the permission-set lexicon type');
 assert(permissionSet.defs.main.title && permissionSet.defs.main.detail, 'permission set must include a title and description');
