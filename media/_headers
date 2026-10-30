@@ -4,33 +4,3 @@
 /oauth-client-metadata-author.json
   Content-Type: application/json
   Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-moderator.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v2.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v3.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v4.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v5.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v6.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v7.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v8.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v9.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate
-/oauth-client-metadata-v10.json
-  Content-Type: application/json
-  Cache-Control: public, max-age=0, must-revalidate

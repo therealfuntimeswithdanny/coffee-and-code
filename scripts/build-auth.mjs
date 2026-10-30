@@ -4,28 +4,16 @@ import { build } from 'esbuild';
 
 const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
 const authorClientMetadataPath = new URL('../media/oauth-client-metadata-author.json', import.meta.url);
-const moderatorClientMetadataPath = new URL('../media/oauth-client-metadata-moderator.json', import.meta.url);
-const v8ClientMetadataPath = new URL('../media/oauth-client-metadata-v8.json', import.meta.url);
-const v9ClientMetadataPath = new URL('../media/oauth-client-metadata-v9.json', import.meta.url);
-const v10ClientMetadataPath = new URL('../media/oauth-client-metadata-v10.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
 const forumMemberPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authMember.json', import.meta.url);
 const forumModeratorPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authModerator.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
 const authorClientMetadata = JSON.parse(await readFile(authorClientMetadataPath, 'utf8'));
-const moderatorClientMetadata = JSON.parse(await readFile(moderatorClientMetadataPath, 'utf8'));
-const v8ClientMetadata = JSON.parse(await readFile(v8ClientMetadataPath, 'utf8'));
-const v9ClientMetadata = JSON.parse(await readFile(v9ClientMetadataPath, 'utf8'));
-const v10ClientMetadata = JSON.parse(await readFile(v10ClientMetadataPath, 'utf8'));
 const permissionSet = JSON.parse(await readFile(permissionSetPath, 'utf8'));
 const forumMemberPermissionSet = JSON.parse(await readFile(forumMemberPermissionSetPath, 'utf8'));
 const forumModeratorPermissionSet = JSON.parse(await readFile(forumModeratorPermissionSetPath, 'utf8'));
 const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
 const expectedAuthorClientId = 'https://coffeencode.cc/oauth-client-metadata-author.json';
-const expectedModeratorClientId = 'https://coffeencode.cc/oauth-client-metadata-moderator.json';
-const expectedV8ClientId = 'https://coffeencode.cc/oauth-client-metadata-v8.json';
-const expectedV9ClientId = 'https://coffeencode.cc/oauth-client-metadata-v9.json';
-const expectedV10ClientId = 'https://coffeencode.cc/oauth-client-metadata-v10.json';
 const expectedRedirectUri = 'https://coffeencode.cc/auth';
 
 function assert(condition, message) {
@@ -51,23 +39,9 @@ function normalizeScope(scope) {
 
 assert(metadata.client_id === expectedClientId, 'client_id must match the deployed metadata URL');
 assert(authorClientMetadata.client_id === expectedAuthorClientId, 'author client_id must match its metadata URL');
-assert(moderatorClientMetadata.client_id === expectedModeratorClientId, 'moderator client_id must match its metadata URL');
-assert(v8ClientMetadata.client_id === expectedV8ClientId, 'version 8 client_id must match its metadata URL');
-assert(v9ClientMetadata.client_id === expectedV9ClientId, 'version 9 client_id must match its metadata URL');
-assert(v10ClientMetadata.client_id === expectedV10ClientId, 'version 10 client_id must match its metadata URL');
-assert(v10ClientMetadata.tos_uri === metadata.tos_uri, 'version 10 and canonical metadata must use the same terms page');
-assert(v9ClientMetadata.tos_uri === metadata.tos_uri, 'version 9 and canonical metadata must use the same terms page');
-assert(v8ClientMetadata.tos_uri === metadata.tos_uri, 'version 8 and canonical metadata must use the same terms page');
-assertHttpsUrl(v8ClientMetadata.client_id, 'version 8 client_id');
-assertHttpsUrl(v9ClientMetadata.client_id, 'version 9 client_id');
-assertHttpsUrl(v10ClientMetadata.client_id, 'version 10 client_id');
-assert(v8ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 8 redirect URI must match the /auth callback');
-assert(v9ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 9 redirect URI must match the /auth callback');
-assert(v10ClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'version 10 redirect URI must match the /auth callback');
 assert(metadata.tos_uri === 'https://coffeencode.cc/terms', 'tos_uri must match the terms page');
 assertHttpsUrl(metadata.client_id, 'client_id');
 assertHttpsUrl(authorClientMetadata.client_id, 'author client_id');
-assertHttpsUrl(moderatorClientMetadata.client_id, 'moderator client_id');
 assertHttpsUrl(metadata.client_uri, 'client_uri');
 assert(new URL(metadata.client_uri).hostname === new URL(metadata.client_id).hostname, 'client_uri must use the client_id hostname');
 assertHttpsUrl(metadata.logo_uri, 'logo_uri');
@@ -75,7 +49,6 @@ assertHttpsUrl(metadata.policy_uri, 'policy_uri');
 assert(Array.isArray(metadata.redirect_uris) && metadata.redirect_uris.length === 1, 'redirect_uris must contain the canonical callback');
 assert(metadata.redirect_uris[0] === expectedRedirectUri, 'redirect URI must match the /auth callback');
 assert(authorClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'author redirect URI must match the /auth callback');
-assert(moderatorClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'moderator redirect URI must match the /auth callback');
 assertHttpsUrl(metadata.redirect_uris[0], 'redirect_uris[0]');
 assert(metadata.grant_types?.includes('authorization_code'), 'authorization_code grant is required');
 assert(metadata.grant_types?.includes('refresh_token'), 'refresh_token grant is required');
@@ -104,30 +77,14 @@ for (const scope of [
 }
 const authorRequestedScopes = new Set((authorClientMetadata.scope?.split(' ') ?? []).map(normalizeScope));
 for (const scope of requestedScopes) {
-  if (scope !== normalizeScope(memberScope)) {
-    assert(authorRequestedScopes.has(scope), `author client is missing a standard permission scope: ${scope}`);
-  }
+  assert(authorRequestedScopes.has(scope), `author client is missing a standard permission scope: ${scope}`);
 }
 for (const scope of [
-  'atproto',
   'include:cc.coffeencode.authAuthor',
-  'include:cc.coffeencode.authPublic',
   moderatorScope,
-  'include:site.standard.authSocial',
-  'include:app.userinput.authBasic',
 ]) {
   assert(authorRequestedScopes.has(normalizeScope(scope)), `author client permission scope is missing: ${scope}`);
 }
-assert(!authorRequestedScopes.has(normalizeScope(memberScope)), 'author client must not request the member permission set');
-const moderatorRequestedScopes = new Set((moderatorClientMetadata.scope?.split(' ') ?? []).map(normalizeScope));
-assert(!moderatorRequestedScopes.has(normalizeScope(memberScope)), 'moderator client must not request the member permission set');
-for (const scope of requestedScopes) {
-  if (scope !== normalizeScope(memberScope)) {
-    assert(moderatorRequestedScopes.has(scope), `moderator client is missing a standard permission scope: ${scope}`);
-  }
-}
-assert(moderatorRequestedScopes.has(normalizeScope(moderatorScope)), 'moderator client must request the forum moderator permission set');
-assert(!moderatorRequestedScopes.has(normalizeScope('include:cc.coffeencode.authAuthor')), 'moderator client must not request author permissions');
 assert(permissionSet.id === 'cc.coffeencode.fullPermissions', 'permission set id must match the requested include scope');
 assert(permissionSet.defs?.main?.type === 'permission-set', 'permission set must use the permission-set lexicon type');
 assert(permissionSet.defs.main.title && permissionSet.defs.main.detail, 'permission set must include a title and description');

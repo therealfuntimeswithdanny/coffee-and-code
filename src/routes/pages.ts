@@ -87,25 +87,6 @@ pages.get('/auth', (c) => {
           <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
           <div class="auth-invite" data-invite-panel hidden><code data-invite-code></code><button type="button" class="auth-signout" data-copy-invite>Copy invite code</button></div>
         </section>
-        <div class="auth-advanced">
-          <button type="button" class="auth-advanced__toggle" data-auth-advanced-toggle aria-expanded="false" aria-controls="auth-advanced-options">Advanced sign-in options</button>
-          <div class="auth-advanced__options" id="auth-advanced-options" data-auth-advanced-options hidden>
-            <label for="auth-metadata-version">OAuth permission version</label>
-            <select id="auth-metadata-version" data-auth-metadata-version>
-              <option value="latest">Latest permissions (recommended)</option>
-              <option value="v10">Version 10 — Author follows and subscriptions</option>
-              <option value="v9">Version 9 — Author profile editing</option>
-              <option value="v8">Version 8 — Named permission set</option>
-              <option value="v7">Version 7 — Saved stories</option>
-              <option value="v6">Version 6 — Profile creation</option>
-              <option value="v5">Version 5 — Profile editing and image uploads</option>
-              <option value="v4">Version 4 — Comment editing and deletion</option>
-              <option value="v3">Version 3 — Handle claims</option>
-              <option value="v2">Version 2 — Reactions, comments, and views</option>
-            </select>
-            <p>Older versions request different permissions and may not support every feature. Your choice is remembered for the sign-in redirect.</p>
-          </div>
-        </div>
       </div>
       <div class="auth-account" data-auth-account hidden>
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>

@@ -323,13 +323,6 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .auth-form input { background: var(--paper); border: 1px solid var(--line); color: var(--ink); font: 17px 'Source Sans 3', sans-serif; min-height: 48px; padding: 10px 12px; width: 100%; }
     .auth-page__resolution { color: var(--muted); font-size: 12px !important; margin: 12px 0 0 !important; }
     .auth-page__permissions { color: var(--muted); font-size: 14px; line-height: 1.6; margin-top: 20px; }
-    .auth-advanced { border-top: 1px solid var(--line); grid-column: 1 / -1; margin-top: 2px; padding-top: 14px; }
-    .auth-advanced__toggle { background: transparent; border: 0; color: var(--accent); cursor: pointer; font: 600 14px 'Source Sans 3', sans-serif; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
-    .auth-advanced__options { display: grid; gap: 8px; margin-top: 12px; max-width: 440px; }
-    .auth-advanced__options[hidden] { display: none; }
-    .auth-advanced__options label { color: var(--muted); font-size: 13px; font-weight: 600; }
-    .auth-advanced__options select { background: var(--paper-deep); border: 1px solid var(--line); color: var(--ink); font: 15px 'Source Sans 3', sans-serif; padding: 10px 12px; }
-    .auth-advanced__options p { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0; }
     .auth-account { background: var(--paper-deep); border: 1px solid var(--line); margin-top: 24px; padding: 20px; }
     .auth-account__status { color: var(--muted); margin: 0 0 14px; }.auth-account__status strong { color: var(--ink); }
     .auth-signout { background: transparent; border: 1px solid var(--line-strong); color: var(--ink); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; padding: 9px 14px; }

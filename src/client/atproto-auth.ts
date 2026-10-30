@@ -6,36 +6,13 @@ import {
 } from '@atproto/oauth-client-browser';
 import rawClientMetadata from '../../media/oauth-client-metadata.json';
 import rawAuthorClientMetadata from '../../media/oauth-client-metadata-author.json';
-import rawModeratorClientMetadata from '../../media/oauth-client-metadata-moderator.json';
-import rawClientMetadataV10 from '../../media/oauth-client-metadata-v10.json';
-import rawClientMetadataV9 from '../../media/oauth-client-metadata-v9.json';
-import rawClientMetadataV8 from '../../media/oauth-client-metadata-v8.json';
-import rawClientMetadataV7 from '../../media/oauth-client-metadata-v7.json';
-import rawClientMetadataV6 from '../../media/oauth-client-metadata-v6.json';
-import rawClientMetadataV5 from '../../media/oauth-client-metadata-v5.json';
-import rawClientMetadataV4 from '../../media/oauth-client-metadata-v4.json';
-import rawClientMetadataV3 from '../../media/oauth-client-metadata-v3.json';
-import rawClientMetadataV2 from '../../media/oauth-client-metadata-v2.json';
 
-type MetadataVersion = 'latest' | 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2';
-type OAuthMetadataVersion = MetadataVersion | 'author' | 'moderator' | 'authorModerator';
-type MetadataVersionControl = HTMLElement & { value: string };
+type OAuthMetadataVersion = 'member' | 'author';
 type ForumImageInput = { file: File; alt: string };
 type ForumStrongRef = { uri: string; cid: string };
 const oauthMetadataVersions: Record<OAuthMetadataVersion, OAuthClientMetadataInput> = {
-  latest: rawClientMetadata as OAuthClientMetadataInput,
+  member: rawClientMetadata as OAuthClientMetadataInput,
   author: rawAuthorClientMetadata as OAuthClientMetadataInput,
-  moderator: rawModeratorClientMetadata as OAuthClientMetadataInput,
-  authorModerator: rawAuthorClientMetadata as OAuthClientMetadataInput,
-  v10: rawClientMetadataV10 as OAuthClientMetadataInput,
-  v9: rawClientMetadataV9 as OAuthClientMetadataInput,
-  v8: rawClientMetadataV8 as OAuthClientMetadataInput,
-  v7: rawClientMetadataV7 as OAuthClientMetadataInput,
-  v6: rawClientMetadataV6 as OAuthClientMetadataInput,
-  v5: rawClientMetadataV5 as OAuthClientMetadataInput,
-  v4: rawClientMetadataV4 as OAuthClientMetadataInput,
-  v3: rawClientMetadataV3 as OAuthClientMetadataInput,
-  v2: rawClientMetadataV2 as OAuthClientMetadataInput,
 };
 const metadataPreferenceKey = 'cc.oauth-metadata-version';
 const pendingMetadataVersionKey = 'cc.oauth-pending-metadata-version';
@@ -73,9 +50,6 @@ const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
-const advancedToggle = document.querySelector<HTMLButtonElement>('[data-auth-advanced-toggle]');
-const advancedOptions = document.querySelector<HTMLElement>('[data-auth-advanced-options]');
-const metadataVersionSelect = document.querySelector<MetadataVersionControl>('[data-auth-metadata-version]');
 const createCoffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-create-coffee-account]');
 const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
 const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
@@ -121,12 +95,11 @@ function clearAuthError() {
   authError.textContent = '';
 }
 
-function isMetadataVersion(value: string | null | undefined): value is MetadataVersion {
-  return value === 'latest' || value === 'v10' || value === 'v9' || value === 'v8' || value === 'v7' || value === 'v6' || value === 'v5'
-    || value === 'v4' || value === 'v3' || value === 'v2';
+function isMetadataVersion(value: string | null | undefined): value is OAuthMetadataVersion {
+  return value === 'member' || value === 'author';
 }
 
-function storedMetadataVersion(): MetadataVersion | undefined {
+function storedMetadataVersion(): OAuthMetadataVersion | undefined {
   try {
     const value = window.localStorage.getItem(metadataPreferenceKey);
     return isMetadataVersion(value) ? value : undefined;
@@ -138,11 +111,10 @@ function storedMetadataVersion(): MetadataVersion | undefined {
 function storedPendingMetadataVersion(): OAuthMetadataVersion | undefined {
   try {
     const value = window.localStorage.getItem(pendingMetadataVersionKey);
-    if (value === 'author' || value === 'moderator' || value === 'authorModerator' || isMetadataVersion(value)) return value;
+    return isMetadataVersion(value) ? value : undefined;
   } catch {
     return undefined;
   }
-  return undefined;
 }
 
 function clearPendingMetadataVersion() {
@@ -153,9 +125,13 @@ function clearPendingMetadataVersion() {
   }
 }
 
-function selectedMetadataVersion(): MetadataVersion {
-  const value = metadataVersionSelect?.value;
-  return isMetadataVersion(value) ? value : storedMetadataVersion() || 'latest';
+function rememberMetadataVersion(version: OAuthMetadataVersion) {
+  try {
+    window.localStorage.setItem(metadataPreferenceKey, version);
+    window.localStorage.setItem(pendingMetadataVersionKey, version);
+  } catch {
+    throw new Error('Your browser could not remember the OAuth client for the sign-in callback. Allow site storage and try again.');
+  }
 }
 
 function getOAuthClient(version: OAuthMetadataVersion) {
@@ -186,64 +162,26 @@ function initializeOAuthClient(oauthClient: BrowserOAuthClient) {
 
 async function selectedOAuthClient(handle?: string) {
   await oauthReady;
-  const preferredVersion = selectedMetadataVersion();
-  try {
-    window.localStorage.setItem(metadataPreferenceKey, preferredVersion);
-  } catch {
-    throw new Error('Your browser could not remember the selected OAuth version. Allow site storage and try again.');
-  }
-  let version: OAuthMetadataVersion = preferredVersion;
-  if (preferredVersion === 'latest' && handle) {
+  let version: OAuthMetadataVersion = 'member';
+  if (handle) {
     const query = new URLSearchParams({ handle });
-    const [moderatorResponse, authorResponse] = await Promise.all([
-      fetch(`/api/forum/moderators/check?${query}`, { cache: 'no-store' }),
-      fetch(`/api/authors/check?${query}`, { cache: 'no-store' }),
-    ]);
-    if (!moderatorResponse.ok) throw new Error('Could not check whether this account is a forum moderator. Please try again.');
+    const authorResponse = await fetch(`/api/authors/check?${query}`, { cache: 'no-store' });
     if (!authorResponse.ok) throw new Error('Could not check whether this account is a Coffee & Code author. Please try again.');
-    const [moderatorResult, authorResult] = await Promise.all([
-      moderatorResponse.json() as Promise<{ isModerator?: unknown }>,
-      authorResponse.json() as Promise<{ isAuthor?: unknown }>,
-    ]);
-    if (typeof moderatorResult.isModerator !== 'boolean') throw new Error('Forum moderator check returned an invalid response.');
+    const authorResult = await authorResponse.json() as { isAuthor?: unknown };
     if (typeof authorResult.isAuthor !== 'boolean') throw new Error('Author check returned an invalid response.');
-    if (moderatorResult.isModerator) version = authorResult.isAuthor ? 'author' : 'moderator';
-    else if (authorResult.isAuthor) version = 'author';
+    if (authorResult.isAuthor) version = 'author';
   }
+  rememberMetadataVersion(version);
   const selectedClient = getOAuthClient(version);
   client = selectedClient;
   const initialized = await initializeOAuthClient(selectedClient);
   session = initialized?.session;
   if (initialized && 'state' in initialized) callbackState = initialized.state;
   renderAccount();
-  try {
-    window.localStorage.setItem(pendingMetadataVersionKey, version);
-  } catch {
-    throw new Error('Your browser could not remember the OAuth client for the sign-in callback. Allow site storage and try again.');
-  }
   return selectedClient;
 }
 
-const savedMetadataVersion = storedMetadataVersion();
-const initialMetadataVersion = storedPendingMetadataVersion() || savedMetadataVersion || 'latest';
-if (metadataVersionSelect) metadataVersionSelect.value = savedMetadataVersion || 'latest';
-advancedToggle?.addEventListener('click', () => {
-  if (!advancedToggle || !advancedOptions) return;
-  const expanded = advancedToggle.getAttribute('aria-expanded') === 'true';
-  advancedToggle.setAttribute('aria-expanded', String(!expanded));
-  advancedOptions.hidden = expanded;
-});
-metadataVersionSelect?.addEventListener('change', () => {
-  const previous = storedMetadataVersion() || 'latest';
-  try {
-    if (!isMetadataVersion(metadataVersionSelect.value)) throw new Error('Choose a valid OAuth permission version.');
-    window.localStorage.setItem(metadataPreferenceKey, metadataVersionSelect.value);
-    clearAuthError();
-  } catch (error) {
-    metadataVersionSelect.value = previous;
-    showAuthError(errorMessage(error));
-  }
-});
+const initialMetadataVersion = storedPendingMetadataVersion() || storedMetadataVersion() || 'member';
 
 function renderAccount() {
   const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
@@ -802,7 +740,7 @@ async function loadAccountSavedPosts(did: string) {
 }
 
 try {
-  const clientOrigin = new URL(oauthMetadataVersions.latest.client_id!).origin;
+  const clientOrigin = new URL(oauthMetadataVersions.member.client_id!).origin;
   if (window.location.origin !== clientOrigin) {
     throw new Error(`AT Protocol sign-in is configured for ${clientOrigin}.`);
   }
