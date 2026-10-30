@@ -224,11 +224,16 @@ async function renderPost(
 
 posts.get('/', (c) => c.redirect('/'));
 posts.get('/post/:rkey', (c) => renderPost(c, c.req.param('rkey')));
+// Author-scoped post URLs are canonical; legacy /post/... routes redirect here.
+posts.get('/author/:handle/:rkey', (c) => renderPost(
+  c,
+  c.req.param('rkey'),
+  c.req.param('handle'),
+));
 posts.get('/post/:handle/:rkey', (c) => renderPost(
   c,
   c.req.param('rkey'),
   c.req.param('handle'),
-  new URL(c.req.url).pathname,
 ));
 posts.get('/:rkey', (c) => renderPost(c, c.req.param('rkey'), undefined, new URL(c.req.url).pathname));
 posts.get('/:handle/:rkey', (c) => renderPost(

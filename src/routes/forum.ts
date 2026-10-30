@@ -529,7 +529,10 @@ forum.get('/', async (c) => {
       ${postCards ? `<div class="forum-post-list">${postCards}</div>` : '<p class="empty-state">No discussions yet. Be the first to post.</p>'}
       ${posts.length > page * pageLimit ? `<a class="read-link forum-next-page" href="${escapeHtml(`${pageUrl.pathname}?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(queryTag ? { tag: queryTag } : {}), sort, page: String(page + 1) })}`)}">Older discussions <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
     </section>`;
-  const metaTags = `<meta name="description" content="${escapeHtml(config.description || `Community discussions at ${config.name}.`)}"><meta property="og:title" content="${escapeHtml(config.name)} — Forum"><meta property="og:type" content="website">`;
+  const pageUrl = new URL('/forum', c.req.url).toString();
+  const ogImage = new URL('/og/forum/og.png', c.req.url).toString();
+  const description = config.description || `Community discussions at ${config.name}.`;
+  const metaTags = `<meta name="description" content="${escapeHtml(description)}"><meta property="og:title" content="${escapeHtml(config.name)} — Forum"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(pageUrl)}"><meta property="og:image" content="${escapeHtml(ogImage)}"><meta property="og:image:type" content="image/png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(config.name)} — Forum"><meta name="twitter:description" content="${escapeHtml(description)}"><meta name="twitter:image" content="${escapeHtml(ogImage)}"><link rel="canonical" href="${escapeHtml(pageUrl)}">`;
   return c.html(renderLayout(c, `${escapeHtml(config.name)} Forum`, body, metaTags));
 });
 

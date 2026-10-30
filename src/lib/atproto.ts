@@ -170,7 +170,7 @@ async function fetchConfiguredHandles(pdsUrl: string, ownerDid: string): Promise
 
 function canonicalDocumentPath(did: string, authorHandle: string | undefined, rkey: string, handles: Map<string, string>): string {
   const handle = handles.get(did.toLowerCase()) || authorHandle || 'unknown';
-  return `/post/${encodeURIComponent(handle)}/${encodeURIComponent(rkey)}`;
+  return `/author/${encodeURIComponent(handle)}/${encodeURIComponent(rkey)}`;
 }
 
 function documentTags(value: unknown): string[] {
@@ -420,7 +420,7 @@ export async function fetchArticles(
           article.path = canonicalDocumentPath(authorDid, article.author?.handle, article.rkey, configuredHandles);
           const domainHandle = configuredHandles.get(authorDid.toLowerCase());
           article.alternatePaths = domainHandle && article.author?.handle && domainHandle !== article.author.handle
-            ? [`/post/${encodeURIComponent(article.author.handle)}/${encodeURIComponent(article.rkey)}`]
+            ? [`/author/${encodeURIComponent(article.author.handle)}/${encodeURIComponent(article.rkey)}`]
             : undefined;
         }
       });
@@ -452,7 +452,7 @@ export async function fetchArticles(
             tags: documentTags(rec.value.tags),
             path: canonicalDocumentPath(authorDid, ownerProfile?.handle, rkey || '', configuredHandles),
             alternatePaths: domainHandle
-              ? [`/post/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`]
+              ? [`/author/${encodeURIComponent(domainHandle)}/${encodeURIComponent(rkey || '')}`]
               : undefined,
             description: rec.value.description || rec.value.summary || '',
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
@@ -493,7 +493,7 @@ export async function fetchArticles(
               title: title,
               content: rawText,
               publishedAt: rec.value.createdAt || new Date().toISOString(),
-              path: `/post/${encodeURIComponent(ownerProfile?.handle || 'unknown')}/${encodeURIComponent(rkey)}`,
+              path: `/author/${encodeURIComponent(ownerProfile?.handle || 'unknown')}/${encodeURIComponent(rkey)}`,
               description: rawText ? (rawText.length > 160 ? rawText.substring(0, 160) + '...' : rawText) : '',
               repoDid: did,
               pdsUrl,
