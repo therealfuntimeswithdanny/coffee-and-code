@@ -5,12 +5,10 @@ import { build } from 'esbuild';
 const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
 const authorClientMetadataPath = new URL('../media/oauth-client-metadata-author.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
-const forumMemberPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authMember.json', import.meta.url);
 const forumModeratorPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authModerator.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
 const authorClientMetadata = JSON.parse(await readFile(authorClientMetadataPath, 'utf8'));
 const permissionSet = JSON.parse(await readFile(permissionSetPath, 'utf8'));
-const forumMemberPermissionSet = JSON.parse(await readFile(forumMemberPermissionSetPath, 'utf8'));
 const forumModeratorPermissionSet = JSON.parse(await readFile(forumModeratorPermissionSetPath, 'utf8'));
 const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
 const expectedAuthorClientId = 'https://coffeencode.cc/oauth-client-metadata-author.json';
@@ -54,13 +52,11 @@ assert(metadata.grant_types?.includes('authorization_code'), 'authorization_code
 assert(metadata.grant_types?.includes('refresh_token'), 'refresh_token grant is required');
 assert(metadata.response_types?.includes('code'), 'code response type is required');
 const requestedScopes = new Set((metadata.scope?.split(' ') ?? []).map(normalizeScope));
-const memberScope = 'include:cc.coffeencode.forum.authMember';
 const moderatorScope = 'include:cc.coffeencode.forum.authModerator';
 assert(!requestedScopes.has(normalizeScope(moderatorScope)), 'member client must not request the forum moderator permission set');
 for (const scope of [
   'atproto',
   'include:cc.coffeencode.authPublic',
-  memberScope,
   'include:site.standard.authSocial',
   'include:app.userinput.authBasic',
   'repo:app.bsky.graph.follow?action=create&action=delete',
@@ -85,13 +81,7 @@ assert(!authorRequestedScopes.has(normalizeScope(moderatorScope)), 'author clien
 assert(permissionSet.id === 'cc.coffeencode.fullPermissions', 'permission set id must match the requested include scope');
 assert(permissionSet.defs?.main?.type === 'permission-set', 'permission set must use the permission-set lexicon type');
 assert(permissionSet.defs.main.title && permissionSet.defs.main.detail, 'permission set must include a title and description');
-assert(forumMemberPermissionSet.id === 'cc.coffeencode.forum.authMember', 'forum member permission set id must match its requested include scope');
 assert(forumModeratorPermissionSet.id === 'cc.coffeencode.forum.authModerator', 'forum moderator permission set id must match its requested include scope');
-const expectedForumMemberRepoActions = new Map([
-  ['cc.coffeencode.forum.post', ['create', 'update', 'delete']],
-  ['cc.coffeencode.forum.reply', ['create', 'update', 'delete']],
-  ['cc.coffeencode.forum.vote', ['create', 'delete']],
-]);
 const expectedForumModeratorRepoActions = new Map([
   ['cc.coffeencode.forum.post', ['create', 'update', 'delete']],
   ['cc.coffeencode.forum.reply', ['create', 'update', 'delete']],
@@ -124,7 +114,6 @@ function validateForumPermissionSet(permissionSet, id, expectedActions, label) {
     assert(grantedActions?.join(',') === [...actions].sort().join(','), `${label} permission actions are incorrect for ${collection}`);
   }
 }
-validateForumPermissionSet(forumMemberPermissionSet, 'cc.coffeencode.forum.authMember', expectedForumMemberRepoActions, 'forum member');
 validateForumPermissionSet(forumModeratorPermissionSet, 'cc.coffeencode.forum.authModerator', expectedForumModeratorRepoActions, 'forum moderator');
 const expectedRepoActions = new Map([
   ['cc.coffeencode.interact.like', ['create', 'delete']],
