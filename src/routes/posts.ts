@@ -117,7 +117,7 @@ async function renderPost(
   const pageOrigin = new URL(pageUrl).origin;
   const ogImage = post.cover
     ? proxyImageUrl(post.cover, pageOrigin)
-    : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}`)}`;
+    : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}?browserRun=true`)}`;
   const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
   const recommendationHtml = recommendations.map((item) => `
     <article class="recommendation-card">
