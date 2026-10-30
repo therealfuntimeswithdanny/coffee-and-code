@@ -499,7 +499,7 @@ forum.get('/', async (c) => {
       ${moderatorControls(post.uri, post.cid, config.uri, state, config.moderators)}
     </article>`;
   }).join('');
-  const pageUrl = new URL(c.req.url);
+  const requestUrl = new URL(c.req.url);
   const body = `
     <section class="forum-page">
       <header class="forum-header">
@@ -527,7 +527,7 @@ forum.get('/', async (c) => {
       </div>
       <div class="section-heading"><span>Discussions</span><span>${posts.length}</span></div>
       ${postCards ? `<div class="forum-post-list">${postCards}</div>` : '<p class="empty-state">No discussions yet. Be the first to post.</p>'}
-      ${posts.length > page * pageLimit ? `<a class="read-link forum-next-page" href="${escapeHtml(`${pageUrl.pathname}?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(queryTag ? { tag: queryTag } : {}), sort, page: String(page + 1) })}`)}">Older discussions <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
+      ${posts.length > page * pageLimit ? `<a class="read-link forum-next-page" href="${escapeHtml(`${requestUrl.pathname}?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(queryTag ? { tag: queryTag } : {}), sort, page: String(page + 1) })}`)}">Older discussions <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
     </section>`;
   const pageUrl = new URL('/forum', c.req.url).toString();
   const ogImage = new URL('/og/forum/og.png', c.req.url).toString();
