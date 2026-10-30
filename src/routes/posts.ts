@@ -90,6 +90,7 @@ async function renderPost(
   // Enhance HTML structure with prose classes for better styling
   const htmlContent = enhanceHtmlStructure(processedContent);
   const pageUrl = new URL(c.req.url).toString();
+  const browserRun = new URL(c.req.url).searchParams.get('browserRun') === 'true';
 
   // Escape HTML entities for safe attribute values
   const escapeHtml = (str: string) => str
@@ -219,7 +220,7 @@ async function renderPost(
     ${recommendations.length ? `<section class="recommendations" aria-labelledby="recommendations-title"><div class="section-heading"><span id="recommendations-title">Continue reading</span><a href="/archive">All stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div><div class="recommendations__grid">${recommendationHtml}</div></section>` : ''}
   `;
 
-  return c.html(renderLayout(c, post.title, body, articleMetaTags));
+  return c.html(renderLayout(c, post.title, body, articleMetaTags, undefined, browserRun));
 }
 
 posts.get('/', (c) => c.redirect('/'));

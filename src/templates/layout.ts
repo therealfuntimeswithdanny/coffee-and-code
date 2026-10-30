@@ -6,7 +6,7 @@ export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
   return new URL('/og.png', c.req.url).toString();
 }
 
-export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '', documentTitle?: string) {
+export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '', documentTitle?: string, browserRun = false) {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
   const pubDescription = c.env.PUB_DESCRIPTION || 'A small tech news publication built on the AT Protocol by Daniel Morrisey';
   const did = c.env.OWNER_DID || '';
@@ -22,7 +22,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     : `<meta name="description" content="${escapeHtml(pubDescription)}">`;
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${browserRun ? ' class="browser-run"' : ''}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -46,6 +46,13 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .prose .prose-image-gallery { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; }
     .prose .prose-image-gallery figure { flex: 0 0 min(100%, 360px); margin: 0; scroll-snap-align: start; }
     :root { --ink: #ffffff; --paper: #281914; --paper-deep: #3b2a1d; --accent: #b2ac88; --muted: #b2ac88; --line: rgba(178, 172, 136, .42); --line-strong: #b2ac88; --page-width: 1100px; }
+    .browser-run .site-header [data-login-link] { display: none !important; }
+    .browser-run .mobile-nav .login-button { display: none !important; }
+    .browser-run .site-footer, .browser-run .back-to-top { display: none !important; }
+    .browser-run .page-content { padding-top: 32px; }
+    .browser-run .article-layout { display: block; max-width: 820px; }
+    .browser-run .article { margin: 0 auto; max-width: 820px; }
+    .browser-run .article-rail, .browser-run .recommendations { display: none !important; }
     * { box-sizing: border-box; } html, body { min-height: 100%; } body { display: flex; flex-direction: column; margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', sans-serif; font-size: 18px; line-height: 1.45; }
     a { color: inherit; text-decoration: none; } a:hover { color: var(--accent); } .site-header { border-bottom: 1px solid var(--line-strong); background: var(--paper); position: sticky; top: 0; z-index: 100; } .header-inner, .page-content, .footer-inner { width: min(var(--page-width), calc(100% - 48px)); margin: 0 auto; }
       .header-inner { min-height: 100px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; transition: min-height 180ms ease; } .site-nav, .header-links { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; } .header-links { justify-content: flex-end; }.site-brand { font-family: Lora, serif; font-size: clamp(1.55rem, 3vw, 2.3rem); font-weight: 700; letter-spacing: -.06em; white-space: nowrap; transition: font-size 180ms ease; }.site-header.is-compact { box-shadow: 0 3px 16px rgba(0, 0, 0, .2); }.site-header.is-compact .header-inner { min-height: 68px; }.site-header.is-compact .site-brand { font-size: clamp(1.35rem, 2.5vw, 1.9rem); }

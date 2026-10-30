@@ -11,5 +11,6 @@
     "jsxImportSource": "hono/jsx",
     "skipLibCheck": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/client/**/*"]
 }

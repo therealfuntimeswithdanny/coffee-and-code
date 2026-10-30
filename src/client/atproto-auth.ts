@@ -1541,7 +1541,7 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
   }));
 });
 
-document.querySelectorAll<HTMLElement>('[data-reaction-subject] [data-save-post]').forEach((button) => {
+document.querySelectorAll<HTMLButtonElement>('[data-reaction-subject] [data-save-post]').forEach((button) => {
   const container = button.closest<HTMLElement>('[data-reaction-subject]');
   const documentUri = container?.dataset.reactionSubject;
   const status = container?.querySelector<HTMLElement>('.article-reactions__status');
