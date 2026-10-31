@@ -9,6 +9,7 @@ import {
   resolveAtprotoIdentifier,
 } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
+import { externalLinkUrl } from '../lib/externalLinks';
 import { fetchAuthorForumPosts } from './forum';
 
 const users = new Hono<{ Bindings: Env }>();
@@ -172,7 +173,7 @@ users.get('/:identifier', async (c) => {
       <div class="user-comment__body"><p class="user-comment__context">${replyLabel} <a href="${escapeHtml(subjectLink)}">${escapeHtml(subjectTitle)}</a></p>
       <p class="user-comment__text">${escapeHtml(comment.text)}</p>
       <a class="user-comment__permalink" href="${escapeHtml(subjectLink)}">Open post <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-      <a class="user-comment__permalink" href="https://pdsls.dev/${comment.uri}">View comment record <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></div>
+      <a class="user-comment__permalink" href="${externalLinkUrl(`https://pdsls.dev/${comment.uri}`)}">View comment record <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></div>
     </article>`;
   }).join('');
   const shownComments = comments.length
@@ -193,7 +194,7 @@ users.get('/:identifier', async (c) => {
         ${avatar ? `<img class="user-page__avatar" src="${escapeHtml(avatar)}" alt="" width="104" height="104">` : '<span class="user-page__avatar user-page__avatar--empty" aria-hidden="true"><i class="fa-solid fa-user"></i></span>'}
         <div class="user-page__identity"><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
         ${authorArticle?.author ? `<a class="user-page__bluesky" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
-        <a class="user-page__bluesky" href="https://bsky.app/profile/${encodeURIComponent(profile.handle)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        <a class="user-page__bluesky" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </header>
       ${profile.description ? `<p class="user-page__description">${escapeHtml(profile.description)}</p>` : ''}
       ${profile.pronouns ? `<div class="user-page__details"><span>${escapeHtml(profile.pronouns)}</span></div>` : ''}

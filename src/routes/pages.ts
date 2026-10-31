@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { getPdsEndpoint, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
+import { externalLinkUrl } from '../lib/externalLinks';
 import { isForumModerator } from './forum';
 
 const pages = new Hono<{ Bindings: Env }>();
@@ -158,15 +159,15 @@ pages.get('/become-an-author', (c) => {
     <section class="author-invitation" aria-labelledby="author-invitation-title">
       <p class="eyebrow">Write for Coffee &amp; Code</p>
       <h1 id="author-invitation-title">Become an author</h1>
-      <p class="author-invitation__intro">Have something you’d like to publish? DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with your document and a link to the publication. I’ll review it, and if it’s a good fit for Coffee &amp; Code, I’ll link to your publication.</p>
+      <p class="author-invitation__intro">Have something you’d like to publish? DM me on <a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">Bluesky</a> with your document and a link to the publication. I’ll review it, and if it’s a good fit for Coffee &amp; Code, I’ll link to your publication.</p>
       <ol class="author-invitation__steps">
         <li>
           <h2>Create your publication</h2>
-          <p>Sign in to <a href="https://leaflet.pub/" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a publication on your account. This keeps your stories published under your account and attributed to you.</p>
+          <p>Sign in to <a href="${externalLinkUrl('https://leaflet.pub/')}" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a publication on your account. This keeps your stories published under your account and attributed to you.</p>
         </li>
         <li>
           <h2>Send me your post</h2>
-          <p>DM me on <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Bluesky</a> with a link to the post you want to publish. I’ll review it and let you know if it’s a good fit for Coffee &amp; Code.</p>
+          <p>DM me on <a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">Bluesky</a> with a link to the post you want to publish. I’ll review it and let you know if it’s a good fit for Coffee &amp; Code.</p>
         </li>
         <li>
           <h2>Publish your stories</h2>
@@ -542,7 +543,7 @@ pages.get('/privacy', (c) => {
       <p>OAuth session information remains in your browser until you sign out or the session expires. Public AT Protocol records remain in your repository until you or your PDS remove them. Hosting logs and analytics are retained according to the settings and policies of the providers that operate those services.</p>
 
       <h2>Contact</h2>
-      <p>For privacy questions, contact the Coffee &amp; Code operator through <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Coffee &amp; Code on Bluesky</a>.</p>
+      <p>For privacy questions, contact the Coffee &amp; Code operator through <a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">Coffee &amp; Code on Bluesky</a>.</p>
 
       <h2>Changes to this policy</h2>
       <p>This policy may be updated as the site changes. The date above shows when it was most recently revised.</p>
@@ -602,7 +603,7 @@ pages.get('/terms', (c) => {
       <p>We may update these terms as the services change. The date above indicates when they were most recently revised. Continued use after an update means you accept the revised terms.</p>
 
       <h2>Contact</h2>
-      <p>For questions about these terms or the Coffee &amp; Code PDS, contact the operator through <a href="https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay" target="_blank" rel="noopener noreferrer">Coffee &amp; Code on Bluesky</a>.</p>
+      <p>For questions about these terms or the Coffee &amp; Code PDS, contact the operator through <a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">Coffee &amp; Code on Bluesky</a>.</p>
     </article>`;
 
   const pageUrl = new URL(c.req.url).toString();

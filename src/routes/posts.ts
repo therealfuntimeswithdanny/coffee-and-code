@@ -3,6 +3,7 @@ import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 import { renderContent, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
+import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
 
 const posts = new Hono<{ Bindings: Env }>();
 
@@ -88,7 +89,7 @@ async function renderPost(
   const processedContent = processImages(renderedContent, processImageSource);
 
   // Enhance HTML structure with prose classes for better styling
-  const htmlContent = enhanceHtmlStructure(processedContent);
+  const htmlContent = routeExternalLinks(enhanceHtmlStructure(processedContent));
   const pageUrl = new URL(c.req.url).toString();
   const browserRun = new URL(c.req.url).searchParams.get('browserRun') === 'true';
 
@@ -212,7 +213,7 @@ async function renderPost(
         <sequoia-comments document-uri="${escapeHtml(post.uri)}" style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
       </section>
       <footer class="article__footer">
-        <a href="https://pdsls.dev/${escapeHtml(post.uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        <a href="${escapeHtml(externalLinkUrl(`https://pdsls.dev/${post.uri}`))}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </footer>
     </article>
     <aside class="article-rail" aria-label="Story details">${engagementHtml}${relatedRail ? `<section aria-labelledby="article-related-title"><h2 id="article-related-title">Related posts</h2><ul>${relatedRail}</ul><a href="/tags" class="read-link">Explore all tags <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>` : ''}${railAuthors ? `<section class="article-rail__authors" aria-labelledby="article-authors-title"><h2 id="article-authors-title">Authors</h2><ul>${railAuthors}</ul><a href="/authors" class="read-link">Meet all authors <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>` : ''}</aside>
