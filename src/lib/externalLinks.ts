@@ -1,4 +1,4 @@
-const PRIVO_STOP_URL = 'https://privo.fyi/p/stop';
+const PRIVO_STOP_URL = 'https://go.coffeencode.cc/p/stop';
 const SITE_NAME = 'Coffee & Code';
 const SITE_URL = 'https://coffeencode.cc';
 
