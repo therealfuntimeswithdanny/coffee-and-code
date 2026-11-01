@@ -75,7 +75,7 @@ home.get('/', async (c) => {
   const heroHtml = heroPost
     ? `
       <div class="lead-column">
-        <article class="lead-story" data-block-author-did="${escapeHtml(heroPost.author?.did || heroPost.repoDid || c.env.OWNER_DID)}">
+        <article class="lead-story">
           <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
             ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover) || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
           </a>
@@ -91,7 +91,7 @@ home.get('/', async (c) => {
   const pinnedHtml = pinnedForHome.length ? `<section class="home-pinned" aria-labelledby="home-pinned-title">
     <div class="section-heading"><span id="home-pinned-title">Pinned stories</span></div>
     <div class="home-pinned__grid">${pinnedForHome.map((post) => `
-      <article class="home-pinned__card" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+      <article class="home-pinned__card">
         <a class="home-pinned__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
           ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
@@ -103,7 +103,7 @@ home.get('/', async (c) => {
     ? sidePosts
         .map(
           (post) => `
-            <article class="side-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+            <article class="side-story">
               <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
                 ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
               </a>
@@ -120,7 +120,7 @@ home.get('/', async (c) => {
   const archiveHtml = archivePosts
     .map(
       (post) => `
-        <article class="archive-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+        <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
             ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>

@@ -99,7 +99,7 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 - **Links:** Inherit text color by default; use the sage/stone accent for reading actions and interactive emphasis. Keep keyboard focus clearly visible.
 - **Search:** Provide a site-wide search action in the header and a direct text-search form on the archive page.
 - **Account:** The header’s **Log in** action opens a focused AT Protocol sign-in page. Explain that sign-in happens with the visitor’s account provider and state the record permissions requested. The account page includes a blocked-accounts list with an unblock action.
-- **User blocking:** Signed-in visitors can block an account from its profile after confirming in an accessible dialog. They can optionally create a separate Bluesky block. Coffee & Code blocks hide that author’s stories, comments, and forum posts only for the visitor who created the block.
+- **User blocking:** Signed-in visitors can block an account from its profile after confirming in an accessible dialog. They can optionally create a separate Bluesky block. Coffee & Code blocks hide that author’s forum posts and replies only; stories and comments remain visible.
 - **Article engagement:** Place the view total and like/dislike controls together beneath the article byline. Signed-in readers create a public view record whenever they load an article and can add, switch, or remove their reaction; signed-out readers can still see public totals.
 - **Mobile menu:** Toggle open/closed from the menu button; close it when a navigation link is selected.
 - **Back to top:** Reveal on scroll and return smoothly to the top when activated.

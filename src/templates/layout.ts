@@ -364,7 +364,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .account-page__blocks li { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
     .account-page__blocks li a { font: 14px 'Source Sans 3', sans-serif; overflow-wrap: anywhere; }
     .account-page__blocks-note { color: var(--muted); font-size: 14px; }
-    [data-block-author-did][hidden] { display: none !important; }
+    .forum-post-card[data-block-author-did][hidden], .forum-thread[data-block-author-did][hidden], .user-forum-post[data-block-author-did][hidden] { display: none !important; }
     .forum-reply.is-blocked > :not(.forum-replies) { display: none !important; }
     .block-dialog { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--ink); margin: auto; max-width: min(460px, calc(100% - 32px)); padding: 24px; width: 100%; }
     .block-dialog::backdrop { background: rgba(0, 0, 0, .72); }

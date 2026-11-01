@@ -121,7 +121,7 @@ async function renderPost(
     : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}?browserRun=true`)}`;
   const proxiedCoverImage = post.cover ? escapeHtml(proxyImageUrl(post.cover, pds)) : undefined;
   const recommendationHtml = recommendations.map((item) => `
-    <article class="recommendation-card" data-block-author-did="${escapeHtml(item.author?.did || item.repoDid || c.env.OWNER_DID)}">
+    <article class="recommendation-card">
       <a class="recommendation-card__image${item.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(item.path)}" aria-label="Read ${escapeHtml(item.title || 'Untitled')}">
         ${item.cover ? `<img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_medium'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
@@ -198,7 +198,7 @@ async function renderPost(
   `;
 
   const body = `
-    <div class="article-layout" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+    <div class="article-layout">
     <article class="article">
       <a href="/" class="article__back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All stories</a>
       <header class="article__header">

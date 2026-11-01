@@ -76,7 +76,6 @@ declare global {
   interface Window {
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
-      getBlockedDids: () => Promise<Set<string>>;
       blockUser: (did: string, alsoOnBluesky: boolean) => Promise<void>;
       unblockUser: (did: string) => Promise<void>;
       createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
@@ -337,10 +336,9 @@ async function loadUserBlocks(did: string): Promise<UserBlockRecord[]> {
 function applyBlockedUserFilter(blocked: Set<string>) {
   activeBlockedDids = blocked;
   renderBlockButtons(blocked);
-  document.querySelectorAll<HTMLElement>('[data-block-author-did]').forEach((element) => {
+  document.querySelectorAll<HTMLElement>('.forum-post-card[data-block-author-did], .forum-thread[data-block-author-did], .forum-reply[data-block-author-did], .user-forum-post[data-block-author-did]').forEach((element) => {
     updateBlockVisibility(element, blocked);
   });
-  document.dispatchEvent(new CustomEvent('coffee-and-code:blocks-changed', { detail: { blockedDids: blocked } }));
 }
 
 function updateBlockVisibility(element: HTMLElement, blocked: Set<string>) {
@@ -367,9 +365,10 @@ function renderBlockButtons(blocked: Set<string>) {
 new MutationObserver((mutations) => {
   mutations.forEach((mutation) => mutation.addedNodes.forEach((node) => {
     if (!(node instanceof HTMLElement)) return;
+    const selector = '.forum-post-card[data-block-author-did], .forum-thread[data-block-author-did], .forum-reply[data-block-author-did], .user-forum-post[data-block-author-did]';
     const candidates = [
-      ...(node.matches('[data-block-author-did]') ? [node] : []),
-      ...node.querySelectorAll<HTMLElement>('[data-block-author-did]'),
+      ...(node.matches(selector) ? [node] : []),
+      ...node.querySelectorAll<HTMLElement>(selector),
     ];
     candidates.forEach((element) => {
       updateBlockVisibility(element, activeBlockedDids);
@@ -1038,11 +1037,6 @@ window.coffeeAndCodeAuth = {
   getDid: async () => {
     await oauthReady;
     return session?.did;
-  },
-  getBlockedDids: async () => {
-    await oauthReady;
-    if (!session) return new Set<string>();
-    return new Set((await loadUserBlocks(session.did)).map((record) => record.subject));
   },
   blockUser: async (did: string, alsoOnBluesky: boolean) => {
     await oauthReady;

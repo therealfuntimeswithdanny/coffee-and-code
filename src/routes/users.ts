@@ -168,7 +168,7 @@ users.get('/:identifier', async (c) => {
     const subjectLink = article?.path || `https://pdsls.dev/${comment.subjectUri}`;
     const subjectTitle = article?.title || 'a post on AT Protocol';
     const replyLabel = comment.parentUri ? 'Replied to a comment on' : 'Commented on';
-    return `<article class="user-comment" data-block-author-did="${escapeHtml(did)}">
+    return `<article class="user-comment">
       <div class="user-comment__date"><time datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatCommentDate(comment.createdAt))}</time></div>
       <div class="user-comment__body"><p class="user-comment__context">${replyLabel} <a href="${escapeHtml(subjectLink)}">${escapeHtml(subjectTitle)}</a></p>
       <p class="user-comment__text">${escapeHtml(comment.text)}</p>

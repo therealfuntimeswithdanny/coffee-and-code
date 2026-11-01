@@ -16,7 +16,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-type ArchiveStory = Pick<StandardDocument, 'uri' | 'path' | 'title' | 'publishedAt' | 'cover' | 'description'> & { authorDid?: string };
+type ArchiveStory = Pick<StandardDocument, 'uri' | 'path' | 'title' | 'publishedAt' | 'cover' | 'description'>;
 type ArchiveFilters = { q: string; author: string; year: string; sort: 'newest' | 'oldest'; image: boolean };
 type ArchivePaginationState = {
   cursors: Record<string, string | null>;
@@ -26,7 +26,7 @@ type ArchivePaginationState = {
 
 function renderArchiveStories(posts: ArchiveStory[], pds: string, origin: string) {
   return posts.map((post) => `
-    <article class="archive-story"${post.authorDid ? ` data-block-author-did="${escapeHtml(post.authorDid)}"` : ''}>
+    <article class="archive-story">
       <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
         ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds || origin, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
@@ -64,7 +64,6 @@ function readArchivePagination(value: unknown): ArchivePaginationState | undefin
       || typeof story.path !== 'string' || !/^\/author\/[^/?#]+\/[^/?#]+$/.test(story.path)
       || typeof story.title !== 'string' || story.title.length > 2000
       || typeof story.publishedAt !== 'string' || !Number.isFinite(Date.parse(story.publishedAt))
-      || (story.authorDid !== undefined && !/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(String(story.authorDid)))
       || (story.description !== undefined && (typeof story.description !== 'string' || story.description.length > 180))
       || (story.cover !== undefined && (typeof story.cover !== 'string' || story.cover.length > 4096))) return undefined;
     if (typeof story.cover === 'string') {
@@ -80,7 +79,6 @@ function readArchivePagination(value: unknown): ArchivePaginationState | undefin
       path: story.path,
       title: story.title,
       publishedAt: story.publishedAt,
-      ...(typeof story.authorDid === 'string' ? { authorDid: story.authorDid } : {}),
       ...(typeof story.description === 'string' ? { description: story.description } : {}),
       ...(typeof story.cover === 'string' ? { cover: story.cover } : {}),
     });
@@ -143,7 +141,6 @@ pages.post('/api/archive/more', async (c) => {
     path: post.path,
     title: post.title,
     publishedAt: post.publishedAt,
-    authorDid: post.author?.did || post.repoDid || c.env.OWNER_DID,
     ...(post.description ? { description: excerpt(post) } : {}),
     ...(post.cover ? { cover: post.cover } : {}),
   }))];
@@ -273,7 +270,7 @@ pages.get('/account', (c) => {
           <h2 id="blocked-accounts-title">Blocked accounts</h2>
           <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
           <ul data-blocks-list></ul>
-          <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s stories, comments, and forum posts for you. Bluesky blocks are managed separately in Bluesky settings.</p>
+          <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s forum posts and replies for you. Stories and comments remain visible. Bluesky blocks are managed separately in Bluesky settings.</p>
         </section>
         <section class="account-author-settings" data-author-settings hidden aria-labelledby="author-settings-title">
           <h2 id="author-settings-title">Author profile</h2>
@@ -448,7 +445,7 @@ pages.get('/tags', async (c) => {
       <span>${escapeHtml(label)}</span><span>${count} ${count === 1 ? 'post' : 'posts'}</span>
     </a>`).join('');
   const postItems = matchingPosts.map((post) => `
-    <article class="archive-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+    <article class="archive-story">
       <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
         ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
@@ -508,7 +505,7 @@ pages.get('/author/:handle', async (c) => {
   const authorBanner = author.banner ? proxyImageUrl(author.banner, pds, 'feed_fullsize') : '';
   const archiveItems = authorPosts
     .map((post) => `
-      <article class="archive-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+      <article class="archive-story">
         <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
           ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds, 'feed_medium')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
         </a>
@@ -525,7 +522,7 @@ pages.get('/author/:handle', async (c) => {
   const pinnedArticles = authorPosts.filter((post) => pinnedPosts.has(post.uri));
   const pinnedItems = pinnedArticles
     .map((post) => `
-      <article class="author-pinned-card" data-block-author-did="${escapeHtml(author.did)}">
+      <article class="author-pinned-card">
         <a class="author-pinned-card__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
           ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" width="800" height="450" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
@@ -614,7 +611,6 @@ pages.get('/archive', async (c) => {
 
   const archiveItems = renderArchiveStories(posts.map((post) => ({
     ...post,
-    authorDid: post.author?.did || post.repoDid || c.env.OWNER_DID,
   })), pds, archiveBaseUrl);
   const hasMore = Object.values(nextCursors).some((cursor) => typeof cursor === 'string' && cursor.length > 0);
 
