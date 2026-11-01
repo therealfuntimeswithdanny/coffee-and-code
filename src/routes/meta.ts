@@ -22,7 +22,7 @@ meta.get('/.well-known/atproto-did', (c) => {
 
 // standard.site publication record
 meta.get('/.well-known/site.standard.publication', (c) => {
-  return c.text('at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27', 200, {
+  return c.text('at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b', 200, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
   });

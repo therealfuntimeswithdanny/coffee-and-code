@@ -202,8 +202,8 @@ home.get('/', async (c) => {
     <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta name="twitter:image" content="${escapeHtml(pageUrl.split('/').slice(0, 3).join('/'))}/og.png">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
-    <link rel="alternate" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
-    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
+    <link rel="alternate" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b">
+    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b">
   `;
 
   return c.html(renderLayout(c, 'Tech News & Analysis', body, metaTags, 'Home | Coffee & Code'));
