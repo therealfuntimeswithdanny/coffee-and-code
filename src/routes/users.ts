@@ -168,7 +168,7 @@ users.get('/:identifier', async (c) => {
     const subjectLink = article?.path || `https://pdsls.dev/${comment.subjectUri}`;
     const subjectTitle = article?.title || 'a post on AT Protocol';
     const replyLabel = comment.parentUri ? 'Replied to a comment on' : 'Commented on';
-    return `<article class="user-comment">
+    return `<article class="user-comment" data-block-author-did="${escapeHtml(did)}">
       <div class="user-comment__date"><time datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatCommentDate(comment.createdAt))}</time></div>
       <div class="user-comment__body"><p class="user-comment__context">${replyLabel} <a href="${escapeHtml(subjectLink)}">${escapeHtml(subjectTitle)}</a></p>
       <p class="user-comment__text">${escapeHtml(comment.text)}</p>
@@ -181,7 +181,7 @@ users.get('/:identifier', async (c) => {
     : '<p class="empty-state">No public comments yet.</p>';
   const shownForumPosts = forumPosts.length
     ? `<div class="user-forum-posts">${forumPosts.map((post) => `
-        <article class="user-forum-post">
+        <article class="user-forum-post" data-block-author-did="${escapeHtml(did)}">
           <h3><a href="/forum/${encodeURIComponent(post.handle)}/${encodeURIComponent(post.rkey)}">${escapeHtml(post.title)}</a></h3>
           <time datetime="${escapeHtml(post.createdAt)}">${escapeHtml(formatCommentDate(post.createdAt))}</time>
         </article>`).join('')}</div>`
@@ -193,6 +193,7 @@ users.get('/:identifier', async (c) => {
       <header class="user-page__header">
         ${avatar ? `<img class="user-page__avatar" src="${escapeHtml(avatar)}" alt="" width="104" height="104">` : '<span class="user-page__avatar user-page__avatar--empty" aria-hidden="true"><i class="fa-solid fa-user"></i></span>'}
         <div class="user-page__identity"><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
+        <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(did)}" data-block-user-name="${escapeHtml(name)}" hidden disabled>Block user</button>
         ${authorArticle?.author ? `<a class="user-page__bluesky" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
         <a class="user-page__bluesky" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </header>

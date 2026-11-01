@@ -27,14 +27,14 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${pageTitle}</title>
+  <title>${escapeHtml(pageTitle)}</title>
   ${descriptionTag}
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   ${metaTags}
-  <link rel="alternate" type="application/rss+xml" title="${pubName} RSS Feed" href="/rss.xml">
-  <script type="module" src="/components/sequoia-comments.js"></script>
+  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(pubName)} RSS Feed" href="/rss.xml">
   <script type="module" src="/components/atproto-auth.js"></script>
+  <script type="module" src="/components/sequoia-comments.js"></script>
   <script type="module" src="/components/forum.js"></script>
   <script type="module" src="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js"></script>
   <script defer src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
@@ -97,6 +97,11 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .archive-search .archive-search__image-filter { align-items: center; display: flex; flex-direction: row; gap: 8px; min-height: 44px; white-space: nowrap; }
     .archive-search__image-filter input { accent-color: var(--accent); height: 18px; width: 18px; }
     .archive-search__actions { align-items: center; display: flex; gap: 18px; }
+    .archive-load-more { margin: 34px 0 0; text-align: center; }
+    .archive-load-more .search-button { background: var(--accent); border: 1px solid var(--accent); color: var(--paper); cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; letter-spacing: .06em; min-height: 46px; padding: 10px 20px; text-transform: uppercase; }
+    .archive-load-more .search-button:hover { background: transparent; color: var(--accent); }
+    .archive-load-more .search-button:disabled { cursor: wait; opacity: .7; }
+    .archive-load-more [role="status"] { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
     .archive-search .search-button { background: var(--accent); border: 1px solid var(--accent); color: var(--paper); cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; letter-spacing: .06em; min-height: 42px; padding: 9px 16px; text-transform: uppercase; }
     .archive-search .search-button:hover { background: transparent; color: var(--accent); }
     @media (max-width: 760px) { .archive-search { margin-bottom: 20px; padding: 14px; }.archive-search__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }.archive-search .archive-search__image-filter { align-self: end; } }
@@ -355,6 +360,20 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .account-page__viewed a:hover { color: var(--accent); }
     .account-page__viewed small { color: var(--muted); display: block; font: 13px 'Source Sans 3', sans-serif; margin-top: 4px; }
     .account-page__viewed-status { color: var(--muted); }
+    .account-page__blocks ul { display: grid; gap: 12px; }
+    .account-page__blocks li { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+    .account-page__blocks li a { font: 14px 'Source Sans 3', sans-serif; overflow-wrap: anywhere; }
+    .account-page__blocks-note { color: var(--muted); font-size: 14px; }
+    [data-block-author-did][hidden] { display: none !important; }
+    .forum-reply.is-blocked > :not(.forum-replies) { display: none !important; }
+    .block-dialog { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--ink); margin: auto; max-width: min(460px, calc(100% - 32px)); padding: 24px; width: 100%; }
+    .block-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+    .block-dialog h2 { font-family: Lora, Georgia, serif; margin: 0 0 10px; }
+    .block-dialog p { color: #d2cbb9; }
+    .block-dialog__option { align-items: start; display: flex; gap: 10px; margin: 18px 0; }
+    .block-dialog__option input { accent-color: var(--accent); margin-top: 5px; }
+    .block-dialog__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .block-dialog__status { color: #f2a18d !important; min-height: 1.5em; }
     .account-page__saved-item { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
     .account-page__saved-item a { min-width: 0; }
     .account-page__remove-save { background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; flex: 0 0 auto; font: 600 12px 'Source Sans 3', sans-serif; padding: 6px 10px; }
@@ -632,8 +651,15 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   </style>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a></nav><a href="/" class="site-brand">${pubName}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search title="Search articles"><i class="fa-solid fa-magnifying-glass"></i></button><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button class="hamburger-button" id="hamburgerBtn" aria-label="Toggle navigation" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search>Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
+  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><button type="button" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></button><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/">Latest</a><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
+  <dialog class="block-dialog" data-block-dialog aria-labelledby="block-dialog-title" aria-describedby="block-dialog-description">
+    <h2 id="block-dialog-title" data-block-dialog-title>Block this account?</h2>
+    <p id="block-dialog-description">Their stories, comments, and forum posts will be hidden from you on Coffee &amp; Code.</p>
+    <label class="block-dialog__option"><input type="checkbox" data-block-on-bluesky><span>Also block this account on Bluesky</span></label>
+    <p class="block-dialog__status" data-block-dialog-status role="status" aria-live="polite"></p>
+    <div class="block-dialog__actions"><button type="button" class="author-follow__button" data-confirm-block>Confirm block</button><button type="button" class="auth-signout" data-cancel-block>Cancel</button></div>
+  </dialog>
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
   <footer class="site-footer"><div class="footer-inner"><div class="footer-brand-block"><p class="footer-brand">${pubName}</p><p class="footer-tagline">${pubDescription}</p><div class="footer-social"><a href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/rss.xml" aria-label="RSS feed" title="RSS feed"><i class="fas fa-rss" aria-hidden="true"></i></a><a href="/sitemap.xml" aria-label="Sitemap" title="Sitemap"><i class="fas fa-sitemap" aria-hidden="true"></i></a></div><nav class="footer-legal" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav></div><p class="footer-meta">© ${new Date().getFullYear()} ${pubName} an MBD Company</p></div></footer>
@@ -746,7 +772,10 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
       }
     });
     backToTopBtn.addEventListener('click', () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({
+        top: 0,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+      });
     });
 
     // Hamburger menu
@@ -756,16 +785,108 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     document.querySelectorAll('[data-open-search]').forEach((button) => {
       button.addEventListener('click', () => searchModal?.open());
     });
+    const closeMobileNav = (restoreFocus = false) => {
+      mobileNav.classList.remove('active');
+      hamburgerBtn.setAttribute('aria-expanded', 'false');
+      hamburgerBtn.setAttribute('aria-label', 'Open navigation');
+      hamburgerBtn.textContent = '☰';
+      if (restoreFocus) hamburgerBtn.focus();
+    };
     hamburgerBtn.addEventListener('click', () => {
-      const isActive = mobileNav.classList.toggle('active');
+      const isActive = !mobileNav.classList.contains('active');
+      mobileNav.classList.toggle('active', isActive);
       hamburgerBtn.setAttribute('aria-expanded', isActive);
+      hamburgerBtn.setAttribute('aria-label', isActive ? 'Close navigation' : 'Open navigation');
+      hamburgerBtn.textContent = isActive ? '×' : '☰';
     });
-    // Close menu when a link is clicked
-    mobileNav.querySelectorAll('a').forEach(link => {
-      link.addEventListener('click', () => {
-        mobileNav.classList.remove('active');
-        hamburgerBtn.setAttribute('aria-expanded', 'false');
-      });
+    mobileNav.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('a, [data-open-search]')) {
+        closeMobileNav();
+      }
+    });
+    document.addEventListener('click', (event) => {
+      if (mobileNav.classList.contains('active')
+        && event.target instanceof Node
+        && !mobileNav.contains(event.target)
+        && !hamburgerBtn.contains(event.target)) {
+        closeMobileNav();
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && mobileNav.classList.contains('active')) {
+        closeMobileNav(true);
+      }
+    });
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 760 && mobileNav.classList.contains('active')) closeMobileNav();
+    });
+
+    const archive = document.querySelector('[data-archive-pagination]');
+    const loadMoreButton = archive?.querySelector('[data-archive-load-more]');
+    loadMoreButton?.addEventListener('click', async () => {
+      const button = loadMoreButton;
+      const status = archive.querySelector('[data-archive-load-status]');
+      const cursor = archive.dataset.archiveCursor;
+      if (!cursor || button.disabled) return;
+
+      button.disabled = true;
+      button.textContent = 'Loading stories…';
+      if (status) status.textContent = '';
+      try {
+        const filters = archive.querySelector('form');
+        const formData = filters ? new FormData(filters) : new FormData();
+        const archiveFilters = {
+          q: String(formData.get('q') || ''),
+          author: String(formData.get('author') || ''),
+          year: String(formData.get('year') || ''),
+          sort: String(formData.get('sort') || 'newest'),
+          image: formData.get('image') === '1'
+        };
+        const response = await fetch('/api/archive/more', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: JSON.parse(cursor), filters: archiveFilters })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not load more stories.');
+
+        const grid = archive.querySelector('[data-archive-grid]');
+        const emptyState = archive.querySelector('[data-archive-empty]');
+        const template = document.createElement('template');
+        template.innerHTML = result.html || '';
+        const existingUris = new Set(
+          [...grid.querySelectorAll('[data-at-uri]')].map((element) => element.dataset.atUri)
+        );
+        let added = 0;
+        [...template.content.children].forEach((story) => {
+          const uri = story.querySelector('[data-at-uri]')?.dataset.atUri;
+          if (uri && existingUris.has(uri)) return;
+          if (uri) existingUris.add(uri);
+          grid.append(story);
+          added += 1;
+        });
+        if (added && emptyState) emptyState.hidden = true;
+
+        const count = archive.querySelector('[data-archive-count]');
+        if (count) {
+          const total = Number(count.dataset.loadedCount || count.textContent.match(/^\d+/)?.[0] || 0) + added;
+          count.dataset.loadedCount = String(total);
+          count.textContent = total + ' ' + (total === 1 ? 'story' : 'stories') + ' loaded';
+        }
+        archive.dataset.archiveCursor = result.state ? JSON.stringify(result.state) : '';
+        if (!result.hasMore || !result.state) {
+          button.hidden = true;
+          if (status) status.textContent = added ? 'You’ve reached the end of the archive.' : 'No more stories match these filters.';
+        } else {
+          button.textContent = 'Load 30 more stories';
+          if (status && !added) status.textContent = 'No stories matched this page. Load more to continue searching.';
+        }
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not load more stories.';
+        button.textContent = 'Try again';
+      } finally {
+        button.disabled = false;
+      }
     });
   </script>
 </body>

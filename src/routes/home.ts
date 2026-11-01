@@ -75,14 +75,14 @@ home.get('/', async (c) => {
   const heroHtml = heroPost
     ? `
       <div class="lead-column">
-        <article class="lead-story">
-          <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${heroPost.path}" aria-label="Read ${heroPost.title || 'Untitled'}">
-            ${heroPost.cover ? `<img src="${proxiedCover(heroPost.cover)}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
+        <article class="lead-story" data-block-author-did="${escapeHtml(heroPost.author?.did || heroPost.repoDid || c.env.OWNER_DID)}">
+          <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
+            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover) || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
           </a>
           <div class="lead-story__content">
-            <h2><a href="${heroPost.path}">${heroPost.title || 'Untitled'}</a></h2>
+            <h2><a href="${escapeHtml(heroPost.path)}">${escapeHtml(heroPost.title || 'Untitled')}</a></h2>
             ${excerpt(heroPost, 260) ? `<p class="lead-story__summary">${excerpt(heroPost, 260)}</p>` : ''}
-            <div class="story-footer">${heroArticleMeta(heroPost)} <a href="${heroPost.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+            <div class="story-footer">${heroArticleMeta(heroPost)} <a href="${escapeHtml(heroPost.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
           </div>
         </article>
       </div>`
@@ -91,7 +91,7 @@ home.get('/', async (c) => {
   const pinnedHtml = pinnedForHome.length ? `<section class="home-pinned" aria-labelledby="home-pinned-title">
     <div class="section-heading"><span id="home-pinned-title">Pinned stories</span></div>
     <div class="home-pinned__grid">${pinnedForHome.map((post) => `
-      <article class="home-pinned__card">
+      <article class="home-pinned__card" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
         <a class="home-pinned__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
           ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
@@ -103,12 +103,12 @@ home.get('/', async (c) => {
     ? sidePosts
         .map(
           (post) => `
-            <article class="side-story">
-              <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-                ${post.cover ? `<img src="${proxiedCover(post.cover, 'feed_medium')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+            <article class="side-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+              <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+                ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
               </a>
               <div>
-                <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
+                <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
                 ${authorByline(post)}
                 ${articleMeta(post)}
               </div>
@@ -120,16 +120,16 @@ home.get('/', async (c) => {
   const archiveHtml = archivePosts
     .map(
       (post) => `
-        <article class="archive-story">
-          <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${proxiedCover(post.cover, 'feed_medium')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+        <article class="archive-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
+          <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+            ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
-            <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
+            <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
             ${authorByline(post)}
             ${excerpt(post, 130) ? `<p>${excerpt(post, 130)}</p>` : ''}
           </div>
-          <div class="archive-story__footer">${articleMeta(post)} <a href="${post.path}" class="read-link">Read <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+          <div class="archive-story__footer">${articleMeta(post)} <a href="${escapeHtml(post.path)}" class="read-link">Read <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </article>`
     )
     .join('');

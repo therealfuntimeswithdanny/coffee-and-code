@@ -187,6 +187,21 @@ function documentTags(value: unknown): string[] {
     });
 }
 
+export type ArticlePagination = {
+  pageSize?: number;
+  cursors?: Record<string, string | null>;
+  nextCursors?: Record<string, string | null>;
+};
+
+function recordsUrl(pdsUrl: string, did: string, collection: string, limit: number, cursor?: string): URL {
+  const url = new URL(`${pdsUrl}/xrpc/com.atproto.repo.listRecords`);
+  url.searchParams.set('repo', did);
+  url.searchParams.set('collection', collection);
+  url.searchParams.set('limit', String(limit));
+  if (cursor) url.searchParams.set('cursor', cursor);
+  return url;
+}
+
 export async function getPdsEndpoint(did: string, fallbackPds: string): Promise<string> {
   try {
     const res = await fetchWithRetry(`https://plc.directory/${did}`, {
@@ -333,6 +348,7 @@ async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{
 export async function fetchArticles(
   fallbackPds: string,
   fallbackDid: string,
+  pagination?: ArticlePagination,
 ): Promise<StandardDocument[]> {
   const articles: StandardDocument[] = [];
   const did = fallbackDid;
@@ -350,16 +366,29 @@ export async function fetchArticles(
     if (publicationUris.length) {
       try {
         for (const publicationUri of publicationUris) {
+          if (pagination?.cursors && !Object.hasOwn(pagination.cursors, publicationUri)) continue;
+          const cursor = pagination?.cursors?.[publicationUri];
+          if (cursor === null) {
+            if (pagination?.nextCursors) pagination.nextCursors[publicationUri] = null;
+            continue;
+          }
           const match = publicationUri.match(/^at:\/\/([^/]+)\/site\.standard\.publication\/([^/]+)$/);
           if (!match) continue;
 
           const [, did] = match;
           const pdsUrl = await getPdsEndpoint(did, fallbackPds);
-          const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${encodeURIComponent(did)}&collection=site.standard.document&limit=100`;
-          const stdRes = await fetchWithRetry(stdUrl);
+          const stdUrl = recordsUrl(pdsUrl, did, 'site.standard.document', pagination?.pageSize || 100, cursor || undefined);
+          const stdRes = await fetchWithRetry(stdUrl.toString());
           if (!stdRes.ok) continue;
 
           const data: any = await stdRes.json();
+          if (pagination?.nextCursors) {
+            pagination.nextCursors[publicationUri] = Array.isArray(data.records)
+              && data.records.length >= (pagination?.pageSize || 100)
+              && typeof data.cursor === 'string' && data.cursor
+              ? data.cursor
+              : null;
+          }
           for (const rec of data.records || []) {
             if (!rec?.value || rec.value.site !== publicationUri) continue;
             const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
@@ -430,11 +459,23 @@ export async function fetchArticles(
     // 1. Fetch site.standard.document records (if no publications are configured)
     const ownerProfile = await fetchAuthorProfile(did, pdsUrl);
     try {
-      const stdUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=site.standard.document&limit=50`;
-      const stdRes = await fetchWithRetry(stdUrl);
+      const standardKey = 'legacy-standard';
+      const standardCursor = pagination?.cursors?.[standardKey];
+      const shouldFetchStandard = !pagination?.cursors
+        || (Object.hasOwn(pagination.cursors, standardKey) && standardCursor !== null);
+      const stdRes = shouldFetchStandard
+        ? await fetchWithRetry(recordsUrl(pdsUrl, did, 'site.standard.document', pagination?.pageSize || 50, standardCursor || undefined).toString())
+        : undefined;
 
-      if (stdRes.ok) {
+      if (stdRes?.ok) {
         const data: any = await stdRes.json();
+        if (pagination?.nextCursors) {
+          pagination.nextCursors[standardKey] = Array.isArray(data.records)
+            && data.records.length >= (pagination?.pageSize || 50)
+            && typeof data.cursor === 'string' && data.cursor
+            ? data.cursor
+            : null;
+        }
         for (const rec of data.records || []) {
           if (!rec?.value) continue;
           const rkey = rec.uri ? rec.uri.split('/').pop() : Math.random().toString();
@@ -470,12 +511,24 @@ export async function fetchArticles(
     }
 
     // 2. Fallback to app.bsky.feed.post if no standard.site documents exist
-    if (articles.length === 0) {
+    const bskyKey = 'legacy-bsky';
+    const bskyCursor = pagination?.cursors?.[bskyKey];
+    const shouldFetchBsky = articles.length === 0
+      && (!pagination?.cursors
+        ? true
+        : Object.hasOwn(pagination.cursors, bskyKey) && bskyCursor !== null);
+    if (shouldFetchBsky) {
       try {
-        const bskyUrl = `${pdsUrl}/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=app.bsky.feed.post&limit=30`;
-        const bskyRes = await fetchWithRetry(bskyUrl);
+        const bskyRes = await fetchWithRetry(recordsUrl(pdsUrl, did, 'app.bsky.feed.post', pagination?.pageSize || 30, bskyCursor || undefined).toString());
         if (bskyRes.ok) {
           const data: any = await bskyRes.json();
+          if (pagination?.nextCursors) {
+            pagination.nextCursors[bskyKey] = Array.isArray(data.records)
+              && data.records.length >= (pagination?.pageSize || 30)
+              && typeof data.cursor === 'string' && data.cursor
+              ? data.cursor
+              : null;
+          }
           for (const rec of data.records || []) {
             if (!rec?.value || rec.value.reply) continue;
 

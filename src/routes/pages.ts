@@ -1,11 +1,170 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
 import { externalLinkUrl } from '../lib/externalLinks';
 import { isForumModerator } from './forum';
 
 const pages = new Hono<{ Bindings: Env }>();
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+type ArchiveStory = Pick<StandardDocument, 'uri' | 'path' | 'title' | 'publishedAt' | 'cover' | 'description'> & { authorDid?: string };
+type ArchiveFilters = { q: string; author: string; year: string; sort: 'newest' | 'oldest'; image: boolean };
+type ArchivePaginationState = {
+  cursors: Record<string, string | null>;
+  pending: ArchiveStory[];
+  filterKey: string;
+};
+
+function renderArchiveStories(posts: ArchiveStory[], pds: string, origin: string) {
+  return posts.map((post) => `
+    <article class="archive-story"${post.authorDid ? ` data-block-author-did="${escapeHtml(post.authorDid)}"` : ''}>
+      <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds || origin, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+      </a>
+      <div>
+        <p class="eyebrow">${escapeHtml(formatDate(post.publishedAt))}</p>
+        <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
+        ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
+        <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
+      </div>
+      <a href="${escapeHtml(post.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+    </article>`).join('');
+}
+
+function archiveFilterKey(filters: ArchiveFilters) {
+  return JSON.stringify(filters);
+}
+
+function readArchivePagination(value: unknown): ArchivePaginationState | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const state = value as Record<string, unknown>;
+  if (!state.cursors || typeof state.cursors !== 'object' || Array.isArray(state.cursors)
+    || !Array.isArray(state.pending) || state.pending.length > 1000
+    || typeof state.filterKey !== 'string' || state.filterKey.length > 2048) return undefined;
+  const cursors = state.cursors as Record<string, unknown>;
+  if (Object.keys(cursors).length > 32
+    || Object.entries(cursors).some(([key, cursor]) => key.length > 512
+      || (cursor !== null && (typeof cursor !== 'string' || cursor.length > 2048)))) return undefined;
+
+  const pending: ArchiveStory[] = [];
+  for (const value of state.pending) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const story = value as Record<string, unknown>;
+    if (typeof story.uri !== 'string' || story.uri.length > 2048
+      || !/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.document\/[a-zA-Z0-9._~:-]+$/.test(story.uri)
+      || typeof story.path !== 'string' || !/^\/author\/[^/?#]+\/[^/?#]+$/.test(story.path)
+      || typeof story.title !== 'string' || story.title.length > 2000
+      || typeof story.publishedAt !== 'string' || !Number.isFinite(Date.parse(story.publishedAt))
+      || (story.authorDid !== undefined && !/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(String(story.authorDid)))
+      || (story.description !== undefined && (typeof story.description !== 'string' || story.description.length > 180))
+      || (story.cover !== undefined && (typeof story.cover !== 'string' || story.cover.length > 4096))) return undefined;
+    if (typeof story.cover === 'string') {
+      try {
+        const url = new URL(story.cover, 'https://coffeencode.cc');
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+      } catch {
+        return undefined;
+      }
+    }
+    pending.push({
+      uri: story.uri,
+      path: story.path,
+      title: story.title,
+      publishedAt: story.publishedAt,
+      ...(typeof story.authorDid === 'string' ? { authorDid: story.authorDid } : {}),
+      ...(typeof story.description === 'string' ? { description: story.description } : {}),
+      ...(typeof story.cover === 'string' ? { cover: story.cover } : {}),
+    });
+  }
+  return { cursors: cursors as Record<string, string | null>, pending, filterKey: state.filterKey };
+}
+
+pages.post('/api/archive/more', async (c) => {
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'The archive continuation is invalid. Reload the page and try again.' }, 400);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return c.json({ error: 'The archive continuation is invalid. Reload the page and try again.' }, 400);
+  }
+  const request = payload as Record<string, unknown>;
+  const state = readArchivePagination(request.state);
+  const rawFilters = request.filters;
+  if (!state || !rawFilters || typeof rawFilters !== 'object' || Array.isArray(rawFilters)) {
+    return c.json({ error: 'The archive continuation is invalid. Reload the page and try again.' }, 400);
+  }
+  const filterValues = rawFilters as Record<string, unknown>;
+  const filters: ArchiveFilters = {
+    q: typeof filterValues.q === 'string' ? filterValues.q.trim() : '',
+    author: typeof filterValues.author === 'string' ? filterValues.author : '',
+    year: typeof filterValues.year === 'string' ? filterValues.year : '',
+    sort: filterValues.sort === 'oldest' ? 'oldest' : 'newest',
+    image: filterValues.image === true,
+  };
+  if (filters.q.length > 200
+    || (filters.author && !/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(filters.author))
+    || (filters.year && !/^\d{4}$/.test(filters.year))) {
+    return c.json({ error: 'The archive filters are invalid.' }, 400);
+  }
+  if (state.filterKey !== archiveFilterKey(filters)) {
+    return c.json({ error: 'Apply your updated filters before loading more stories.' }, 409);
+  }
+
+  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+  const nextCursors: NonNullable<ArticlePagination['nextCursors']> = {};
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID, {
+    pageSize: 30,
+    cursors: state.cursors,
+    nextCursors,
+  });
+  const searchedPosts = filters.q ? searchArticles(allPosts, filters.q) : allPosts;
+  const filteredPosts = searchedPosts.filter((post) => {
+    if (filters.author && post.author?.did !== filters.author) return false;
+    if (filters.year && String(new Date(post.publishedAt).getFullYear()) !== filters.year) return false;
+    return !filters.image || Boolean(post.cover);
+  });
+  const sortStories = (a: ArchiveStory, b: ArchiveStory) => {
+    const difference = (Date.parse(a.publishedAt) || 0) - (Date.parse(b.publishedAt) || 0);
+    return filters.sort === 'oldest' ? difference : -difference;
+  };
+  const candidateStories: ArchiveStory[] = [...state.pending, ...filteredPosts.map((post) => ({
+    uri: post.uri,
+    path: post.path,
+    title: post.title,
+    publishedAt: post.publishedAt,
+    authorDid: post.author?.did || post.repoDid || c.env.OWNER_DID,
+    ...(post.description ? { description: excerpt(post) } : {}),
+    ...(post.cover ? { cover: post.cover } : {}),
+  }))];
+  const uniqueStories = [...new Map(candidateStories.map((post) => [post.uri, post])).values()].sort(sortStories);
+  const pageStories = uniqueStories.slice(0, 30);
+  const pending = uniqueStories.slice(30);
+  const nextState: ArchivePaginationState = {
+    cursors: nextCursors,
+    pending,
+    filterKey: state.filterKey,
+  };
+  const hasMore = pending.length > 0
+    || Object.values(nextCursors).some((cursor) => typeof cursor === 'string' && cursor.length > 0);
+
+  return c.json({
+    html: renderArchiveStories(pageStories, pds, new URL(c.req.url).origin),
+    count: pageStories.length,
+    state: hasMore ? nextState : null,
+    hasMore,
+  }, 200, { 'Cache-Control': 'no-store' });
+});
 
 pages.get('/api/invite-code', async (c) => {
   try {
@@ -19,8 +178,8 @@ pages.get('/api/invite-code', async (c) => {
     }
     return c.json({ code: payload.code }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
-    console.error('Could not retrieve a signup invite code:', error);
-    return c.json({ error: 'A signup invite code is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+    console.error('Could not retrieve PDS invite code:', error);
+    return c.json({ error: 'invite-code.coffeencode.cc retured an error, please check our Status page or reach out to support.' }, 502, { 'Cache-Control': 'no-store' });
   }
 });
 
@@ -110,6 +269,12 @@ pages.get('/account', (c) => {
         <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p data-profile-bio></p></div></div>
         <section class="account-page__viewed" aria-labelledby="viewed-posts-title"><h2 id="viewed-posts-title">Posts you’ve viewed</h2><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
         <section class="account-page__viewed" aria-labelledby="saved-posts-title"><h2 id="saved-posts-title">Reading list</h2><p class="account-page__viewed-status" data-saved-status>Loading your saved posts…</p><ul data-saved-posts></ul></section>
+        <section class="account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
+          <h2 id="blocked-accounts-title">Blocked accounts</h2>
+          <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
+          <ul data-blocks-list></ul>
+          <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s stories, comments, and forum posts for you. Bluesky blocks are managed separately in Bluesky settings.</p>
+        </section>
         <section class="account-author-settings" data-author-settings hidden aria-labelledby="author-settings-title">
           <h2 id="author-settings-title">Author profile</h2>
           <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
@@ -163,11 +328,11 @@ pages.get('/become-an-author', (c) => {
       <ol class="author-invitation__steps">
         <li>
           <h2>Create your publication</h2>
-          <p>Sign in to <a href="${externalLinkUrl('https://leaflet.pub/')}" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a publication on your account. This keeps your stories published under your account and attributed to you.</p>
+          <p>Sign in to <a href="${externalLinkUrl('https://leaflet.pub/')}" target="_blank" rel="noopener noreferrer">Leaflet</a> and create a publication with your account. This keeps your stories published under your account and attributed to you. Meaning you control everything.</p>
         </li>
         <li>
           <h2>Send me your post</h2>
-          <p>DM me on <a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">Bluesky</a> with a link to the post you want to publish. I’ll review it and let you know if it’s a good fit for Coffee &amp; Code.</p>
+          <p><a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">DM me on Bluesky</a> with a link to the <b>view link</b> to the post you want to publish. I’ll review it and let you know if it’s a good fit for Coffee &amp; Code.</p>
         </li>
         <li>
           <h2>Publish your stories</h2>
@@ -194,7 +359,7 @@ function formatDate(date?: string) {
   });
 }
 
-function excerpt(post: StandardDocument) {
+function excerpt(post: Pick<StandardDocument, 'description'>) {
   const text = typeof post.description === 'string' ? post.description.trim() : '';
   if (!text) return '';
   return text.length > 150 ? `${text.substring(0, 150).trimEnd()}…` : text;
@@ -283,7 +448,7 @@ pages.get('/tags', async (c) => {
       <span>${escapeHtml(label)}</span><span>${count} ${count === 1 ? 'post' : 'posts'}</span>
     </a>`).join('');
   const postItems = matchingPosts.map((post) => `
-    <article class="archive-story">
+    <article class="archive-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
       <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
         ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
@@ -343,24 +508,24 @@ pages.get('/author/:handle', async (c) => {
   const authorBanner = author.banner ? proxyImageUrl(author.banner, pds, 'feed_fullsize') : '';
   const archiveItems = authorPosts
     .map((post) => `
-      <article class="archive-story">
+      <article class="archive-story" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
         <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
           ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds, 'feed_medium')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
         </a>
         <div>
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
-          <h3><a href="${post.path}">${escapeHtml(post.title || 'Untitled')}</a></h3>
+          <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
           ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
             <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
         </div>
-        <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        <a href="${escapeHtml(post.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </article>`)
     .join('');
   const pinnedPosts = new Set(author.pinnedPosts || []);
   const pinnedArticles = authorPosts.filter((post) => pinnedPosts.has(post.uri));
   const pinnedItems = pinnedArticles
     .map((post) => `
-      <article class="author-pinned-card">
+      <article class="author-pinned-card" data-block-author-did="${escapeHtml(author.did)}">
         <a class="author-pinned-card__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
           ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" width="800" height="450" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
@@ -380,6 +545,7 @@ pages.get('/author/:handle', async (c) => {
       </header>
       <div class="author-follow" ${publicationUri ? `data-author-follow data-author-did="${escapeHtml(author.did)}" data-publication-uri="${escapeHtml(publicationUri)}"` : ''}>
         <a class="author-page__profile-link" href="/user/${encodeURIComponent(author.handle)}">View user profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(author.did)}" data-block-user-name="${escapeHtml(authorName)}" hidden disabled>Block user</button>
         <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
         <span class="author-follow__status" data-author-follow-status role="status" aria-live="polite">${publicationUri ? '' : 'Following is unavailable for this author.'}</span>
       </div>
@@ -410,19 +576,20 @@ pages.get('/author/:handle', async (c) => {
 
 pages.get('/archive', async (c) => {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
-  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
+  const nextCursors: NonNullable<ArticlePagination['nextCursors']> = {};
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID, { nextCursors });
   const query = (c.req.query('q') || '').trim();
   const authorFilter = c.req.query('author') || '';
   const yearFilter = c.req.query('year') || '';
   const sort = c.req.query('sort') === 'oldest' ? 'oldest' : 'newest';
   const imageOnly = c.req.query('image') === '1';
-  const escapeHtml = (str: string) => str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
+  const filters: ArchiveFilters = {
+    q: query,
+    author: authorFilter,
+    year: yearFilter,
+    sort,
+    image: imageOnly,
+  };
   const authorOptions = [...new Map(allPosts
     .filter((post) => post.author && typeof post.author.did === 'string')
     .map((post): [string, string] => [post.author!.did, String(post.author!.displayName || post.author!.handle || post.author!.did)]))]
@@ -445,23 +612,11 @@ pages.get('/archive', async (c) => {
   });
   const archiveBaseUrl = new URL(c.req.url).origin;
 
-  const archiveItems = posts
-    .map(
-      (post) => `
-        <article class="archive-story">
-          <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${post.title || 'Untitled'}">
-            ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds || archiveBaseUrl, 'feed_medium')}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-          </a>
-          <div>
-            <p class="eyebrow">${formatDate(post.publishedAt)}</p>
-            <h3><a href="${post.path}">${post.title || 'Untitled'}</a></h3>
-            ${excerpt(post) ? `<p>${excerpt(post)}</p>` : ''}
-            <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
-          </div>
-          <a href="${post.path}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-        </article>`
-    )
-    .join('');
+  const archiveItems = renderArchiveStories(posts.map((post) => ({
+    ...post,
+    authorDid: post.author?.did || post.repoDid || c.env.OWNER_DID,
+  })), pds, archiveBaseUrl);
+  const hasMore = Object.values(nextCursors).some((cursor) => typeof cursor === 'string' && cursor.length > 0);
 
   const searchForm = `
     <div class="archive-search">
@@ -487,15 +642,17 @@ pages.get('/archive', async (c) => {
   `;
 
   const emptyMessage = allPosts.length ? 'No stories match these search filters.' : 'No stories have been published yet.';
-  const gridOrEmpty = archiveItems
-    ? `<div class="archive-grid">${archiveItems}</div>`
-    : `<p class="empty-state">${emptyMessage}</p>`;
+  const gridOrEmpty = `<div class="archive-grid" data-archive-grid>${archiveItems}</div><p class="empty-state"${archiveItems ? ' hidden' : ''} data-archive-empty>${emptyMessage}</p>`;
 
   const body = `
-    <section class="archive-page" aria-labelledby="archive-title">
+    <section class="archive-page" aria-labelledby="archive-title" data-archive-pagination data-archive-cursor="${escapeHtml(JSON.stringify({ cursors: nextCursors, pending: [], filterKey: archiveFilterKey(filters) }))}">
       ${searchForm}
-      <div class="section-heading"><span id="archive-title">Archive</span><span>${posts.length} of ${allPosts.length} ${allPosts.length === 1 ? 'story' : 'stories'}</span></div>
+      <div class="section-heading"><span id="archive-title">Archive</span><span data-archive-count data-loaded-count="${posts.length}">${posts.length} ${posts.length === 1 ? 'story' : 'stories'} loaded</span></div>
       ${gridOrEmpty}
+      <div class="archive-load-more"${hasMore ? '' : ' hidden'}>
+        <button type="button" class="search-button archive-load-more__button" data-archive-load-more>Load 30 more stories</button>
+        <p data-archive-load-status role="status" aria-live="polite"></p>
+      </div>
     </section>
   `;
 

@@ -1,4 +1,36 @@
 import { marked } from 'marked';
+import sanitizeHtml from 'sanitize-html';
+
+function sanitizeContentHtml(html: string): string {
+  return sanitizeHtml(html, {
+    allowedTags: [
+      ...sanitizeHtml.defaults.allowedTags,
+      'h1', 'h2', 'h3', 'h4', 'img', 'pre', 'code', 'hr', 'del',
+      'figure', 'figcaption', 'iframe', 'table', 'thead', 'tbody', 'tfoot',
+      'tr', 'th', 'td', 'sup', 'sub',
+    ],
+    allowedAttributes: {
+      a: ['href', 'name', 'target', 'rel', 'class'],
+      img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'decoding', 'class'],
+      code: ['class'],
+      pre: ['class'],
+      figure: ['class'],
+      figcaption: ['class'],
+      iframe: ['src', 'srcdoc', 'title', 'sandbox', 'referrerpolicy', 'loading', 'allowfullscreen', 'class'],
+      th: ['colspan', 'rowspan', 'scope'],
+      td: ['colspan', 'rowspan'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { rel: 'nofollow noopener noreferrer' }),
+      iframe: sanitizeHtml.simpleTransform('iframe', {
+        sandbox: 'allow-scripts allow-forms allow-presentation',
+        referrerpolicy: 'no-referrer',
+        loading: 'lazy',
+      }),
+    },
+  });
+}
 
 /**
  * Supported content formats in the Standard protocol
@@ -112,15 +144,7 @@ export function renderHtml(content: string): string {
     },
   );
 
-  // Basic sanitization: remove script tags and event handlers
-  const sanitized = withSafeEmbeds
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/on\w+\s*=\s*[^\s>]*/gi, '')
-    .replace(/<embed[^>]*>/gi, '')
-    .replace(/<object[^>]*>.*?<\/object>/gi, '');
-
-  return sanitized;
+  return sanitizeContentHtml(withSafeEmbeds);
 }
 
 function safeLinkUrl(uri: unknown): string | undefined {
@@ -197,7 +221,7 @@ export async function renderMarkdown(content: string): Promise<string> {
 
   try {
     const html = await marked.parse(content);
-    return html || `<p>${escapeHtml(content)}</p>`;
+    return sanitizeContentHtml(html || `<p>${escapeHtml(content)}</p>`);
   } catch (error) {
     console.error('Markdown parsing error:', error);
     return renderPlaintext(content);
@@ -458,7 +482,7 @@ export async function renderContent(
       return renderHtml(content);
 
     case ContentFormat.RICHTEXT:
-      return renderRichtext(content);
+      return sanitizeContentHtml(renderRichtext(content));
 
     case ContentFormat.PLAINTEXT:
     case ContentFormat.UNKNOWN:

@@ -13,6 +13,10 @@ function escapeXml(value: string) {
     .replace(/'/g, '&apos;');
 }
 
+function cdata(value: string) {
+  return `<![CDATA[${value.replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
 // AT Protocol domain-to-DID verification record.
 meta.get('/.well-known/atproto-did', (c) => {
   return c.text('did:plc:z7hzwpuv5ytin56wecfxa4mx', 200, {
@@ -36,24 +40,27 @@ meta.get('/rss.xml', async (c) => {
 
   const rssItems = posts
     .map(
-      (p) => `
+      (p) => {
+        const publishedDate = new Date(p.publishedAt);
+        return `
     <item>
-      <title><![CDATA[${p.title}]]></title>
-      <link>${baseUrl}${p.path}</link>
-      <guid isPermaLink="false">${p.uri}</guid>
-      <pubDate>${p.publishedAt ? new Date(p.publishedAt).toUTCString() : ''}</pubDate>
-      <description><![CDATA[${p.description || p.content}]]></description>
+      <title>${cdata(p.title)}</title>
+      <link>${escapeXml(`${baseUrl}${p.path}`)}</link>
+      <guid isPermaLink="false">${escapeXml(p.uri)}</guid>
+      <pubDate>${Number.isFinite(publishedDate.getTime()) ? publishedDate.toUTCString() : ''}</pubDate>
+      <description>${cdata(p.description || p.content)}</description>
     </item>
-  `
+  `;
+      }
     )
     .join('');
 
   const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>${c.env.PUB_NAME}</title>
-    <link>${baseUrl}</link>
-    <description>${c.env.PUB_DESCRIPTION}</description>
+    <title>${escapeXml(c.env.PUB_NAME)}</title>
+    <link>${escapeXml(baseUrl)}</link>
+    <description>${escapeXml(c.env.PUB_DESCRIPTION)}</description>
     <language>en-us</language>
     ${rssItems}
   </channel>
@@ -115,19 +122,22 @@ meta.get('/sitemap.xml', async (c) => {
 
   const urls = posts
     .map(
-      (p) => `
+      (p) => {
+        const publishedDate = new Date(p.publishedAt);
+        return `
     <url>
-      <loc>${baseUrl}${p.path}</loc>
-      <lastmod>${p.publishedAt ? new Date(p.publishedAt).toISOString() : new Date().toISOString()}</lastmod>
+      <loc>${escapeXml(`${baseUrl}${p.path}`)}</loc>
+      ${Number.isFinite(publishedDate.getTime()) ? `<lastmod>${publishedDate.toISOString()}</lastmod>` : ''}
     </url>
-  `
+  `;
+      }
     )
     .join('');
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>${baseUrl}/</loc></url>
-  <url><loc>${baseUrl}/authors</loc></url>
+  <url><loc>${escapeXml(`${baseUrl}/`)}</loc></url>
+  <url><loc>${escapeXml(`${baseUrl}/authors`)}</loc></url>
   ${urls}
 </urlset>`;
 

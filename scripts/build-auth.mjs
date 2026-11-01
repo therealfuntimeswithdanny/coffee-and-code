@@ -59,6 +59,7 @@ for (const scope of [
   'include:cc.coffeencode.authPublic',
   'include:site.standard.authSocial',
   'include:app.userinput.authBasic',
+  'repo:cc.coffeencode.user.block?action=create&action=delete',
   'repo:app.bsky.graph.follow?action=create&action=delete',
   'repo:app.bsky.graph.block?action=create&action=delete',
   'repo:app.bsky.feed.post?action=create&action=delete',
@@ -124,6 +125,7 @@ const expectedRepoActions = new Map([
   ['cc.coffeencode.handle.claim', ['create']],
   ['cc.coffeencode.comment', ['create', 'update', 'delete']],
   ['cc.coffeencode.author.profile', ['create', 'update']],
+  ['cc.coffeencode.user.block', ['create', 'delete']],
   ['app.bsky.graph.follow', ['create', 'delete']],
   ['site.standard.graph.subscription', ['create', 'delete']],
 ]);

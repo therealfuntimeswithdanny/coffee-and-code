@@ -72,10 +72,22 @@ class SequoiaComments extends HTMLElement {
     this.pendingEdits = new Map();
     this.loading = false;
     this.refreshTimer = null;
+    this.blockedDids = new Set();
+    this.handleBlocksChanged = (event) => {
+      if (!(event.detail?.blockedDids instanceof Set)) return;
+      this.blockedDids = event.detail.blockedDids;
+      this.render();
+    };
   }
 
-  connectedCallback() { void this.load({ reset: true }); }
-  disconnectedCallback() { clearTimeout(this.refreshTimer); }
+  connectedCallback() {
+    document.addEventListener('coffee-and-code:blocks-changed', this.handleBlocksChanged);
+    void this.load({ reset: true });
+  }
+  disconnectedCallback() {
+    clearTimeout(this.refreshTimer);
+    document.removeEventListener('coffee-and-code:blocks-changed', this.handleBlocksChanged);
+  }
 
   async load({ reset = false, quiet = false } = {}) {
     if (this.loading) return;
@@ -91,9 +103,12 @@ class SequoiaComments extends HTMLElement {
       this.comments = [];
       if (!quiet) this.container.innerHTML = '<div class="status">Loading comments...</div>';
     }
+    let blockFilterReady = false;
     try {
       const did = await window.coffeeAndCodeAuth?.getDid();
       this.viewerDid = did;
+      this.blockedDids = await window.coffeeAndCodeAuth?.getBlockedDids() || new Set();
+      blockFilterReady = true;
       const query = new URLSearchParams({ subject: this.documentUri, limit: '40' });
       if (did) query.set('did', did);
       if (this.cursor) query.set('cursor', this.cursor);
@@ -112,8 +127,10 @@ class SequoiaComments extends HTMLElement {
       this.total = Number.isFinite(Number(data.total)) ? Number(data.total) : this.comments.length;
       this.render();
     } catch (error) {
-      if (!this.comments.length) this.show(error instanceof Error ? error.message : 'Unable to load comments.');
-      else {
+      if (!blockFilterReady || !this.comments.length) {
+        this.comments = [];
+        this.show(error instanceof Error ? error.message : 'Unable to load comments.');
+      } else {
         this.render();
         const status = this.container.querySelector('[data-list-status]');
         if (status) status.textContent = 'Could not load more comments. Try again.';
@@ -165,10 +182,11 @@ class SequoiaComments extends HTMLElement {
   }
 
   render() {
+    const visibleComments = this.comments.filter((comment) => !this.blockedDids.has(comment.did));
     const childrenByParent = new Map();
-    const knownUris = new Set(this.comments.map((comment) => comment.uri));
+    const knownUris = new Set(visibleComments.map((comment) => comment.uri));
     const parentByChild = new Map();
-    this.comments.forEach((comment) => {
+    visibleComments.forEach((comment) => {
       if (!comment.parentUri || !knownUris.has(comment.parentUri) || comment.parentUri === comment.uri) return;
       // Break malformed cycles from remote records so recursive rendering stays safe.
       let ancestor = comment.parentUri;
@@ -184,11 +202,12 @@ class SequoiaComments extends HTMLElement {
       childrenByParent.set(comment.parentUri, children);
       parentByChild.set(comment.uri, comment.parentUri);
     });
-    const roots = this.comments
+    const roots = visibleComments
       .filter((comment) => !parentByChild.has(comment.uri))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.uri.localeCompare(a.uri));
     const hasMore = Boolean(this.cursor);
-    this.container.innerHTML = `<div class="comments-header"><div><h2 class="comments-title">Join the conversation${this.total ? ` <span>(${this.total.toLocaleString()})</span>` : ''}</h2><p class="comments-intro">Comments are shown in threads. Reply to keep a conversation together.</p></div></div><form class="comment-form" data-comment-form><textarea class="comment-input" name="text" maxlength="3000" required placeholder="Share your thoughts..." aria-label="Write a comment"></textarea><button class="comment-submit" type="submit">Post comment</button><span class="comment-status" aria-live="polite"></span></form>${roots.length ? `<div class="comments-list">${roots.map((comment) => this.renderComment(comment, childrenByParent)).join('')}</div>` : '<div class="status">No comments yet. Start the conversation.</div>'}${hasMore ? '<button type="button" class="comments-more">Load older comments</button>' : ''}<div class="comment-status" data-list-status aria-live="polite"></div>`;
+    const commentCount = this.blockedDids.size ? visibleComments.length : this.total;
+    this.container.innerHTML = `<div class="comments-header"><div><h2 class="comments-title">Join the conversation${commentCount ? ` <span>(${commentCount.toLocaleString()})</span>` : ''}</h2><p class="comments-intro">Comments are shown in threads. Reply to keep a conversation together.</p></div></div><form class="comment-form" data-comment-form><textarea class="comment-input" name="text" maxlength="3000" required placeholder="Share your thoughts..." aria-label="Write a comment"></textarea><button class="comment-submit" type="submit">Post comment</button><span class="comment-status" aria-live="polite"></span></form>${roots.length ? `<div class="comments-list">${roots.map((comment) => this.renderComment(comment, childrenByParent)).join('')}</div>` : '<div class="status">No comments yet. Start the conversation.</div>'}${hasMore ? '<button type="button" class="comments-more">Load older comments</button>' : ''}<div class="comment-status" data-list-status aria-live="polite"></div>`;
     this.container.querySelector('[data-comment-form]')?.addEventListener('submit', (event) => this.submit(event, undefined));
     this.container.querySelectorAll('[data-reply-to]').forEach((button) => button.addEventListener('click', () => this.openReply(button.dataset.replyTo)));
     this.container.querySelectorAll('[data-like-comment]').forEach((button) => button.addEventListener('click', () => this.toggleLike(button)));

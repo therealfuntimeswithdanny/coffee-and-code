@@ -65,11 +65,20 @@ const signedOutAccount = document.querySelector<HTMLElement>('[data-account-sign
 let signupInviteCode: string | undefined;
 let accountAuthorRecord: Record<string, unknown> | undefined;
 let accountAuthorDid: string | undefined;
+const blockCollection = 'cc.coffeencode.user.block';
+type UserBlockRecord = { uri: string; rkey: string; subject: string; createdAt: string };
+let blockedRecords: UserBlockRecord[] = [];
+let blockedRecordsDid: string | undefined;
+let blockedRecordsPromise: Promise<UserBlockRecord[]> | undefined;
+let activeBlockedDids = new Set<string>();
 
 declare global {
   interface Window {
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
+      getBlockedDids: () => Promise<Set<string>>;
+      blockUser: (did: string, alsoOnBluesky: boolean) => Promise<void>;
+      unblockUser: (did: string) => Promise<void>;
       createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
       editComment: (uri: string, record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
       deleteComment: (uri: string) => Promise<void>;
@@ -196,6 +205,24 @@ function renderAccount() {
     mobileAccountLink.hidden = !session;
     mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
   }
+  if (session) {
+    const activeDid = session.did;
+    void loadUserBlocks(activeDid).then(() => renderBlockManager(activeDid)).catch((error) => {
+      console.error('Could not load the signed-in user’s block list:', error);
+      const status = accountPage?.querySelector<HTMLElement>('[data-blocks-status]');
+      if (status) status.textContent = errorMessage(error);
+    });
+    renderBlockButtons(new Set(blockedRecords.map((record) => record.subject)));
+  } else {
+    blockedRecords = [];
+    blockedRecordsDid = undefined;
+    blockedRecordsPromise = undefined;
+    document.querySelectorAll<HTMLButtonElement>('[data-block-user-did]').forEach((button) => {
+      button.hidden = true;
+      button.disabled = true;
+    });
+    applyBlockedUserFilter(new Set());
+  }
 
   if (session) {
     if (authOptions) authOptions.hidden = true;
@@ -235,6 +262,7 @@ function renderAccount() {
       void loadAccountSavedPosts(did);
       void loadAuthorProfileEditor(did);
     }
+
   }
 
   if (!session) {
@@ -257,6 +285,135 @@ function renderAccount() {
       }
     })
     .catch(() => {});
+}
+
+function validBlockDid(value: unknown): value is string {
+  return typeof value === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(value);
+}
+
+async function loadUserBlocks(did: string): Promise<UserBlockRecord[]> {
+  if (blockedRecordsDid === did && blockedRecordsPromise) return blockedRecordsPromise;
+  blockedRecordsDid = did;
+  blockedRecords = [];
+  blockedRecordsPromise = (async () => {
+    const records: UserBlockRecord[] = [];
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    do {
+      const query = new URLSearchParams({ repo: did, collection: blockCollection, limit: '100' });
+      if (cursor) query.set('cursor', cursor);
+      const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+      const page = await response.json() as {
+        records?: Array<{ uri?: unknown; value?: { subject?: unknown; createdAt?: unknown } }>;
+        cursor?: unknown;
+      };
+      for (const record of page.records || []) {
+        if (typeof record.uri !== 'string' || typeof record.value?.subject !== 'string'
+          || !validBlockDid(record.value.subject) || typeof record.value.createdAt !== 'string'
+          || !Number.isFinite(Date.parse(record.value.createdAt))) continue;
+        try {
+          records.push({
+            uri: record.uri,
+            rkey: recordKeyFromUri(record.uri),
+            subject: record.value.subject,
+            createdAt: record.value.createdAt,
+          });
+        } catch { continue; }
+      }
+      if (typeof page.cursor !== 'string' || !page.cursor) break;
+      if (seenCursors.has(page.cursor)) throw new Error('The account provider returned a repeated block-list cursor.');
+      seenCursors.add(page.cursor);
+      if (seenCursors.size > 1000) throw new Error('Your block list is too large to load.');
+      cursor = page.cursor;
+    } while (cursor);
+    if (session?.did !== did) return [];
+    blockedRecords = [...new Map(records.map((record) => [record.subject, record])).values()];
+    applyBlockedUserFilter(new Set(blockedRecords.map((record) => record.subject)));
+    return blockedRecords;
+  })();
+  return blockedRecordsPromise;
+}
+
+function applyBlockedUserFilter(blocked: Set<string>) {
+  activeBlockedDids = blocked;
+  renderBlockButtons(blocked);
+  document.querySelectorAll<HTMLElement>('[data-block-author-did]').forEach((element) => {
+    updateBlockVisibility(element, blocked);
+  });
+  document.dispatchEvent(new CustomEvent('coffee-and-code:blocks-changed', { detail: { blockedDids: blocked } }));
+}
+
+function updateBlockVisibility(element: HTMLElement, blocked: Set<string>) {
+  const isBlocked = blocked.has(element.dataset.blockAuthorDid || '');
+  if (element.matches('.forum-reply')) {
+    element.hidden = false;
+    element.classList.toggle('is-blocked', isBlocked);
+    return;
+  }
+  element.hidden = isBlocked;
+}
+
+function renderBlockButtons(blocked: Set<string>) {
+  document.querySelectorAll<HTMLButtonElement>('[data-block-user-did]').forEach((button) => {
+    const did = button.dataset.blockUserDid || '';
+    const isOwnAccount = did === session?.did;
+    const isBlocked = blocked.has(did);
+    button.hidden = !session || isOwnAccount;
+    button.disabled = isOwnAccount || isBlocked;
+    button.textContent = isBlocked ? 'Blocked' : 'Block user';
+  });
+}
+
+new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => mutation.addedNodes.forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const candidates = [
+      ...(node.matches('[data-block-author-did]') ? [node] : []),
+      ...node.querySelectorAll<HTMLElement>('[data-block-author-did]'),
+    ];
+    candidates.forEach((element) => {
+      updateBlockVisibility(element, activeBlockedDids);
+    });
+  }));
+}).observe(document.documentElement, { childList: true, subtree: true });
+
+async function renderBlockManager(did: string) {
+  if (!accountPage) return;
+  const list = accountPage.querySelector<HTMLElement>('[data-blocks-list]');
+  const status = accountPage.querySelector<HTMLElement>('[data-blocks-status]');
+  if (!list || !status) return;
+  status.textContent = 'Loading your blocked accounts…';
+  try {
+    const records = await loadUserBlocks(did);
+    if (session?.did !== did) return;
+    list.replaceChildren();
+    records.forEach((record) => {
+      const item = document.createElement('li');
+      const profileLink = document.createElement('a');
+      profileLink.href = `/user/${encodeURIComponent(record.subject)}`;
+      profileLink.textContent = record.subject;
+      const unblock = document.createElement('button');
+      unblock.type = 'button';
+      unblock.className = 'auth-signout';
+      unblock.textContent = 'Unblock';
+      unblock.addEventListener('click', async () => {
+        unblock.disabled = true;
+        status.textContent = `Unblocking ${record.subject}…`;
+        try {
+          await window.coffeeAndCodeAuth?.unblockUser(record.subject);
+          await renderBlockManager(did);
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          unblock.disabled = false;
+        }
+      });
+      item.append(profileLink, unblock);
+      list.append(item);
+    });
+    status.textContent = records.length ? `${records.length} ${records.length === 1 ? 'account' : 'accounts'} blocked on Coffee & Code.` : 'You have not blocked any accounts.';
+  } catch (error) {
+    status.textContent = errorMessage(error);
+  }
 }
 
 async function loadAuthorProfileEditor(did: string) {
@@ -882,6 +1039,19 @@ window.coffeeAndCodeAuth = {
     await oauthReady;
     return session?.did;
   },
+  getBlockedDids: async () => {
+    await oauthReady;
+    if (!session) return new Set<string>();
+    return new Set((await loadUserBlocks(session.did)).map((record) => record.subject));
+  },
+  blockUser: async (did: string, alsoOnBluesky: boolean) => {
+    await oauthReady;
+    await blockUser(did, alsoOnBluesky);
+  },
+  unblockUser: async (did: string) => {
+    await oauthReady;
+    await unblockUser(did);
+  },
   createComment: async (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => {
     await oauthReady;
     const activeSession = requireSession();
@@ -1041,6 +1211,50 @@ window.coffeeAndCodeAuth = {
   },
 };
 
+const blockDialog = document.querySelector<HTMLDialogElement>('[data-block-dialog]');
+const blockDialogTitle = blockDialog?.querySelector<HTMLElement>('[data-block-dialog-title]');
+const blockDialogStatus = blockDialog?.querySelector<HTMLElement>('[data-block-dialog-status]');
+const blockOnBluesky = blockDialog?.querySelector<HTMLInputElement>('[data-block-on-bluesky]');
+const confirmBlockButton = blockDialog?.querySelector<HTMLButtonElement>('[data-confirm-block]');
+
+document.addEventListener('click', async (event) => {
+  const button = event.target instanceof Element
+    ? event.target.closest<HTMLButtonElement>('[data-block-user-did]')
+    : null;
+  if (!button) return;
+  event.preventDefault();
+  await oauthReady;
+  if (!session) {
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
+    return;
+  }
+  if (!blockDialog || !validBlockDid(button.dataset.blockUserDid)) return;
+  blockDialog.dataset.blockDid = button.dataset.blockUserDid;
+  if (blockDialogTitle) blockDialogTitle.textContent = `Block ${button.dataset.blockUserName || button.dataset.blockUserDid}?`;
+  if (blockDialogStatus) blockDialogStatus.textContent = '';
+  if (blockOnBluesky) blockOnBluesky.checked = false;
+  blockDialog.showModal();
+});
+
+blockDialog?.querySelector('[data-cancel-block]')?.addEventListener('click', () => blockDialog.close());
+confirmBlockButton?.addEventListener('click', async () => {
+  const did = blockDialog?.dataset.blockDid;
+  if (!did || !blockDialogStatus) return;
+  confirmBlockButton.disabled = true;
+  if (blockDialogStatus) blockDialogStatus.textContent = 'Saving your block…';
+  try {
+    await window.coffeeAndCodeAuth?.blockUser(did, Boolean(blockOnBluesky?.checked));
+    if (blockDialogStatus) blockDialogStatus.textContent = 'Account blocked.';
+    blockDialog?.close();
+    if (accountPage) await renderBlockManager(session?.did || '');
+  } catch (error) {
+    blockDialogStatus.textContent = errorMessage(error);
+  } finally {
+    confirmBlockButton.disabled = false;
+  }
+});
+
 async function uploadForumImages(images: ForumImageInput[], activeSession: OAuthSession) {
   if (images.length > 10) throw new Error('A forum post can contain at most 10 images.');
   const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -1185,8 +1399,83 @@ async function findOwnRepoRecord(collection: string, field: string, target: stri
 
 function recordKeyFromUri(uri: string) {
   const match = uri.match(/^at:\/\/[^/]+\/[^/]+\/([a-zA-Z0-9._~:-]+)$/);
-  if (!match) throw new Error('The account provider returned an invalid follow record URI.');
+  if (!match) throw new Error('The account provider returned an invalid repository record URI.');
   return match[1];
+}
+
+function createTid() {
+  const alphabet = '234567abcdefghijklmnopqrstuvwxyz';
+  const timestampMicros = BigInt(Date.now()) * 1000n;
+  const clockId = BigInt(crypto.getRandomValues(new Uint16Array(1))[0] & 0x03ff);
+  let value = (timestampMicros << 10n) | clockId;
+  let tid = '';
+  for (let index = 0; index < 13; index += 1) {
+    tid = alphabet[Number(value & 31n)] + tid;
+    value >>= 5n;
+  }
+  return tid;
+}
+
+async function blockUser(did: string, alsoOnBluesky: boolean) {
+  const activeSession = requireSession();
+  if (!validBlockDid(did) || did === activeSession.did) throw new Error('Choose a valid account to block.');
+  const current = await loadUserBlocks(activeSession.did);
+  if (session?.did !== activeSession.did) throw new Error('Your signed-in account changed. Please try again.');
+  const existing = current.find((record) => record.subject === did);
+  if (!existing) {
+    const collection = blockCollection;
+    const rkey = createTid();
+    const createdAt = new Date().toISOString();
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection,
+      rkey,
+      record: { $type: collection, subject: did, createdAt },
+    });
+    blockedRecords = [...current, {
+      uri: `at://${activeSession.did}/${collection}/${rkey}`,
+      rkey,
+      subject: did,
+      createdAt,
+    }];
+  } else {
+    blockedRecords = current;
+  }
+  blockedRecordsDid = activeSession.did;
+  blockedRecordsPromise = Promise.resolve(blockedRecords);
+  applyBlockedUserFilter(new Set(blockedRecords.map((record) => record.subject)));
+  void renderBlockManager(activeSession.did);
+  if (alsoOnBluesky) {
+    try {
+      const existing = await findOwnRepoRecord('app.bsky.graph.block', 'subject', did, activeSession.did);
+      if (!existing) {
+        const collection = 'app.bsky.graph.block';
+        await repoRequest('com.atproto.repo.createRecord', {
+          repo: activeSession.did,
+          collection,
+          rkey: createTid(),
+          record: { $type: collection, subject: did, createdAt: new Date().toISOString() },
+        });
+      }
+    } catch (error) {
+      throw new Error(`This account is blocked on Coffee & Code, but its Bluesky block could not be saved: ${errorMessage(error)}`);
+    }
+  }
+}
+
+async function unblockUser(did: string) {
+  const activeSession = requireSession();
+  if (!validBlockDid(did) || did === activeSession.did) throw new Error('Choose a valid account to unblock.');
+  const record = (await loadUserBlocks(activeSession.did)).find((item) => item.subject === did);
+  if (!record) return;
+  await repoRequest('com.atproto.repo.deleteRecord', {
+    repo: activeSession.did,
+    collection: blockCollection,
+    rkey: record.rkey,
+  });
+  blockedRecords = blockedRecords.filter((item) => item.subject !== did);
+  blockedRecordsPromise = Promise.resolve(blockedRecords);
+  applyBlockedUserFilter(new Set(blockedRecords.map((item) => item.subject)));
 }
 
 async function createFollowRecord(collection: string, record: Record<string, unknown>, did: string) {

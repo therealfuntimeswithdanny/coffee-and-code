@@ -489,7 +489,7 @@ forum.get('/', async (c) => {
   const postCards = pagePosts.map((post) => {
     const state = states.get(post.uri) || { pinned: false, locked: false, hidden: false };
     const tags = post.tags.map((tag) => `<a href="/forum?tag=${encodeURIComponent(tag)}">${escapeHtml(tag)}</a>`).join('');
-    return `<article class="forum-post-card">
+    return `<article class="forum-post-card" data-block-author-did="${escapeHtml(post.authorDid)}">
       <div class="forum-post-card__byline">${post.avatar ? `<img src="${escapeHtml(post.avatar)}" alt="" width="34" height="34">` : ''}
         <a href="/user/${encodeURIComponent(post.handle)}">${escapeHtml(post.name)}</a><time datetime="${escapeHtml(post.createdAt)}">${escapeHtml(formatDate(post.createdAt))}</time>
         ${state.pinned ? '<span class="forum-badge">Pinned</span>' : ''}</div>
@@ -634,7 +634,7 @@ forum.get('/:handle/:rkey', async (c) => {
       nextAncestors.add(reply.uri);
       const children = renderReplies(reply.uri, depth + 1, nextAncestors);
       const replyState = states.get(reply.uri) || { pinned: false, locked: false, hidden: false };
-      return `<article class="forum-reply" id="reply-${encodeURIComponent(reply.uri)}" style="--reply-depth:${Math.min(depth, 5)}">
+      return `<article class="forum-reply" id="reply-${encodeURIComponent(reply.uri)}" data-block-author-did="${escapeHtml(reply.authorDid)}" style="--reply-depth:${Math.min(depth, 5)}">
         <header><a href="/user/${encodeURIComponent(reply.handle)}">${escapeHtml(reply.name)}</a><time datetime="${escapeHtml(reply.createdAt)}">${escapeHtml(formatDate(reply.createdAt))}</time></header>
         <div class="prose">${renderMarkdown(reply.content)}</div>${imageMarkup(reply.images, reply.authorDid, reply.pds)}
         ${voteControls(reply, reply.score)}${moderatorControls(reply.uri, reply.cid, config.uri, replyState, config.moderators)}
@@ -644,7 +644,7 @@ forum.get('/:handle/:rkey', async (c) => {
     }).join('');
   };
   const postPds = await getPdsEndpoint(post.authorDid, c.env.OWNER_PDS);
-  const postContent = `<article class="forum-thread" data-forum-thread data-forum-uri="${escapeHtml(config.uri)}" data-root-uri="${escapeHtml(post.uri)}" data-root-cid="${escapeHtml(post.cid)}" data-locked="${rootState.locked}">
+  const postContent = `<article class="forum-thread" data-forum-thread data-block-author-did="${escapeHtml(post.authorDid)}" data-forum-uri="${escapeHtml(config.uri)}" data-root-uri="${escapeHtml(post.uri)}" data-root-cid="${escapeHtml(post.cid)}" data-locked="${rootState.locked}">
     <a class="read-link" href="/forum"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All discussions</a>
     <p class="eyebrow">${rootState.pinned ? 'Pinned discussion' : 'Community discussion'}</p>
     <h1>${escapeHtml(post.title)}</h1>

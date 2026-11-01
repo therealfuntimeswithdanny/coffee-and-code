@@ -112,18 +112,18 @@ async function renderPost(
     <a class="article-tag" href="/tags?tag=${encodeURIComponent(tag)}">${escapeHtml(tag)}</a>`).join('');
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
-  const authorAvatar = post.author?.avatar ? proxyAvatarUrl(post.author.avatar) : '';
+  const authorAvatar = post.author?.avatar ? escapeHtml(proxyAvatarUrl(post.author.avatar)) : '';
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleDescription);
   const pageOrigin = new URL(pageUrl).origin;
   const ogImage = post.cover
     ? proxyImageUrl(post.cover, pageOrigin)
     : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}?browserRun=true`)}`;
-  const proxiedCoverImage = post.cover ? proxyImageUrl(post.cover, pds) : undefined;
+  const proxiedCoverImage = post.cover ? escapeHtml(proxyImageUrl(post.cover, pds)) : undefined;
   const recommendationHtml = recommendations.map((item) => `
-    <article class="recommendation-card">
+    <article class="recommendation-card" data-block-author-did="${escapeHtml(item.author?.did || item.repoDid || c.env.OWNER_DID)}">
       <a class="recommendation-card__image${item.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(item.path)}" aria-label="Read ${escapeHtml(item.title || 'Untitled')}">
-        ${item.cover ? `<img src="${proxyImageUrl(item.cover, pds, 'feed_medium')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+        ${item.cover ? `<img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_medium'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
       <div class="recommendation-card__body"><p class="eyebrow">More to read</p><h3><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></h3>
         ${item.description ? `<p>${escapeHtml(item.description.length > 125 ? `${item.description.slice(0, 122).trimEnd()}…` : item.description)}</p>` : ''}
@@ -198,7 +198,7 @@ async function renderPost(
   `;
 
   const body = `
-    <div class="article-layout">
+    <div class="article-layout" data-block-author-did="${escapeHtml(post.author?.did || post.repoDid || c.env.OWNER_DID)}">
     <article class="article">
       <a href="/" class="article__back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All stories</a>
       <header class="article__header">

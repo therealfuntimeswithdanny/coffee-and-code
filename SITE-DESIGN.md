@@ -37,7 +37,7 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 - A full-width sticky header sits above a centered content area, with a fine accent-colored bottom rule and dark coffee-brown surface.
 - On wide screens, the header has three zones: **Latest**, **Archive**, and **Authors** navigation on the left; publication wordmark centered; and **Search**, **RSS**, Bluesky, and **Log in** actions on the right.
 - The wordmark uses the editorial serif. Keep the header focused on publication navigation and actions, without an extra descriptor beneath the logo. After scrolling, the header shortens and gains a soft shadow; the wordmark scales down.
-- On mobile, replace desktop navigation with a menu button. Keep the wordmark and compact actions visible; reveal navigation in a full-width dropdown below the header.
+- On mobile, replace desktop navigation with an accessible menu button. Keep the wordmark and compact actions visible; reveal navigation in a full-width dropdown below the header, announce its expanded state, and let visitors dismiss it with Escape, an outside click, or a selected action.
 - Main content uses a centered maximum width of about 1180px, with 24px desktop gutters and 16px phone gutters.
 - The footer uses the raised coffee-brown surface and a top rule. It contains publication identity, description, social/feed links, and a compact copyright line.
 - A floating back-to-top control appears after the visitor scrolls down the page.
@@ -69,6 +69,7 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 - Start with an archive search field and submit button.
 - Use a ruled section heading with **Archive** and a result count.
 - Present stories as a responsive grid/list of editorial entries. Each entry may include a landscape image, date, headline, short excerpt, view count, and read link.
+- Append older stories in batches of 30 with a clear **Load more stories** action; hide the action when the archive is exhausted.
 - Preserve clear empty states for an archive with no stories and for a search with no matches.
 
 ### Authors
@@ -97,7 +98,8 @@ Maintain readable contrast. Use soft ivory for long-form reading text and the sa
 - **Story entries:** Image-led but restrained, minimal rounding, consistent image ratios, fine separators, and clear headline hierarchy. Keep thumbnail crops, headline spacing, and metadata placement consistent across home, archive, and recommendations.
 - **Links:** Inherit text color by default; use the sage/stone accent for reading actions and interactive emphasis. Keep keyboard focus clearly visible.
 - **Search:** Provide a site-wide search action in the header and a direct text-search form on the archive page.
-- **Account:** The header’s **Log in** action opens a focused AT Protocol sign-in page. Explain that sign-in happens with the visitor’s account provider and state the record permissions requested.
+- **Account:** The header’s **Log in** action opens a focused AT Protocol sign-in page. Explain that sign-in happens with the visitor’s account provider and state the record permissions requested. The account page includes a blocked-accounts list with an unblock action.
+- **User blocking:** Signed-in visitors can block an account from its profile after confirming in an accessible dialog. They can optionally create a separate Bluesky block. Coffee & Code blocks hide that author’s stories, comments, and forum posts only for the visitor who created the block.
 - **Article engagement:** Place the view total and like/dislike controls together beneath the article byline. Signed-in readers create a public view record whenever they load an article and can add, switch, or remove their reaction; signed-out readers can still see public totals.
 - **Mobile menu:** Toggle open/closed from the menu button; close it when a navigation link is selected.
 - **Back to top:** Reveal on scroll and return smoothly to the top when activated.
