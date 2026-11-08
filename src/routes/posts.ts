@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
-import { renderContent, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
+import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
 
 const posts = new Hono<{ Bindings: Env }>();
@@ -88,10 +88,20 @@ async function renderPost(
 
   const processedContent = processImages(renderedContent, processImageSource);
 
+  const viewMode = requestUrl.searchParams.get('viewMode');
+  if (viewMode === 'markdown') {
+    const markdownBody = [
+      `# ${post.title}`,
+      post.description?.trim(),
+      renderHtmlAsMarkdown(processedContent),
+    ].filter(Boolean).join('\n\n');
+    return c.body(markdownBody, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+  }
+
   // Enhance HTML structure with prose classes for better styling
   const htmlContent = routeExternalLinks(enhanceHtmlStructure(processedContent));
   const pageUrl = new URL(c.req.url).toString();
-  const browserRun = new URL(c.req.url).searchParams.get('browserRun') === 'true';
+  const browserRun = viewMode === 'browseRun' || requestUrl.searchParams.get('browserRun') === 'true';
 
   // Escape HTML entities for safe attribute values
   const escapeHtml = (str: string) => str

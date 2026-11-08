@@ -228,6 +228,94 @@ export async function renderMarkdown(content: string): Promise<string> {
   }
 }
 
+function decodeHtmlEntities(text: string): string {
+  const namedEntities: Record<string, string> = {
+    amp: '&',
+    apos: "'",
+    copy: '©',
+    gt: '>',
+    ldquo: '“',
+    lsquo: '‘',
+    lt: '<',
+    mdash: '—',
+    nbsp: ' ',
+    ndash: '–',
+    quot: '"',
+    rdquo: '”',
+    rsquo: '’',
+  };
+
+  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, value: string) => {
+    if (value[0] === '#') {
+      const codePoint = value[1].toLowerCase() === 'x'
+        ? Number.parseInt(value.slice(2), 16)
+        : Number.parseInt(value.slice(1), 10);
+      return Number.isFinite(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : entity;
+    }
+
+    return namedEntities[value.toLowerCase()] ?? entity;
+  });
+}
+
+function markdownDestination(value: string): string {
+  return decodeHtmlEntities(value).replace(/\s/g, '%20').replace(/[()]/g, '\\$&');
+}
+
+function htmlTextToMarkdown(html: string): string {
+  let markdown = html
+    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_match, contents: string) => {
+      const language = contents.match(/<code\b[^>]*class=["'][^"']*language-([^ "';]+)[^"']*["']/i)?.[1] || '';
+      const code = decodeHtmlEntities(contents.replace(/<[^>]*>/g, '')).replace(/\n+$/, '');
+      return `\n\n\`\`\`${language}\n${code}\n\`\`\`\n\n`;
+    })
+    .replace(/<img\b([^>]*)\/?>/gi, (_match, attributes: string) => {
+      const getAttribute = (name: string) => attributes.match(new RegExp(`\\b${name}=["']([^"']*)["']`, 'i'))?.[1] || '';
+      const alt = decodeHtmlEntities(getAttribute('alt')).replace(/([\\[\]])/g, '\\$1');
+      const src = markdownDestination(getAttribute('src'));
+      const title = getAttribute('title');
+      return src ? `![${alt}](${src}${title ? ` "${decodeHtmlEntities(title).replace(/"/g, '\\"')}"` : ''})` : '';
+    })
+    .replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_match, attributes: string, contents: string) => {
+      const href = attributes.match(/\bhref=["']([^"']*)["']/i)?.[1];
+      const label = contents.replace(/<[^>]*>/g, '').trim();
+      return href ? `[${label || markdownDestination(href)}](${markdownDestination(href)})` : label;
+    })
+    .replace(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi, (_match, tag: string, contents: string) => {
+      const level = Number(tag[1]);
+      const heading = contents.replace(/<[^>]*>/g, '').trim();
+      return `\n\n${'#'.repeat(level)} ${heading}\n\n`;
+    })
+    .replace(/<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi, (_match, contents: string) => (
+      `\n\n${contents.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim().split('\n').map((line: string) => `> ${line.trim()}`).join('\n')}\n\n`
+    ))
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(/<\/li\s*>/gi, '')
+    .replace(/<\/?(?:ul|ol)\b[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)\s*>/gi, '**$1**')
+    .replace(/<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)\s*>/gi, '*$1*')
+    .replace(/<(?:del|s|strike)\b[^>]*>([\s\S]*?)<\/(?:del|s|strike)\s*>/gi, '~~$1~~')
+    .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_match, contents: string) => `\`${contents.replace(/`/g, '\\`')}\``)
+    .replace(/<hr\b[^>]*\/?>/gi, '\n\n---\n\n')
+    .replace(/<\/?(?:p|div|section|article|figure|figcaption|header|footer|main|aside)\b[^>]*>/gi, '\n\n')
+    .replace(/<[^>]*>/g, '');
+
+  return decodeHtmlEntities(markdown)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Converts sanitized article HTML into readable Markdown.
+ */
+export function renderHtmlAsMarkdown(html: string): string {
+  return htmlTextToMarkdown(html);
+}
+
 function safeEmbedUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   try {
