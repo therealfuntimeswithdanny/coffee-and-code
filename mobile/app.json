@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Coffee & Code",
+    "slug": "coffee-and-code",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": { "backgroundColor": "#281914" },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "cc.coffeencode.ios"
+    }
+  }
+}
