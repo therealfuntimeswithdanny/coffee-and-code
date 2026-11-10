@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
+import { restoreSession, signIn, signOut } from './oauth';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, View, RefreshControl,
@@ -106,6 +107,10 @@ export default function App() {
   const [activeTag, setActiveTag] = useState('');
   const [archiveStories, setArchiveStories] = useState([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
+  const [account, setAccount] = useState(null);
+  const [loginHandle, setLoginHandle] = useState('');
+  const [commentDraft, setCommentDraft] = useState('');
+  const [accountBusy, setAccountBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
@@ -128,6 +133,7 @@ export default function App() {
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
   useEffect(() => { AsyncStorage.getItem('coffee-and-code:saved').then((value) => setSaved(value ? JSON.parse(value) : [])).catch(() => {}); }, []);
+  useEffect(() => { restoreSession().then(setAccount).catch(() => {}); }, []);
 
   const stories = useMemo(() => {
     if (!feed) return [];
@@ -147,11 +153,8 @@ export default function App() {
     setEngagement(null);
     try {
       const storyUrl = story.markdownUrl || `${API}/documents/${encodeURIComponent(story.uri.split('/').pop())}.md?uri=${encodeURIComponent(story.uri)}`;
-      const [storyResponse, commentsResponse, engagementResponse] = await Promise.all([
-        fetch(storyUrl).catch(() => fetch(`${API}/documents/${encodeURIComponent(story.uri.split('/').pop())}?uri=${encodeURIComponent(story.uri)}`)),
-        fetch(`${API}/comments?subject=${encodeURIComponent(story.uri)}&limit=40`),
-        fetch(`${API}/reactions?subject=${encodeURIComponent(story.uri)}`),
-      ]);
+      const markdownResponse = await fetch(storyUrl).catch(() => null);
+      const storyResponse = markdownResponse?.ok ? markdownResponse : await fetch(`${API}/documents/${encodeURIComponent(story.uri.split('/').pop())}?uri=${encodeURIComponent(story.uri)}`);
       if (!storyResponse.ok) throw new Error(`Story request failed (${storyResponse.status}). Please try again.`);
       const responseText = await storyResponse.text();
       if (!responseText.trim()) throw new Error('This story has no readable content.');
@@ -163,14 +166,19 @@ export default function App() {
         if (parseError instanceof SyntaxError) setBody(responseText);
         else throw parseError;
       }
-      if (commentsResponse.ok) { const data = await commentsResponse.json(); setComments(data.records || []); }
-      if (engagementResponse.ok) setEngagement(await engagementResponse.json());
+      const [commentsResponse, engagementResponse] = await Promise.all([
+        fetch(`${API}/comments?subject=${encodeURIComponent(story.uri)}&limit=40${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
+        fetch(`${API}/reactions?subject=${encodeURIComponent(story.uri)}${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
+      ]);
+      if (commentsResponse?.ok) { const data = await commentsResponse.json(); setComments(data.records || []); }
+      if (engagementResponse?.ok) setEngagement(await engagementResponse.json());
+      if (account?.agent) account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: 'cc.coffeencode.interact.view', record: { $type: 'cc.coffeencode.interact.view', document: story.uri, createdAt: new Date().toISOString() } }).catch(() => {});
     } catch (e) {
       setError(e.message || 'This story could not be opened.');
     } finally {
       setArticleLoading(false);
     }
-  }, []);
+  }, [account]);
 
   const loadArchive = useCallback(async () => {
     setLoading(true);
@@ -185,11 +193,65 @@ export default function App() {
   }, []);
 
   const toggleSaved = async (story) => {
+    if (account?.agent) {
+      const collection = 'cc.coffeencode.save';
+      const { data } = await account.agent.com.atproto.repo.listRecords({ repo: account.session.did, collection, limit: 100 });
+      const existing = data.records.find((item) => item.value?.target?.document === story.uri);
+      if (existing) await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection, rkey: existing.uri.split('/').pop() });
+      else await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection, record: { $type: collection, target: { document: story.uri }, createdAt: new Date().toISOString() } });
+    }
     const exists = saved.some((item) => item.uri === story.uri);
     const next = exists ? saved.filter((item) => item.uri !== story.uri) : [story, ...saved];
     setSaved(next);
     try { await AsyncStorage.setItem('coffee-and-code:saved', JSON.stringify(next)); }
     catch { setError('Could not save this story on your device.'); }
+  };
+
+  const handleLogin = async () => {
+    if (!loginHandle.trim()) { setError('Enter your AT Protocol handle to continue.'); return; }
+    setAccountBusy(true); setError('');
+    try {
+      const response = await fetch(`${API}/authors/check?handle=${encodeURIComponent(loginHandle.trim())}`);
+      const data = response.ok ? await response.json() : {};
+      setAccount(await signIn(loginHandle.trim(), Boolean(data.isAuthor)));
+      setLoginHandle('');
+    } catch (e) { setError(e.message || 'Sign-in could not be completed.'); }
+    finally { setAccountBusy(false); }
+  };
+
+  const sendComment = async () => {
+    const text = commentDraft.trim();
+    if (!account?.agent) { setTab('Account'); setError('Sign in to post a comment.'); return; }
+    if (!text) return;
+    setAccountBusy(true); setError('');
+    try {
+      await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: 'cc.coffeencode.comment', record: { $type: 'cc.coffeencode.comment', subject: { uri: selected.uri }, text, createdAt: new Date().toISOString() } });
+      setCommentDraft('');
+      const response = await fetch(`${API}/comments?subject=${encodeURIComponent(selected.uri)}&limit=40&did=${encodeURIComponent(account.session.did)}`);
+      if (response.ok) setComments((await response.json()).records || []);
+    } catch (e) { setError(e.message || 'Could not publish your comment.'); }
+    finally { setAccountBusy(false); }
+  };
+
+  const toggleReaction = async (kind) => {
+    if (!account?.agent) { setTab('Account'); setError('Sign in to react to this story.'); return; }
+    const collection = `cc.coffeencode.interact.${kind}`;
+    setAccountBusy(true); setError('');
+    try {
+      const { data } = await account.agent.com.atproto.repo.listRecords({ repo: account.session.did, collection, limit: 100 });
+      const existing = data.records.find((item) => item.value?.document === selected.uri);
+      if (existing) await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection, rkey: existing.uri.split('/').pop() });
+      else {
+        const other = `cc.coffeencode.interact.${kind === 'like' ? 'dislike' : 'like'}`;
+        const { data: opposite } = await account.agent.com.atproto.repo.listRecords({ repo: account.session.did, collection: other, limit: 100 });
+        const previous = opposite.records.find((item) => item.value?.document === selected.uri);
+        await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection, record: { $type: collection, document: selected.uri, createdAt: new Date().toISOString() } });
+        if (previous) await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: other, rkey: previous.uri.split('/').pop() });
+      }
+      const response = await fetch(`${API}/reactions?subject=${encodeURIComponent(selected.uri)}&did=${encodeURIComponent(account.session.did)}`);
+      if (response.ok) setEngagement(await response.json());
+    } catch (e) { setError(e.message || 'Could not update your reaction.'); }
+    finally { setAccountBusy(false); }
   };
 
   const closeStory = () => { setSelected(null); setBody(''); setError(''); };
@@ -202,6 +264,8 @@ export default function App() {
     return matchesAuthor && matchesTag && haystack.includes(query.trim().toLocaleLowerCase());
   });
   const authors = feed?.authors || [];
+  const promotion = feed?.promotion;
+  const pinnedStories = (feed?.pinned || []).filter((story) => story.uri !== feed?.hero?.uri);
 
   const renderLatest = () => <ScrollView contentContainerStyle={styles.homeContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} /> }>
     <View style={styles.homeHeading}><View><Text style={styles.pageEyebrow}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}</Text><Text style={styles.pageTitle}>Top Stories</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Search the archive" onPress={() => { setTab('Archive'); if (!archiveLoaded) loadArchive(); }} style={styles.archiveShortcut}><SymbolView name="magnifyingglass" size={20} tintColor={C.ink} /></Pressable></View>
@@ -209,6 +273,8 @@ export default function App() {
     {error ? <View style={styles.empty}><Text style={styles.error}>{error}</Text><Pressable onPress={() => loadFeed()}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>
       : !stories.length ? <Text style={styles.emptyText}>No stories have been published yet. Please check back soon.</Text>
         : stories.map((story, index) => <StoryRow key={story.uri || `${story.title}-${index}`} story={story} featured={index === 0} compact={index > 0} onPress={() => openStory(story)} />)}
+    {!!pinnedStories.length && <><SectionBar title="Pinned" detail={`${pinnedStories.length} PICKS`} />{pinnedStories.map((story) => <StoryRow key={`pinned-${story.uri}`} story={story} compact onPress={() => openStory(story)} />)}</>}
+    {!!promotion && <Pressable style={styles.promotion} onPress={() => Linking.openURL(promotion.url)}><Text style={styles.promoEyebrow}>{promotion.eyebrow}</Text><Text style={styles.promoTitle}>{promotion.title}</Text><Text style={styles.promoDescription}>{promotion.description}</Text><Text style={styles.action}>{promotion.action}  ›</Text></Pressable>}
   </ScrollView>;
 
   const renderSearch = () => <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
@@ -238,6 +304,24 @@ export default function App() {
       : <><SectionBar title="Stories" detail={`${visibleStories.length} STORIES`} />{visibleStories.length ? visibleStories.map((story, index) => <StoryRow key={story.uri || `${story.title}-${index}`} story={story} onPress={() => openStory(story)} />) : <Text style={styles.emptyText}>No stories from this contributor are in the current edition.</Text>}</>}
   </ScrollView>;
 
+  const renderAccount = () => <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <Text style={styles.pageEyebrow}>COFFEE & CODE ACCOUNT</Text>
+    <Text style={styles.pageTitle}>{account ? 'You’re signed in' : 'Sign in'}</Text>
+    {account ? <View style={styles.accountCard}>
+      <View style={styles.accountAvatar}><SymbolView name="person.fill" size={25} tintColor={C.ink} /></View>
+      <Text style={styles.authorName}>Connected AT Protocol account</Text><Text style={styles.handle}>{account.session.did}</Text>
+      <Text style={styles.accountDescription}>Your account is connected securely. You can react to stories, publish comments, and use member features.</Text>
+      <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); setAccount(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
+    </View> : <View style={styles.accountCard}>
+      <Text style={styles.accountDescription}>Sign in with your AT Protocol account. Your provider handles the password and shows the permissions requested by Coffee & Code.</Text>
+      <Text style={styles.fieldLabel}>HANDLE OR ACCOUNT PROVIDER</Text>
+      <TextInput value={loginHandle} onChangeText={setLoginHandle} placeholder="name.bsky.social" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={handleLogin} style={styles.searchInput} accessibilityLabel="AT Protocol handle" />
+      {!!error && <Text style={styles.error}>{error}</Text>}
+      <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>CONTINUE SECURELY  →</Text>}</Pressable>
+      <Text style={styles.privacyNote}>Coffee & Code never asks for or stores your password.</Text>
+    </View>}
+  </ScrollView>;
+
   return <SafeAreaView style={styles.safe}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg} />
     <View style={styles.header}>
@@ -256,6 +340,10 @@ export default function App() {
           <Text style={styles.engagementStat}>◉  {engagement?.views ?? '—'} reads</Text><Text style={styles.engagementStat}>♡  {engagement?.likes ?? '—'} likes</Text><Text style={styles.engagementStat}>▤  {comments.length || engagement?.comments || 0} comments</Text>
           <Pressable onPress={() => toggleSaved(selected)} accessibilityRole="button" accessibilityLabel={saved.some((item) => item.uri === selected.uri) ? 'Remove from saved stories' : 'Save story'} style={styles.bookmark}><Text style={styles.action}>{saved.some((item) => item.uri === selected.uri) ? 'SAVED  ✓' : 'SAVE  +'}</Text></Pressable>
         </View>
+        <View style={styles.reactionActions}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.liked) }} disabled={accountBusy} onPress={() => toggleReaction('like')} style={[styles.reactionButton, engagement?.liked && styles.reactionSelected]}><SymbolView name="hand.thumbsup" size={17} tintColor={engagement?.liked ? C.bg : C.muted} /><Text style={[styles.action, engagement?.liked && styles.reactionSelectedText]}>{engagement?.liked ? 'LIKED' : 'LIKE'}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.disliked) }} disabled={accountBusy} onPress={() => toggleReaction('dislike')} style={[styles.reactionButton, engagement?.disliked && styles.reactionSelected]}><SymbolView name="hand.thumbsdown" size={17} tintColor={engagement?.disliked ? C.bg : C.muted} /><Text style={[styles.action, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.disliked ? 'DISLIKED' : 'DISLIKE'}</Text></Pressable>
+        </View>
         <View style={styles.rule} />
         {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody markdown={body} />}
         <SectionBar title="Conversation" detail={`${comments.length} COMMENTS`} />
@@ -263,15 +351,17 @@ export default function App() {
           <View style={styles.commentHeader}>{comment.avatar ? <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} /> : <View style={styles.commentAvatarPlaceholder} />}<View><Text style={styles.commentAuthor}>{comment.displayName || comment.handle}</Text><Text style={styles.meta}>{formatDate(comment.createdAt)}</Text></View></View>
           <Text style={styles.commentText}>{comment.text}</Text>
         </View>) : <Text style={styles.emptyText}>No comments yet. Join the conversation on the Coffee & Code website.</Text>}
+        <View style={styles.commentComposer}><Text style={styles.fieldLabel}>{account ? 'ADD TO THE CONVERSATION' : 'SIGN IN TO JOIN THE CONVERSATION'}</Text><TextInput value={commentDraft} onChangeText={setCommentDraft} editable={Boolean(account) && !accountBusy} placeholder={account ? 'Write a thoughtful comment…' : 'Sign in from the Account tab to comment'} placeholderTextColor={C.muted} multiline maxLength={3000} style={[styles.commentInput, !account && styles.disabledInput]} /><Pressable disabled={!account || accountBusy || !commentDraft.trim()} onPress={sendComment} style={[styles.primaryButton, (!account || !commentDraft.trim()) && styles.disabledButton]}><Text style={styles.primaryButtonText}>{accountBusy ? 'PUBLISHING…' : 'PUBLISH COMMENT'}</Text></Pressable></View>
         <Pressable onPress={() => Linking.openURL(`https://coffeencode.cc${selected.path || '/' }#comments`)} style={styles.outbound}><Text style={styles.action}>OPEN DISCUSSION ON THE WEBSITE  ↗</Text></Pressable>
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
-      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Saved' ? renderSaved() : renderAuthors()}
+      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
     {!selected && !loading && <View style={styles.tabBar}>
       <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest'} onPress={() => { setTab('Latest'); setActiveAuthor(null); }} />
       <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { setTab('Archive'); setActiveAuthor(null); if (!archiveLoaded) loadArchive(); }} />
       <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => { setTab('Saved'); setActiveAuthor(null); }} />
       <TabButton label="Authors" icon="person.2.fill" active={tab === 'Authors'} onPress={() => { setTab('Authors'); setActiveAuthor(null); }} />
+      <TabButton label="Account" icon="person.crop.circle.fill" active={tab === 'Account'} onPress={() => { setTab('Account'); setActiveAuthor(null); }} />
     </View>}
   </SafeAreaView>;
 }
@@ -296,7 +386,11 @@ const styles = StyleSheet.create({
   pageEyebrow: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginTop: 24, marginBottom: 8 }, pageTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 34, lineHeight: 40, marginBottom: 16 }, searchInput: { minHeight: 49, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 14, fontSize: 15, backgroundColor: C.panel, marginBottom: 10 },
   tagStrip: { flexGrow: 0, marginVertical: 5 }, tagContent: { paddingRight: 8 }, tagChip: { borderWidth: 1, borderColor: C.line, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, marginRight: 7 }, tagChipActive: { backgroundColor: C.muted, borderColor: C.muted }, tagText: { color: C.muted, fontSize: 11 }, tagTextActive: { color: C.bg, fontWeight: '700' },
   engagementRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 13 }, engagementStat: { color: C.muted, fontSize: 11, marginRight: 13, marginVertical: 5 }, bookmark: { marginLeft: 'auto', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 9 },
+  reactionActions: { flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 3 }, reactionButton: { flex: 1, minHeight: 43, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, reactionSelected: { backgroundColor: C.muted, borderColor: C.muted }, reactionSelectedText: { color: C.bg },
   comment: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 15 }, commentHeader: { flexDirection: 'row', alignItems: 'center' }, commentAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10 }, commentAvatarPlaceholder: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.panel, marginRight: 10 }, commentAuthor: { color: C.ink, fontWeight: '700', fontSize: 13 }, commentText: { color: C.reading, fontSize: 15, lineHeight: 22, marginTop: 10 }, outbound: { paddingVertical: 17, alignItems: 'center', backgroundColor: C.panel, marginTop: 14 },
+  commentComposer: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 16, paddingTop: 17 }, fieldLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 9 }, commentInput: { minHeight: 92, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, color: C.ink, padding: 12, textAlignVertical: 'top', fontSize: 15, marginBottom: 10 }, disabledInput: { opacity: 0.7 },
+  promotion: { marginTop: 22, padding: 19, borderRadius: 12, backgroundColor: C.panel }, promoEyebrow: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.4 }, promoTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22, lineHeight: 27, fontWeight: '700', marginTop: 9 }, promoDescription: { color: C.muted, fontSize: 13, lineHeight: 19, marginVertical: 9 },
+  accountCard: { backgroundColor: C.panel, borderRadius: 14, padding: 20, marginTop: 8 }, accountAvatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center', marginBottom: 17 }, accountDescription: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 20 }, primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: C.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }, primaryButtonText: { color: C.bg, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, disabledButton: { opacity: 0.5 }, secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', marginTop: 18 }, privacyNote: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 15, lineHeight: 16 },
   authorRow: { minHeight: 83, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', paddingVertical: 13 }, avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panel }, avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center' }, avatarInitial: { color: C.muted, fontFamily: 'Georgia', fontSize: 22 }, authorCopy: { flex: 1, paddingLeft: 13 }, authorName: { color: C.ink, fontFamily: 'Georgia', fontSize: 19, fontWeight: '700' }, chevron: { color: C.muted, fontSize: 26, paddingHorizontal: 5 }, handle: { color: C.muted, marginTop: -10, marginBottom: 14, fontSize: 13 }, backLink: { marginTop: 24, marginBottom: 12 },
   footer: { marginTop: 25, backgroundColor: C.panel, padding: 18 }, footerBrand: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 19 }, footerText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
   tabBar: { minHeight: 60, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }, tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2 }, tabActive: { color: C.ink },

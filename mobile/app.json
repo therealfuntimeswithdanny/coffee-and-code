@@ -4,10 +4,14 @@
     "slug": "coffee-and-code",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "cc.coffeencode",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "cc.coffeencode.ios"
-    }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }

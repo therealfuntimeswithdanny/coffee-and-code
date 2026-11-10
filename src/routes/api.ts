@@ -96,6 +96,13 @@ api.get('/home', async (c) => {
       name: c.env.PUB_NAME,
       description: c.env.PUB_DESCRIPTION,
     },
+    promotion: {
+      eyebrow: 'CONTRIBUTOR CALL',
+      title: 'Bring your perspective to the page.',
+      description: 'Coffee & Code is strengthened by independent writers with something useful to say.',
+      action: 'Become a contributor',
+      url: `${origin}/become-an-author`,
+    },
     totalAvailable: documents.length,
     hero: summary(hero),
     latest: latest.map((document) => documentSummary(document, origin, pds)),
