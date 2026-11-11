@@ -3,7 +3,8 @@ import { Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
-import { restoreSession, signIn, signOut } from './oauth';
+import { WebView } from 'react-native-webview';
+import { createAccount, restoreSession, signIn, signOut } from './oauth';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, View, RefreshControl,
@@ -99,47 +100,106 @@ function storiesFromRecords(records, postByUri, cachedStories = []) {
   return [...unique.values()];
 }
 
-function plainMarkdown(value = '') {
-  return value.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[*_~`]/g, '').trim();
-}
-
 function InlineText({ text, style }) {
   const parts = [];
-  const pattern = /(https?:\/\/[^\s)]+|\[[^\]]+\]\(https?:\/\/[^)]+\))/g;
+  const pattern = /(\[[^\]]+\]\(https?:\/\/[^)]+\)|https?:\/\/[^\s)]+|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
   let cursor = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > cursor) parts.push({ text: text.slice(cursor, match.index) });
-    const link = match[0];
-    const markdown = link.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
-    parts.push({ text: markdown ? markdown[1] : link, url: markdown ? markdown[2] : link });
+    const token = match[0];
+    const markdownLink = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    if (markdownLink) parts.push({ text: markdownLink[1], url: markdownLink[2] });
+    else if (/^https?:\/\//.test(token)) parts.push({ text: token, url: token });
+    else if (/^\*\*/.test(token) || /^__/.test(token)) parts.push({ text: token.slice(2, -2), format: 'strong' });
+    else if (/^~~/.test(token)) parts.push({ text: token.slice(2, -2), format: 'strike' });
+    else if (/^`/.test(token)) parts.push({ text: token.slice(1, -1), format: 'code' });
+    else parts.push({ text: token.slice(1, -1), format: 'em' });
     cursor = pattern.lastIndex;
   }
   if (cursor < text.length) parts.push({ text: text.slice(cursor) });
   return <Text style={style}>{parts.map((part, i) => part.url
     ? <Text key={i} style={styles.inlineLink} onPress={() => Linking.openURL(part.url)}>{part.text}</Text>
-    : <Text key={i}>{part.text}</Text>)}</Text>;
+    : <Text key={i} style={part.format === 'strong' ? styles.markdownStrong : part.format === 'em' ? styles.markdownEm : part.format === 'strike' ? styles.markdownStrike : part.format === 'code' ? styles.markdownInlineCode : undefined}>{part.text}</Text>)}</Text>;
+}
+
+function ArticleEmbed({ data }) {
+  let embed;
+  try {
+    embed = JSON.parse(decodeURIComponent(data));
+  } catch {
+    return null;
+  }
+  const title = typeof embed.title === 'string' && embed.title.trim() ? embed.title.trim() : 'Embedded content';
+  const height = Number.isInteger(embed.height) ? Math.max(180, Math.min(900, embed.height)) : 250;
+  const safeSrc = typeof embed.src === 'string' && /^https:\/\//i.test(embed.src) ? embed.src : '';
+  const srcdoc = typeof embed.srcdoc === 'string' ? embed.srcdoc : '';
+  if (!safeSrc && !srcdoc) return null;
+  const escapeAttribute = (value) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const iframe = `<iframe title="${escapeAttribute(title)}"${safeSrc ? ` src="${escapeAttribute(safeSrc)}"` : ''}${srcdoc ? ` srcdoc="${escapeAttribute(srcdoc)}"` : ''} sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen style="width:100%;height:${height}px;border:0"></iframe>`;
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"></head><body style="margin:0;background:transparent;overflow:hidden">${iframe}</body></html>`;
+  return <View style={styles.embedFrame}><WebView source={{ html, baseUrl: 'https://coffeencode.cc' }} style={{ height, backgroundColor: 'transparent' }} javaScriptEnabled domStorageEnabled={false} originWhitelist={['https://*']} mixedContentMode="never" allowFileAccess={false} allowUniversalAccessFromFileURLs={false} setSupportMultipleWindows={false} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction /></View>;
 }
 
 function ArticleBody({ markdown }) {
   const normalized = markdown.replace(/^---[\s\S]*?---\s*/, '').replace(/^# .+\n+/, '');
-  const blocks = normalized.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
+  const lines = normalized.split('\n');
+  const blocks = [];
+  for (let index = 0; index < lines.length;) {
+    if (!lines[index].trim()) { index += 1; continue; }
+    if (/^\s*:::cc-embed\s+/.test(lines[index])) { blocks.push(lines[index++].trim()); continue; }
+    if (/^\s*```/.test(lines[index])) {
+      const code = [lines[index++]];
+      while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++]);
+      if (index < lines.length) code.push(lines[index++]);
+      blocks.push(code.join('\n'));
+      continue;
+    }
+    if (/^\s*>/.test(lines[index])) {
+      const quote = [];
+      while (index < lines.length && /^\s*>/.test(lines[index])) quote.push(lines[index++]);
+      blocks.push(quote.join('\n'));
+      continue;
+    }
+    if (/^\s*(?:[-*+]\s|\d+[.)]\s)/.test(lines[index])) {
+      const list = [];
+      while (index < lines.length && (/^\s*(?:[-*+]\s|\d+[.)]\s)/.test(lines[index]) || /^\s{2,}\S/.test(lines[index]))) list.push(lines[index++]);
+      blocks.push(list.join('\n'));
+      continue;
+    }
+    if (/^\s*#{1,6}\s|^\s*([-*_])\1\1+\s*$|^\s*!\[[^\]]*\]\(https?:\/\/[^)]+\)\s*$/.test(lines[index])) {
+      blocks.push(lines[index++].trim());
+      continue;
+    }
+    const paragraph = [];
+    while (index < lines.length && lines[index].trim() && !/^\s*(?:```|>|#{1,6}\s|[-*+]\s|\d+[.)]\s|([-*_])\1\1+\s*$|!\[[^\]]*\]\(https?:\/\/[^)]+\)\s*$)/.test(lines[index])) paragraph.push(lines[index++]);
+    if (paragraph.length) blocks.push(paragraph.join('\n').trim());
+  }
   return <View style={styles.prose}>{blocks.map((block, index) => {
+    const embed = block.match(/^:::cc-embed\s+(.+)$/);
+    if (embed) return <ArticleEmbed key={index} data={embed[1]} />;
     if (/^\s*([-*_])\1\1+\s*$/.test(block)) return <View key={index} style={styles.rule} />;
-    const heading = block.match(/^(#{1,4})\s+(.+)$/s);
-    if (heading) return <InlineText key={index} text={plainMarkdown(heading[2])} style={[styles.articleHeading, heading[1].length > 2 && styles.articleSubheading]} />;
-    if (/^>\s?/.test(block)) return <InlineText key={index} text={plainMarkdown(block.replace(/^>\s?/gm, '').replace(/\n/g, ' '))} style={styles.quote} />;
-    if (/^[-*+]\s/m.test(block) || /^\d+\.\s/m.test(block)) {
+    const heading = block.match(/^(#{1,6})\s+(.+)$/s);
+    if (heading) return <InlineText key={index} text={heading[2]} style={[styles.articleHeading, heading[1].length > 2 && styles.articleSubheading]} />;
+    if (/^>\s?/.test(block)) return <InlineText key={index} text={block.replace(/^\s*>\s?/gm, '').replace(/\n/g, ' ')} style={styles.quote} />;
+    if (/^\s*(?:[-*+]\s|\d+[.)]\s)/m.test(block)) {
       const items = block.split('\n').filter(Boolean);
       return <View key={index} style={styles.listBlock}>{items.map((item, itemIndex) => {
-        const content = item.replace(/^\s*(?:[-*+]|\d+\.)\s+/, '');
-        return <View key={itemIndex} style={styles.listItem}><Text style={styles.bullet}>{/^\d+\./.test(item) ? `${itemIndex + 1}.` : '•'}</Text><InlineText text={plainMarkdown(content)} style={styles.paragraph} /></View>;
+        const content = item.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');
+        const marker = item.match(/^\s*(\d+)[.)]\s+/);
+        const nested = /^\s{2,}/.test(item);
+        return <View key={itemIndex} style={[styles.listItem, nested && styles.nestedListItem]}><Text style={styles.bullet}>{marker?.[1] || '•'}</Text><InlineText text={content} style={styles.paragraph} /></View>;
       })}</View>;
     }
     if (/^```/.test(block)) return <Text key={index} style={styles.code}>{block.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '')}</Text>;
     const image = block.match(/^!\[([^\]]*)\]\((https?:\/\/[^)]+)\)$/);
     if (image) return <Image key={index} source={{ uri: image[2] }} accessibilityLabel={image[1]} style={styles.articleImage} resizeMode="cover" />;
-    return <InlineText key={index} text={plainMarkdown(block.replace(/\n/g, ' '))} style={styles.paragraph} />;
+    const tableRows = block.split('\n').filter((row) => /^\s*\|/.test(row));
+    if (tableRows.length >= 2 && /^\s*\|?\s*:?-{3,}/.test(tableRows[1])) {
+      const rows = tableRows.filter((row) => !/^\s*\|?\s*:?-{3,}/.test(row)).map((row) => row.replace(/^\s*\||\|\s*$/g, '').split('|').map((cell) => cell.trim()));
+      return <ScrollView key={index} horizontal showsHorizontalScrollIndicator style={styles.tableScroll}><View>{rows.map((row, rowIndex) => <View key={rowIndex} style={[styles.tableRow, rowIndex === 0 && styles.tableHeaderRow]}>{row.map((cell, cellIndex) => <View key={cellIndex} style={styles.tableCell}><InlineText text={cell} style={[styles.tableCellText, rowIndex === 0 && styles.tableHeaderText]} /></View>)}</View>)}</View></ScrollView>;
+    }
+    return <InlineText key={index} text={block.replace(/\n/g, ' ')} style={styles.paragraph} />;
   })}</View>;
 }
 
@@ -201,6 +261,9 @@ export default function App() {
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [loginHandle, setLoginHandle] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState('');
   const [commentDraft, setCommentDraft] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -535,6 +598,36 @@ export default function App() {
     finally { setAccountBusy(false); }
   };
 
+  const getInviteCode = async () => {
+    if (inviteLoading) return;
+    setInviteLoading(true);
+    setInviteError('');
+    try {
+      const response = await fetch(`${API}/invite-code`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'An invite code is temporarily unavailable. Please try again.');
+      if (typeof payload.code !== 'string' || !payload.code.trim()) throw new Error('The invite service returned an invalid code.');
+      setInviteCode(payload.code.trim());
+    } catch (e) {
+      setInviteError(e.message || 'Could not get an invite code.');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const continueAccountCreation = async () => {
+    if (!inviteCode || accountBusy) return;
+    setAccountBusy(true);
+    setError('');
+    try {
+      setAccount(await createAccount());
+    } catch (e) {
+      setError(e.message || 'Account creation could not be started.');
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
   const sendComment = async () => {
     const text = commentDraft.trim();
     if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to post a comment.'); return; }
@@ -694,12 +787,12 @@ export default function App() {
       : !stories.length ? <Text style={styles.emptyText}>No stories have been published yet. Please check back soon.</Text>
         : topStories.map((story, index) => <StoryRow key={story.uri || `${story.title}-${index}`} story={story} featured={index === 0} compact={index > 0} onPress={() => openStory(story)} />)}
     {!!pinnedStories.length && <><SectionBar title="Pinned" detail={`${pinnedStories.length} PICKS`} />{pinnedStories.map((story) => <StoryRow key={`pinned-${story.uri}`} story={story} compact onPress={() => openStory(story)} />)}</>}
+    {!!promotion && <Pressable style={styles.promotion} onPress={() => Linking.openURL(promotion.url)}><Text style={styles.promoTitle}>We're looking for writers</Text><Text style={styles.promoDescription}>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</Text><Text style={styles.action}>WRITE FOR US  ›</Text></Pressable>}
     {!!remainingLatest.length && <><SectionBar title="More stories" detail={`${remainingLatest.length} STORIES`} />{remainingLatest.map((story) => <StoryRow key={`more-${story.uri}`} story={story} compact onPress={() => openStory(story)} />)}</>}
     {!!authors.length && <><SectionBar title="Authors" />{authors.map((author) => <Pressable key={author.did} style={styles.authorRow} onPress={() => openContributor(author)}>
       {author.avatar ? <Image source={{ uri: author.avatar }} accessibilityLabel={`${author.displayName || author.handle} profile photo`} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Text style={styles.avatarInitial}>{(author.displayName || author.handle || 'C')[0].toUpperCase()}</Text></View>}
       <View style={styles.authorCopy}><Text style={styles.authorName}>{author.displayName || author.handle}</Text><Text style={styles.meta}>@{author.handle}  ·  {author.storyCount} {author.storyCount === 1 ? 'STORY' : 'STORIES'}</Text></View><Text style={styles.chevron}>›</Text>
     </Pressable>)}</>}
-    {!!promotion && <Pressable style={styles.promotion} onPress={() => Linking.openURL(promotion.url)}><Text style={styles.promoTitle}>We're looking for writers</Text><Text style={styles.promoDescription}>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</Text><Text style={styles.action}>WRITE FOR US  ›</Text></Pressable>}
   </ScrollView>;
 
   const renderSearch = () => <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
@@ -805,6 +898,22 @@ export default function App() {
         <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>CONTINUE SECURELY  →</Text>}</Pressable>
         <Text style={styles.privacyNote}>Coffee & Code never asks for or stores your password.</Text>
       </>}
+      <View style={styles.createAccountCard}>
+          <Text style={styles.accountProfileName}>New to Coffee & Code?</Text>
+          <Text style={styles.accountDescription}>Create an account on our AT Protocol service. You’ll need an invite code to finish signup.</Text>
+          {IS_EXPO_GO && <Text style={styles.accountDescription}>You can get the code here, then continue signup in the Coffee & Code development app.</Text>}
+          {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+          {!!inviteError && <Text accessibilityRole="alert" style={styles.error}>{inviteError}</Text>}
+          {!inviteCode ? <Pressable accessibilityRole="button" disabled={inviteLoading} onPress={getInviteCode} style={styles.secondaryButton}>
+            {inviteLoading ? <ActivityIndicator color={C.muted} /> : <Text style={styles.action}>CREATE ACCOUNT</Text>}
+          </Pressable> : <>
+            <Text style={styles.fieldLabel}>YOUR INVITE CODE · PRESS AND HOLD TO COPY</Text>
+            <Text selectable style={styles.inviteCode}>{inviteCode}</Text>
+            <Pressable accessibilityRole="button" disabled={accountBusy} onPress={continueAccountCreation} style={[styles.primaryButton, styles.inviteContinue]}>
+              {accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>CONTINUE TO SIGNUP  →</Text>}
+            </Pressable>
+          </>}
+      </View>
     </View>}
   </ScrollView>;
 
@@ -849,7 +958,6 @@ export default function App() {
           <TextInput value={commentDraft} onChangeText={setCommentDraft} editable={Boolean(account) && !accountBusy} placeholder={account ? replyTarget ? 'Write a reply…' : 'Write a thoughtful comment…' : 'Sign in from the Account tab to comment'} placeholderTextColor={C.muted} multiline maxLength={3000} style={[styles.commentInput, !account && styles.disabledInput]} />
           <Pressable disabled={accountBusy || Boolean(account && !commentDraft.trim())} onPress={sendComment} style={[styles.primaryButton, (accountBusy || Boolean(account && !commentDraft.trim())) && styles.disabledButton]}><Text style={styles.primaryButtonText}>{accountBusy ? 'PUBLISHING…' : !account ? 'SIGN IN TO COMMENT' : replyTarget ? 'PUBLISH REPLY' : 'PUBLISH COMMENT'}</Text></Pressable>
         </View>
-        <Pressable onPress={() => Linking.openURL(`https://coffeencode.cc${selected.path || '/' }#comments`)} style={styles.outbound}><Text style={styles.action}>OPEN DISCUSSION ON THE WEBSITE  ↗</Text></Pressable>
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
       : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
@@ -878,16 +986,16 @@ const styles = StyleSheet.create({
   storyTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 23, lineHeight: 29, marginBottom: 8 }, summary: { color: C.muted, fontSize: 15, lineHeight: 23, marginBottom: 8 }, meta: { color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }, read: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginTop: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }, muted: { color: C.muted, fontSize: 14 }, empty: { paddingVertical: 30 }, emptyTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22 }, emptyText: { color: C.muted, paddingVertical: 18, lineHeight: 24 }, error: { color: C.error, lineHeight: 23, marginBottom: 12 },
   launchLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 46, backgroundColor: C.bg }, launchMark: { width: 126, height: 126, marginBottom: 21 }, launchTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 30, letterSpacing: -0.7 }, launchSubtitle: { color: C.muted, fontFamily: 'Georgia', fontSize: 15, marginTop: 8 }, launchSpinner: { marginTop: 42 }, launchStatus: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.6, marginTop: 13 },
-  article: { paddingHorizontal: 22, paddingTop: 21, paddingBottom: 130 }, cover: { width: '100%', height: 218, marginBottom: 23, backgroundColor: C.panel }, articleTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 35, lineHeight: 41, marginBottom: 13 }, dek: { color: C.muted, fontFamily: 'Georgia', fontSize: 19, lineHeight: 28, marginBottom: 13 }, rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 20 },
-  prose: { paddingTop: 2 }, paragraph: { color: C.reading, fontSize: 17, lineHeight: 28, marginBottom: 19 }, articleHeading: { color: C.ink, fontFamily: 'Georgia', fontSize: 26, lineHeight: 33, fontWeight: '700', marginTop: 9, marginBottom: 14 }, articleSubheading: { fontSize: 21, lineHeight: 28 }, quote: { color: C.reading, fontFamily: 'Georgia', fontSize: 19, lineHeight: 29, borderLeftWidth: 2, borderLeftColor: C.muted, paddingLeft: 15, marginBottom: 19 }, listBlock: { marginBottom: 8 }, listItem: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: 3 }, bullet: { width: 24, color: C.muted, fontSize: 17, lineHeight: 28 }, code: { color: C.reading, backgroundColor: C.panel, padding: 14, fontFamily: 'Menlo', fontSize: 13, lineHeight: 20, marginBottom: 18 }, articleImage: { width: '100%', height: 220, marginBottom: 20, backgroundColor: C.panel }, inlineLink: { color: C.muted, textDecorationLine: 'underline' }, returnButton: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 18, paddingVertical: 22 },
+  article: { paddingHorizontal: 22, paddingTop: 21, paddingBottom: 130 }, cover: { width: '100%', height: 218, marginBottom: 23, backgroundColor: C.panel }, articleTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 37, lineHeight: 44, marginBottom: 13 }, dek: { color: C.muted, fontFamily: 'Georgia', fontSize: 20, lineHeight: 30, marginBottom: 13 }, rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 20 },
+  prose: { paddingTop: 2 }, embedFrame: { marginBottom: 22, overflow: 'hidden', borderRadius: 8, backgroundColor: C.panel }, paragraph: { color: C.reading, fontSize: 19, lineHeight: 31, marginBottom: 21 }, articleHeading: { color: C.ink, fontFamily: 'Georgia', fontSize: 28, lineHeight: 36, fontWeight: '700', marginTop: 10, marginBottom: 16 }, articleSubheading: { fontSize: 23, lineHeight: 31 }, quote: { color: C.reading, fontFamily: 'Georgia', fontSize: 20, lineHeight: 31, borderLeftWidth: 2, borderLeftColor: C.muted, paddingLeft: 15, marginBottom: 21 }, listBlock: { marginBottom: 9 }, listItem: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: 3 }, nestedListItem: { paddingLeft: 20 }, bullet: { width: 28, color: C.muted, fontSize: 18, lineHeight: 31 }, code: { color: C.reading, backgroundColor: C.panel, padding: 14, fontFamily: 'Menlo', fontSize: 15, lineHeight: 23, marginBottom: 20 }, articleImage: { width: '100%', height: 240, marginBottom: 22, backgroundColor: C.panel }, inlineLink: { color: C.muted, textDecorationLine: 'underline' }, markdownStrong: { fontWeight: '800' }, markdownEm: { fontStyle: 'italic' }, markdownStrike: { textDecorationLine: 'line-through' }, markdownInlineCode: { fontFamily: 'Menlo', fontSize: 16, color: C.ink, backgroundColor: C.panel, lineHeight: 28 }, tableScroll: { marginBottom: 20, borderWidth: 1, borderColor: C.line }, tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.line }, tableHeaderRow: { backgroundColor: C.panel }, tableCell: { minWidth: 112, maxWidth: 220, paddingHorizontal: 12, paddingVertical: 9, borderRightWidth: 1, borderRightColor: C.line }, tableCellText: { color: C.reading, fontSize: 16, lineHeight: 23 }, tableHeaderText: { color: C.ink, fontWeight: '800' }, returnButton: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 18, paddingVertical: 22 },
   pageTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 34, lineHeight: 40, marginTop: 24, marginBottom: 16 }, searchInput: { minHeight: 49, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 14, fontSize: 15, backgroundColor: C.panel, marginBottom: 10 },
   tagStrip: { flexGrow: 0, marginVertical: 5 }, tagContent: { paddingRight: 8 }, tagChip: { borderWidth: 1, borderColor: C.line, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, marginRight: 7 }, tagChipActive: { backgroundColor: C.muted, borderColor: C.muted }, tagText: { color: C.muted, fontSize: 11 }, tagTextActive: { color: C.bg, fontWeight: '700' },
   engagementRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 13 }, engagementStat: { color: C.muted, fontSize: 11, marginRight: 13, marginVertical: 5 },
   reactionActions: { flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 3 }, reactionButton: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 4 }, reactionButtonLabel: { color: C.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.3 }, reactionButtonCount: { color: C.ink, fontSize: 12, fontWeight: '700', lineHeight: 15 }, reactionSelected: { backgroundColor: C.muted, borderColor: C.muted }, reactionSelectedText: { color: C.bg },
-  comment: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 15 }, commentReply: { marginLeft: 16, paddingLeft: 11, borderLeftWidth: 2, borderLeftColor: C.line }, commentHeader: { flexDirection: 'row', alignItems: 'center' }, commentAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10 }, commentAvatarPlaceholder: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.panel, marginRight: 10, alignItems: 'center', justifyContent: 'center' }, commentAuthor: { color: C.ink, fontWeight: '700', fontSize: 13 }, commentText: { color: C.reading, fontSize: 15, lineHeight: 22, marginTop: 10 }, commentReplyLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 10 }, commentActions: { flexDirection: 'row', gap: 20, marginTop: 12 }, commentAction: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 }, commentActionActive: { color: C.ink }, loadCommentsButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line, marginTop: 12 }, outbound: { paddingVertical: 17, alignItems: 'center', backgroundColor: C.panel, marginTop: 14 },
+  comment: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 15 }, commentReply: { marginLeft: 16, paddingLeft: 11, borderLeftWidth: 2, borderLeftColor: C.line }, commentHeader: { flexDirection: 'row', alignItems: 'center' }, commentAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10 }, commentAvatarPlaceholder: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.panel, marginRight: 10, alignItems: 'center', justifyContent: 'center' }, commentAuthor: { color: C.ink, fontWeight: '700', fontSize: 13 }, commentText: { color: C.reading, fontSize: 16, lineHeight: 24, marginTop: 10 }, commentReplyLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 10 }, commentActions: { flexDirection: 'row', gap: 20, marginTop: 12 }, commentAction: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 }, commentActionActive: { color: C.ink }, loadCommentsButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line, marginTop: 12 },
   commentComposer: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 16, paddingTop: 17 }, replyingTo: { flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 14, backgroundColor: C.panel, borderLeftWidth: 2, borderLeftColor: C.divider }, fieldLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 9 }, commentInput: { minHeight: 92, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, color: C.ink, padding: 12, textAlignVertical: 'top', fontSize: 15, marginBottom: 10 }, disabledInput: { opacity: 0.7 },
   promotion: { marginTop: 22, padding: 19, borderRadius: 12, backgroundColor: C.panel }, promoTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22, lineHeight: 27, fontWeight: '700' }, promoDescription: { color: C.muted, fontSize: 13, lineHeight: 19, marginVertical: 9 },
-  accountCard: { backgroundColor: C.panel, borderRadius: 14, padding: 20, marginTop: 8 }, accountAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, accountProfileAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, marginBottom: 15 }, accountProfileName: { color: C.ink, fontFamily: 'Georgia', fontSize: 24, lineHeight: 30, fontWeight: '700' }, accountDid: { color: C.muted, fontSize: 10, marginTop: 1, marginBottom: 12 }, accountIdentityDetails: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 14, paddingTop: 13 }, accountIdentityLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.1, marginBottom: 4 }, accountIdentityValue: { color: C.ink, fontSize: 12, lineHeight: 17, marginBottom: 11 }, accountDescription: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 15 }, profileLink: { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 10, marginTop: 5 }, accountSyncing: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15 }, accountSavedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, accountSavedCopy: { flex: 1 }, accountRecordDate: { color: C.muted, fontSize: 10, marginLeft: 94, marginTop: -6, marginBottom: 8 }, viewedExpandButton: { minHeight: 43, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginTop: 6, marginBottom: 16, borderWidth: 1, borderColor: C.line, borderRadius: 22 }, accountRemoveButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: C.line }, blockedAccountRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 13 }, primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: C.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }, primaryButtonText: { color: C.bg, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, disabledButton: { opacity: 0.5 }, secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', marginTop: 18 }, privacyNote: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 15, lineHeight: 16 },
+  accountCard: { backgroundColor: C.panel, borderRadius: 14, padding: 20, marginTop: 8 }, createAccountCard: { backgroundColor: C.panel, borderRadius: 12, padding: 18, marginTop: 27, borderTopWidth: 2, borderTopColor: C.divider }, inviteCode: { color: C.ink, fontFamily: 'Menlo', fontSize: 18, letterSpacing: 1, padding: 14, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, textAlign: 'center', marginBottom: 12 }, inviteContinue: { marginTop: 4 }, accountAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, accountProfileAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, marginBottom: 15 }, accountProfileName: { color: C.ink, fontFamily: 'Georgia', fontSize: 24, lineHeight: 30, fontWeight: '700' }, accountDid: { color: C.muted, fontSize: 10, marginTop: 1, marginBottom: 12 }, accountIdentityDetails: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 14, paddingTop: 13 }, accountIdentityLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.1, marginBottom: 4 }, accountIdentityValue: { color: C.ink, fontSize: 12, lineHeight: 17, marginBottom: 11 }, accountDescription: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 15 }, profileLink: { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 10, marginTop: 5 }, accountSyncing: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15 }, accountSavedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, accountSavedCopy: { flex: 1 }, accountRecordDate: { color: C.muted, fontSize: 10, marginLeft: 94, marginTop: -6, marginBottom: 8 }, viewedExpandButton: { minHeight: 43, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginTop: 6, marginBottom: 16, borderWidth: 1, borderColor: C.line, borderRadius: 22 }, accountRemoveButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: C.line }, blockedAccountRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 13 }, primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: C.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }, primaryButtonText: { color: C.bg, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, disabledButton: { opacity: 0.5 }, secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', marginTop: 18 }, privacyNote: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 15, lineHeight: 16 },
   authorRow: { minHeight: 83, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', paddingVertical: 13 }, avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panel }, avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center' }, avatarInitial: { color: C.muted, fontFamily: 'Georgia', fontSize: 22 }, authorCopy: { flex: 1, paddingLeft: 13 }, authorName: { color: C.ink, fontFamily: 'Georgia', fontSize: 19, fontWeight: '700' }, chevron: { color: C.muted, fontSize: 26, paddingHorizontal: 5 }, handle: { color: C.muted, marginTop: -10, marginBottom: 14, fontSize: 13 }, backLink: { marginTop: 24, marginBottom: 12 },
   footer: { marginTop: 25, backgroundColor: C.panel, padding: 18 }, footerBrand: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 19 }, footerText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
   tabBar: { height: 62, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', overflow: 'hidden' }, articleTabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 8 }, tabButton: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabProfileImage: { width: 23, height: 23, borderRadius: 12, borderWidth: 1, borderColor: C.line }, tabProfileImageActive: { borderColor: C.ink, borderWidth: 2 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2, overflow: 'hidden' }, tabActive: { color: C.ink },

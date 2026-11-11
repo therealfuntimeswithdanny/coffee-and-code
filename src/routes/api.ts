@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
-import { detectFormat, renderContent, renderHtmlAsMarkdown } from '../lib/contentRenderer';
+import { detectFormat, renderContent, renderHtmlAsMarkdown, renderMarkdownEmbeds } from '../lib/contentRenderer';
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -66,7 +66,7 @@ async function markdownDocument(document: StandardDocument) {
   const content = document.content || '';
   const format = detectFormat(content, document.mimeType);
   const markdown = document.format === 'markdown' || format === 'markdown'
-    ? content
+    ? renderMarkdownEmbeds(content)
     : format === 'plaintext'
       ? content
       : renderHtmlAsMarkdown(await renderContent(content, document.format, document.mimeType));

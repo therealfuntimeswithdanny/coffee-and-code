@@ -139,8 +139,14 @@ export function renderHtml(content: string): string {
         ?.replace(/&amp;/gi, '&')
         .replace(/&quot;/gi, '"')
         .replace(/&#39;|&apos;/gi, "'");
-      const title = attributes.match(/\btitle\s*=\s*(["'])(.*?)\1/i)?.[2];
-      return renderLeafletEmbed({ url: source, title });
+      const srcdoc = attributes.match(/\bsrcdoc\s*=\s*(["'])(.*?)\1/i)?.[2]
+        ?.replace(/&amp;/gi, '&')
+        ?.replace(/&quot;/gi, '"')
+        ?.replace(/&#39;|&apos;/gi, "'");
+      const title = attributes.match(/\btitle\s*=\s*(["'])(.*?)\1/i)?.[2]
+        ?.replace(/&quot;/gi, '"')
+        ?.replace(/&amp;/gi, '&');
+      return renderLeafletEmbed({ url: source, title, html: srcdoc });
     },
   );
 
@@ -265,6 +271,18 @@ function markdownDestination(value: string): string {
 
 function htmlTextToMarkdown(html: string): string {
   let markdown = html
+    .replace(/<iframe\b([^>]*)>(?:[\s\S]*?<\/iframe\s*>)?|<iframe\b([^>]*)\/?>/gi, (_match, pairedAttributes: string | undefined, selfClosingAttributes: string | undefined) => {
+      const attributes = pairedAttributes ?? selfClosingAttributes ?? '';
+      const getAttribute = (name: string) => attributes.match(new RegExp(`\\b${name}=["']([^"']*)["']`, 'i'))?.[1] || '';
+      const src = safeEmbedUrl(decodeHtmlEntities(getAttribute('src')));
+      const srcdoc = decodeHtmlEntities(getAttribute('srcdoc'));
+      if (!src && !srcdoc) return '';
+      const title = decodeHtmlEntities(getAttribute('title')).trim().slice(0, 200) || 'Embedded content';
+      const heightValue = getAttribute('style').match(/height\s*:\s*(\d{2,4})px/i)?.[1];
+      const height = heightValue ? Math.max(180, Math.min(900, Number(heightValue))) : undefined;
+      const payload = encodeURIComponent(JSON.stringify({ title, src, srcdoc, height }));
+      return `\n\n:::cc-embed ${payload}\n\n`;
+    })
     .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_match, contents: string) => {
       const language = contents.match(/<code\b[^>]*class=["'][^"']*language-([^ "';]+)[^"']*["']/i)?.[1] || '';
       const code = decodeHtmlEntities(contents.replace(/<[^>]*>/g, '')).replace(/\n+$/, '');
@@ -314,6 +332,14 @@ function htmlTextToMarkdown(html: string): string {
  */
 export function renderHtmlAsMarkdown(html: string): string {
   return htmlTextToMarkdown(html);
+}
+
+/** Converts raw iframe HTML in Markdown documents into the reader's safe embed block. */
+export function renderMarkdownEmbeds(markdown: string): string {
+  return markdown.replace(
+    /<iframe\b[^>]*>(?:[\s\S]*?<\/iframe\s*>)?|<iframe\b[^>]*\/?>/gi,
+    (iframe) => htmlTextToMarkdown(renderHtml(iframe)),
+  );
 }
 
 function safeEmbedUrl(value: unknown): string | undefined {

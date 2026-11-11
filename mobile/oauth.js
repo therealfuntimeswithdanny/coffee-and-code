@@ -52,6 +52,15 @@ export async function signIn(handle, author = false) {
   return { session, agent: new Agent(session), author };
 }
 
+export async function createAccount() {
+  const session = await getClients().member.signIn('account.coffeencode.cc', {
+    redirect_uri: REDIRECT,
+    prompt: 'create',
+  });
+  await AsyncStorage.setItem(SESSION_KEY, session.did);
+  return { session, agent: new Agent(session), author: false };
+}
+
 export async function restoreSession() {
   if (isExpoGo) return null;
   const did = await AsyncStorage.getItem(SESSION_KEY);
