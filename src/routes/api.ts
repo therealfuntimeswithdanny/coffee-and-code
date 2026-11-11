@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
-import { detectFormat, renderContent, renderHtmlAsMarkdown, renderMarkdownEmbeds } from '../lib/contentRenderer';
+import { detectFormat, renderContent, renderHtmlAsMarkdown, renderLeaflet, renderMarkdownEmbeds } from '../lib/contentRenderer';
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -65,11 +65,18 @@ async function findDocumentForRequest(documents: StandardDocument[], rkey: strin
 async function markdownDocument(document: StandardDocument) {
   const content = document.content || '';
   const format = detectFormat(content, document.mimeType);
-  const markdown = document.format === 'markdown' || format === 'markdown'
-    ? renderMarkdownEmbeds(content)
-    : format === 'plaintext'
-      ? content
-      : renderHtmlAsMarkdown(await renderContent(content, document.format, document.mimeType));
+  let parsed: any;
+  if (document.format === 'leaflet' || format === 'richtext') {
+    try { parsed = JSON.parse(content); } catch { parsed = undefined; }
+  }
+  const isLeaflet = parsed?.$type === 'pub.leaflet.content';
+  const markdown = isLeaflet
+    ? renderHtmlAsMarkdown(renderLeaflet(parsed))
+    : document.format === 'markdown' || format === 'markdown'
+      ? renderMarkdownEmbeds(content)
+      : format === 'plaintext'
+        ? content
+        : renderHtmlAsMarkdown(await renderContent(content, document.format, document.mimeType));
 
   return [
     `# ${document.title}`,
@@ -148,7 +155,7 @@ api.get('/documents', async (c) => {
         ...documentSummary(document, new URL(c.req.url).origin, pds),
         content: await markdownDocument(document),
         format: 'markdown',
-      }, 200, { 'Cache-Control': 'public, max-age=60' });
+      }, 200, { 'Cache-Control': 'no-store' });
     } catch (error) {
       console.error('Could not load the requested Coffee & Code post:', error);
       return c.json({ error: 'The post is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
@@ -194,7 +201,7 @@ api.get('/documents/:rkey.md', async (c) => {
 
   return c.body(await markdownDocument(document), 200, {
     'Content-Type': 'text/markdown; charset=utf-8',
-    'Cache-Control': 'public, max-age=60',
+    'Cache-Control': 'no-store',
   });
 });
 
@@ -218,7 +225,7 @@ api.get('/documents/:rkey', async (c) => {
     ...documentSummary(document, new URL(c.req.url).origin, pds),
     content: await markdownDocument(document),
     format: 'markdown',
-  }, 200, { 'Cache-Control': 'public, max-age=60' });
+  }, 200, { 'Cache-Control': 'no-store' });
 });
 
 export default api;

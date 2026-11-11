@@ -3,11 +3,15 @@ import { Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
-import { WebView } from 'react-native-webview';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
+import { C, styles } from './src/theme';
+import { formatDate, storyAuthor } from './src/utils';
+import { ArticleBody, SectionBar, StoryRow, TabButton } from './src/components';
+import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
+import AccountSettings from './src/AccountSettings';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, View, RefreshControl,
+  StatusBar, Text, TextInput, View, RefreshControl,
 } from 'react-native';
 
 const API = 'https://coffeencode.cc/api';
@@ -17,219 +21,13 @@ const SAVED_OWNER_KEY = 'coffee-and-code:saved-owner';
 const SAVE_COLLECTION = 'cc.coffeencode.save';
 const VIEW_COLLECTION = 'cc.coffeencode.interact.view';
 const BLOCK_COLLECTION = 'cc.coffeencode.user.block';
-const C = {
-  bg: '#281914', panel: '#3b2a1d', panelLight: '#493426', ink: '#fffdf7',
-  reading: '#f1eadc', muted: '#b2ac88', divider: '#806747', line: 'rgba(164,132,90,.28)',
-  error: '#f1b9a8',
-};
+const LIKE_COLLECTION = 'cc.coffeencode.interact.like';
+const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
 
-function formatDate(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}
 
-function storyAuthor(story) {
-  return story.author?.displayName || story.author?.handle || 'Coffee & Code';
-}
 
-async function listRepoRecords(agent, did, collection) {
-  const records = [];
-  const seenCursors = new Set();
-  let cursor;
-  do {
-    const { data } = await agent.com.atproto.repo.listRecords({ repo: did, collection, limit: 100, ...(cursor ? { cursor } : {}) });
-    records.push(...(data.records || []));
-    if (!data.cursor || seenCursors.has(data.cursor)) break;
-    seenCursors.add(data.cursor);
-    cursor = data.cursor;
-  } while (cursor);
-  return records;
-}
 
-function storyRecordKey(uri) {
-  return uri?.match(/^at:\/\/[^/]+\/[^/]+\/([^/]+)$/)?.[1];
-}
 
-async function resolvePdsEndpoint(did) {
-  let documentUrl;
-  if (did.startsWith('did:plc:')) {
-    documentUrl = `https://plc.directory/${encodeURIComponent(did)}`;
-  } else if (did.startsWith('did:web:')) {
-    const [, , host, ...path] = did.split(':');
-    if (!host) return '';
-    const decodedPath = path.map((part) => {
-      try { return decodeURIComponent(part); } catch { return part; }
-    });
-    documentUrl = decodedPath.length
-      ? `https://${host}/${decodedPath.map(encodeURIComponent).join('/')}/did.json`
-      : `https://${host}/.well-known/did.json`;
-  } else return '';
-  try {
-    const response = await fetch(documentUrl);
-    if (!response.ok) return '';
-    const document = await response.json();
-    return document.service?.find((service) => service.type === 'AtprotoPersonalDataServer')?.serviceEndpoint || '';
-  } catch {
-    return '';
-  }
-}
-
-function storiesFromRecords(records, postByUri, cachedStories = []) {
-  const cachedByUri = new Map(cachedStories.map((story) => [story.uri, story]));
-  const unique = new Map();
-  records
-    .filter((record) => typeof record.value?.target?.document === 'string' && record.value.target.document.startsWith('at://'))
-    .sort((a, b) => (Date.parse(b.value?.createdAt || '') || 0) - (Date.parse(a.value?.createdAt || '') || 0))
-    .forEach((record) => {
-      const uri = record.value.target.document;
-      if (unique.has(uri)) return;
-      const cached = cachedByUri.get(uri) || {};
-      const published = postByUri.get(uri) || {};
-      unique.set(uri, {
-        ...published,
-        ...cached,
-        uri,
-        title: cached.title || published.title || 'Saved story',
-        publishedAt: cached.publishedAt || published.publishedAt || record.value.createdAt,
-        savedAt: record.value.createdAt,
-        cover: cached.cover || published.cover,
-        path: cached.path || published.path,
-      });
-    });
-  return [...unique.values()];
-}
-
-function InlineText({ text, style }) {
-  const parts = [];
-  const pattern = /(\[[^\]]+\]\(https?:\/\/[^)]+\)|https?:\/\/[^\s)]+|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
-  let cursor = 0;
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > cursor) parts.push({ text: text.slice(cursor, match.index) });
-    const token = match[0];
-    const markdownLink = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
-    if (markdownLink) parts.push({ text: markdownLink[1], url: markdownLink[2] });
-    else if (/^https?:\/\//.test(token)) parts.push({ text: token, url: token });
-    else if (/^\*\*/.test(token) || /^__/.test(token)) parts.push({ text: token.slice(2, -2), format: 'strong' });
-    else if (/^~~/.test(token)) parts.push({ text: token.slice(2, -2), format: 'strike' });
-    else if (/^`/.test(token)) parts.push({ text: token.slice(1, -1), format: 'code' });
-    else parts.push({ text: token.slice(1, -1), format: 'em' });
-    cursor = pattern.lastIndex;
-  }
-  if (cursor < text.length) parts.push({ text: text.slice(cursor) });
-  return <Text style={style}>{parts.map((part, i) => part.url
-    ? <Text key={i} style={styles.inlineLink} onPress={() => Linking.openURL(part.url)}>{part.text}</Text>
-    : <Text key={i} style={part.format === 'strong' ? styles.markdownStrong : part.format === 'em' ? styles.markdownEm : part.format === 'strike' ? styles.markdownStrike : part.format === 'code' ? styles.markdownInlineCode : undefined}>{part.text}</Text>)}</Text>;
-}
-
-function ArticleEmbed({ data }) {
-  let embed;
-  try {
-    embed = JSON.parse(decodeURIComponent(data));
-  } catch {
-    return null;
-  }
-  const title = typeof embed.title === 'string' && embed.title.trim() ? embed.title.trim() : 'Embedded content';
-  const height = Number.isInteger(embed.height) ? Math.max(180, Math.min(900, embed.height)) : 250;
-  const safeSrc = typeof embed.src === 'string' && /^https:\/\//i.test(embed.src) ? embed.src : '';
-  const srcdoc = typeof embed.srcdoc === 'string' ? embed.srcdoc : '';
-  if (!safeSrc && !srcdoc) return null;
-  const escapeAttribute = (value) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  const iframe = `<iframe title="${escapeAttribute(title)}"${safeSrc ? ` src="${escapeAttribute(safeSrc)}"` : ''}${srcdoc ? ` srcdoc="${escapeAttribute(srcdoc)}"` : ''} sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen style="width:100%;height:${height}px;border:0"></iframe>`;
-  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"></head><body style="margin:0;background:transparent;overflow:hidden">${iframe}</body></html>`;
-  return <View style={styles.embedFrame}><WebView source={{ html, baseUrl: 'https://coffeencode.cc' }} style={{ height, backgroundColor: 'transparent' }} javaScriptEnabled domStorageEnabled={false} originWhitelist={['https://*']} mixedContentMode="never" allowFileAccess={false} allowUniversalAccessFromFileURLs={false} setSupportMultipleWindows={false} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction /></View>;
-}
-
-function ArticleBody({ markdown }) {
-  const normalized = markdown.replace(/^---[\s\S]*?---\s*/, '').replace(/^# .+\n+/, '');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  for (let index = 0; index < lines.length;) {
-    if (!lines[index].trim()) { index += 1; continue; }
-    if (/^\s*:::cc-embed\s+/.test(lines[index])) { blocks.push(lines[index++].trim()); continue; }
-    if (/^\s*```/.test(lines[index])) {
-      const code = [lines[index++]];
-      while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++]);
-      if (index < lines.length) code.push(lines[index++]);
-      blocks.push(code.join('\n'));
-      continue;
-    }
-    if (/^\s*>/.test(lines[index])) {
-      const quote = [];
-      while (index < lines.length && /^\s*>/.test(lines[index])) quote.push(lines[index++]);
-      blocks.push(quote.join('\n'));
-      continue;
-    }
-    if (/^\s*(?:[-*+]\s|\d+[.)]\s)/.test(lines[index])) {
-      const list = [];
-      while (index < lines.length && (/^\s*(?:[-*+]\s|\d+[.)]\s)/.test(lines[index]) || /^\s{2,}\S/.test(lines[index]))) list.push(lines[index++]);
-      blocks.push(list.join('\n'));
-      continue;
-    }
-    if (/^\s*#{1,6}\s|^\s*([-*_])\1\1+\s*$|^\s*!\[[^\]]*\]\(https?:\/\/[^)]+\)\s*$/.test(lines[index])) {
-      blocks.push(lines[index++].trim());
-      continue;
-    }
-    const paragraph = [];
-    while (index < lines.length && lines[index].trim() && !/^\s*(?:```|>|#{1,6}\s|[-*+]\s|\d+[.)]\s|([-*_])\1\1+\s*$|!\[[^\]]*\]\(https?:\/\/[^)]+\)\s*$)/.test(lines[index])) paragraph.push(lines[index++]);
-    if (paragraph.length) blocks.push(paragraph.join('\n').trim());
-  }
-  return <View style={styles.prose}>{blocks.map((block, index) => {
-    const embed = block.match(/^:::cc-embed\s+(.+)$/);
-    if (embed) return <ArticleEmbed key={index} data={embed[1]} />;
-    if (/^\s*([-*_])\1\1+\s*$/.test(block)) return <View key={index} style={styles.rule} />;
-    const heading = block.match(/^(#{1,6})\s+(.+)$/s);
-    if (heading) return <InlineText key={index} text={heading[2]} style={[styles.articleHeading, heading[1].length > 2 && styles.articleSubheading]} />;
-    if (/^>\s?/.test(block)) return <InlineText key={index} text={block.replace(/^\s*>\s?/gm, '').replace(/\n/g, ' ')} style={styles.quote} />;
-    if (/^\s*(?:[-*+]\s|\d+[.)]\s)/m.test(block)) {
-      const items = block.split('\n').filter(Boolean);
-      return <View key={index} style={styles.listBlock}>{items.map((item, itemIndex) => {
-        const content = item.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');
-        const marker = item.match(/^\s*(\d+)[.)]\s+/);
-        const nested = /^\s{2,}/.test(item);
-        return <View key={itemIndex} style={[styles.listItem, nested && styles.nestedListItem]}><Text style={styles.bullet}>{marker?.[1] || '•'}</Text><InlineText text={content} style={styles.paragraph} /></View>;
-      })}</View>;
-    }
-    if (/^```/.test(block)) return <Text key={index} style={styles.code}>{block.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '')}</Text>;
-    const image = block.match(/^!\[([^\]]*)\]\((https?:\/\/[^)]+)\)$/);
-    if (image) return <Image key={index} source={{ uri: image[2] }} accessibilityLabel={image[1]} style={styles.articleImage} resizeMode="cover" />;
-    const tableRows = block.split('\n').filter((row) => /^\s*\|/.test(row));
-    if (tableRows.length >= 2 && /^\s*\|?\s*:?-{3,}/.test(tableRows[1])) {
-      const rows = tableRows.filter((row) => !/^\s*\|?\s*:?-{3,}/.test(row)).map((row) => row.replace(/^\s*\||\|\s*$/g, '').split('|').map((cell) => cell.trim()));
-      return <ScrollView key={index} horizontal showsHorizontalScrollIndicator style={styles.tableScroll}><View>{rows.map((row, rowIndex) => <View key={rowIndex} style={[styles.tableRow, rowIndex === 0 && styles.tableHeaderRow]}>{row.map((cell, cellIndex) => <View key={cellIndex} style={styles.tableCell}><InlineText text={cell} style={[styles.tableCellText, rowIndex === 0 && styles.tableHeaderText]} /></View>)}</View>)}</View></ScrollView>;
-    }
-    return <InlineText key={index} text={block.replace(/\n/g, ' ')} style={styles.paragraph} />;
-  })}</View>;
-}
-
-function SectionBar({ title, detail }) {
-  return <View style={styles.sectionBar}><Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>{!!detail && <Text style={styles.sectionDetail}>{detail}</Text>}</View>;
-}
-
-function StoryRow({ story, featured, compact, onPress }) {
-  if (compact) return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.compactStory}>
-    {story.cover ? <Image source={{ uri: story.cover }} style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
-    <View style={styles.compactCopy}><Text style={styles.compactTitle} numberOfLines={3}>{story.title}</Text><Text style={styles.compactSummary} numberOfLines={2}>{story.description || ''}</Text><Text style={styles.compactMeta} numberOfLines={1}>{formatDate(story.publishedAt)}  ·  {storyAuthor(story)}</Text></View>
-  </Pressable>;
-  return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.storyRow}>
-    {!!story.cover && <Image source={{ uri: story.cover }} style={featured ? styles.heroImage : styles.storyImage} resizeMode="cover" />}
-    <Text style={featured ? styles.heroTitle : styles.storyTitle}>{story.title}</Text>
-    {!!story.description && <Text numberOfLines={featured ? 4 : 3} style={styles.summary}>{story.description}</Text>}
-    <Text style={styles.meta}>{storyAuthor(story)}  ·  {formatDate(story.publishedAt)}</Text>
-    <Text style={styles.read}>READ STORY  →</Text>
-  </Pressable>;
-}
-
-function TabButton({ label, icon, active, onPress, imageUri, compactProgress }) {
-  const iconScale = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [1, 0.84] }) || 1;
-  const labelOpacity = compactProgress?.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 0.2, 0] }) || 1;
-  const labelHeight = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) || 12;
-  return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}>
-    <Animated.View style={{ transform: [{ scale: iconScale }] }}>{imageUri ? <Image source={{ uri: imageUri }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}</Animated.View>
-    <Animated.Text style={[styles.tabLabel, active && styles.tabActive, { opacity: labelOpacity, height: labelHeight }]}>{label}</Animated.Text>
-  </Pressable>;
-}
 
 export default function App() {
   const [feed, setFeed] = useState(null);
@@ -260,6 +58,7 @@ export default function App() {
   const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [loginHandle, setLoginHandle] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -294,7 +93,7 @@ export default function App() {
       }
       setFeed(payload);
     } catch (e) {
-      setError(e.message || 'Could not load stories. Check your connection and try again.');
+      setError(e.message || 'Failed to load stories. Check your internet connection and try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -752,7 +551,7 @@ export default function App() {
   const remainingLatest = [...recentStories.slice(3), ...(feed?.more || [])];
   const pinnedStories = feed?.pinned || [];
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
-  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); animateArticleNav(false); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsOpen(false); animateArticleNav(false); };
 
   const onArticleTouchStart = (event) => {
     const touch = event.nativeEvent.touches?.[0] || event.nativeEvent;
@@ -807,7 +606,7 @@ export default function App() {
 
   const renderSaved = () => <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.pageTitle}>Saved stories</Text>
-    {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Keep a story for later.</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
+    {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
 
   const renderAuthors = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
@@ -850,7 +649,18 @@ export default function App() {
     </React.Fragment>;
   };
 
-  const renderAccount = () => <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
+  const renderAccount = () => settingsOpen && account ? <AccountSettings
+    account={account}
+    accountProfile={accountProfile}
+    accountPds={accountPds}
+    blockedAccounts={blockedAccounts}
+    savedCount={saved.length}
+    viewedCount={viewedStories.length}
+    accountBusy={accountBusy}
+    onBack={() => setSettingsOpen(false)}
+    onUnblock={unblockAccount}
+    onSignOut={async () => { await signOut(account); setAccount(null); setSettingsOpen(false); }}
+  /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
     {account ? <>
       <View style={styles.accountCard}>
@@ -862,8 +672,10 @@ export default function App() {
           <Text style={styles.accountIdentityLabel}>PDS</Text><Text selectable style={styles.accountIdentityValue}>{accountPds === null ? 'Resolving…' : accountPds || 'Unavailable'}</Text>
         </View>
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(accountProfile?.handle || account.session.did)}`)} style={styles.profileLink}><Text style={styles.action}>VIEW PROFILE  ↗</Text></Pressable>
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); setAccount(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); setAccount(null); setSettingsOpen(false); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
       </View>
+      <SectionBar title="Settings" />
+      <Pressable accessibilityRole="button" onPress={() => setSettingsOpen(true)} style={styles.settingsRow}><View style={styles.settingsIcon}><SymbolView name="gearshape.fill" size={17} tintColor={C.muted} /></View><View style={styles.settingsCopy}><Text style={styles.authorName}>App settings</Text><Text style={styles.meta}>Reading, privacy, account, and app details</Text></View><SymbolView name="chevron.right" size={15} tintColor={C.muted} /></Pressable>
       {!!accountDataError && <Text accessibilityRole="alert" style={[styles.error, { marginTop: 12 }]}>{accountDataError}</Text>}
       {accountDataLoading && <View style={styles.accountSyncing}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Syncing your account…</Text></View>}
       <SectionBar title="Read posts" detail={`${viewedStories.length} STORIES`} />
@@ -891,8 +703,8 @@ export default function App() {
     </> : <View style={styles.accountCard}>
       <Text style={styles.accountDescription}>Sign in with your AT Protocol account. Your provider handles the password and shows the permissions requested by Coffee & Code.</Text>
       {IS_EXPO_GO ? <Text style={styles.accountDescription}>Expo Go supports reading the live publication API. AT Protocol sign-in and member actions need the Coffee & Code development app because they use a native OAuth module.</Text> : <>
-        <Text style={styles.fieldLabel}>Your Handle, typically your yourname.coffeencode.cc, yourname.bsky.social or yourname.com</Text>
-        <TextInput value={loginHandle} onChangeText={setLoginHandle} placeholder="name.bsky.social" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={handleLogin} style={styles.searchInput} accessibilityLabel="AT Protocol handle" />
+        <Text style={styles.fieldLabel}>Typically what you use to sing into orther At proto apps, Bluesky, Pckt, Leaflet, Anisota, rpg.actor, etc</Text>
+        <TextInput value={loginHandle} onChangeText={setLoginHandle} placeholder="john-doe.coffeencode.cc or johndoe.com." placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={handleLogin} style={styles.searchInput} accessibilityLabel="AT Protocol handle" />
         {!!error && <Text style={styles.error}>{error}</Text>}
         <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>Sign in</Text>}</Pressable>
         <Text style={styles.privacyNote}>Coffee & Code never asks for or stores your password.</Text>
@@ -963,39 +775,9 @@ export default function App() {
     <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [62, 42] }) }]}>
       <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Forum" icon="message.fill" active={tab === 'Forum'} onPress={() => selectMainTab('Forum')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
     </Animated.View>
   </SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  header: { minHeight: 58, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerSide: { width: 72, minHeight: 42, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 5 }, headerTrailing: { alignItems: 'flex-end' },
-  brand: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 23, letterSpacing: -1 },
-  refresh: { color: C.muted, fontSize: 27, textAlign: 'right' }, action: { color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
-  content: { paddingHorizontal: 18, paddingBottom: 32 }, homeContent: { paddingHorizontal: 18, paddingBottom: 24 }, homeHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 17 }, archiveShortcut: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.panel, alignItems: 'center', justifyContent: 'center', marginTop: 17 },
-  intro: { paddingTop: 19, paddingBottom: 8 }, introText: { color: C.muted, fontFamily: 'Georgia', fontSize: 16, lineHeight: 23 },
-  sectionBar: { borderTopWidth: 3, borderTopColor: C.divider, borderBottomWidth: 1, borderBottomColor: C.line, marginTop: 18, marginBottom: 2, paddingVertical: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sectionTitle: { color: C.ink, fontWeight: '800', fontSize: 11, letterSpacing: 1.5 }, sectionDetail: { color: C.muted, fontSize: 9, letterSpacing: 1.1 },
-  storyRow: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 20 }, heroImage: { width: '100%', height: 218, marginBottom: 19, backgroundColor: C.panel }, storyImage: { width: '100%', height: 162, marginBottom: 17, backgroundColor: C.panel },
-  compactStory: { minHeight: 106, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 13 }, compactImage: { width: 94, height: 82, borderRadius: 7, backgroundColor: C.panel }, compactPlaceholder: { width: 94, height: 82, borderRadius: 7, backgroundColor: C.panel, alignItems: 'center', justifyContent: 'center' }, placeholderMark: { color: C.muted, fontFamily: 'Georgia', fontSize: 15, fontWeight: '700' }, compactCopy: { flex: 1, justifyContent: 'center' }, compactTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 16, lineHeight: 20 }, compactSummary: { color: C.muted, fontSize: 11, lineHeight: 15, marginTop: 4 }, compactMeta: { color: C.muted, fontSize: 9, marginTop: 6 },
-  heroTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 33, lineHeight: 39, marginBottom: 9 },
-  storyTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 23, lineHeight: 29, marginBottom: 8 }, summary: { color: C.muted, fontSize: 15, lineHeight: 23, marginBottom: 8 }, meta: { color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }, read: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginTop: 14 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }, muted: { color: C.muted, fontSize: 14 }, empty: { paddingVertical: 30 }, emptyTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22 }, emptyText: { color: C.muted, paddingVertical: 18, lineHeight: 24 }, error: { color: C.error, lineHeight: 23, marginBottom: 12 },
-  launchLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 46, backgroundColor: C.bg }, launchMark: { width: 126, height: 126, marginBottom: 21 }, launchTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 30, letterSpacing: -0.7 }, launchSubtitle: { color: C.muted, fontFamily: 'Georgia', fontSize: 15, marginTop: 8 }, launchSpinner: { marginTop: 42 }, launchStatus: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.6, marginTop: 13 },
-  article: { paddingHorizontal: 22, paddingTop: 21, paddingBottom: 130 }, cover: { width: '100%', height: 218, marginBottom: 23, backgroundColor: C.panel }, articleTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 37, lineHeight: 44, marginBottom: 13 }, dek: { color: C.muted, fontFamily: 'Georgia', fontSize: 20, lineHeight: 30, marginBottom: 13 }, rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 20 },
-  prose: { paddingTop: 2 }, embedFrame: { marginBottom: 22, overflow: 'hidden', borderRadius: 8, backgroundColor: C.panel }, paragraph: { color: C.reading, fontSize: 19, lineHeight: 31, marginBottom: 21 }, articleHeading: { color: C.ink, fontFamily: 'Georgia', fontSize: 28, lineHeight: 36, fontWeight: '700', marginTop: 10, marginBottom: 16 }, articleSubheading: { fontSize: 23, lineHeight: 31 }, quote: { color: C.reading, fontFamily: 'Georgia', fontSize: 20, lineHeight: 31, borderLeftWidth: 2, borderLeftColor: C.muted, paddingLeft: 15, marginBottom: 21 }, listBlock: { marginBottom: 9 }, listItem: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: 3 }, nestedListItem: { paddingLeft: 20 }, bullet: { width: 28, color: C.muted, fontSize: 18, lineHeight: 31 }, code: { color: C.reading, backgroundColor: C.panel, padding: 14, fontFamily: 'Menlo', fontSize: 15, lineHeight: 23, marginBottom: 20 }, articleImage: { width: '100%', height: 240, marginBottom: 22, backgroundColor: C.panel }, inlineLink: { color: C.muted, textDecorationLine: 'underline' }, markdownStrong: { fontWeight: '800' }, markdownEm: { fontStyle: 'italic' }, markdownStrike: { textDecorationLine: 'line-through' }, markdownInlineCode: { fontFamily: 'Menlo', fontSize: 16, color: C.ink, backgroundColor: C.panel, lineHeight: 28 }, tableScroll: { marginBottom: 20, borderWidth: 1, borderColor: C.line }, tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.line }, tableHeaderRow: { backgroundColor: C.panel }, tableCell: { minWidth: 112, maxWidth: 220, paddingHorizontal: 12, paddingVertical: 9, borderRightWidth: 1, borderRightColor: C.line }, tableCellText: { color: C.reading, fontSize: 16, lineHeight: 23 }, tableHeaderText: { color: C.ink, fontWeight: '800' }, returnButton: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 18, paddingVertical: 22 },
-  pageTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 34, lineHeight: 40, marginTop: 24, marginBottom: 16 }, searchInput: { minHeight: 49, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 14, fontSize: 15, backgroundColor: C.panel, marginBottom: 10 },
-  tagStrip: { flexGrow: 0, marginVertical: 5 }, tagContent: { paddingRight: 8 }, tagChip: { borderWidth: 1, borderColor: C.line, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, marginRight: 7 }, tagChipActive: { backgroundColor: C.muted, borderColor: C.muted }, tagText: { color: C.muted, fontSize: 11 }, tagTextActive: { color: C.bg, fontWeight: '700' },
-  engagementRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 13 }, engagementStat: { color: C.muted, fontSize: 11, marginRight: 13, marginVertical: 5 },
-  reactionActions: { flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 3 }, reactionButton: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 4 }, reactionButtonLabel: { color: C.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.3 }, reactionButtonCount: { color: C.ink, fontSize: 12, fontWeight: '700', lineHeight: 15 }, reactionSelected: { backgroundColor: C.muted, borderColor: C.muted }, reactionSelectedText: { color: C.bg },
-  comment: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 15 }, commentReply: { marginLeft: 16, paddingLeft: 11, borderLeftWidth: 2, borderLeftColor: C.line }, commentHeader: { flexDirection: 'row', alignItems: 'center' }, commentAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10 }, commentAvatarPlaceholder: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.panel, marginRight: 10, alignItems: 'center', justifyContent: 'center' }, commentAuthor: { color: C.ink, fontWeight: '700', fontSize: 13 }, commentText: { color: C.reading, fontSize: 16, lineHeight: 24, marginTop: 10 }, commentReplyLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 10 }, commentActions: { flexDirection: 'row', gap: 20, marginTop: 12 }, commentAction: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 }, commentActionActive: { color: C.ink }, loadCommentsButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line, marginTop: 12 },
-  commentComposer: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 16, paddingTop: 17 }, replyingTo: { flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 14, backgroundColor: C.panel, borderLeftWidth: 2, borderLeftColor: C.divider }, fieldLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 9 }, commentInput: { minHeight: 92, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, color: C.ink, padding: 12, textAlignVertical: 'top', fontSize: 15, marginBottom: 10 }, disabledInput: { opacity: 0.7 },
-  promotion: { marginTop: 22, padding: 19, borderRadius: 12, backgroundColor: C.panel }, promoTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22, lineHeight: 27, fontWeight: '700' }, promoDescription: { color: C.muted, fontSize: 13, lineHeight: 19, marginVertical: 9 },
-  accountCard: { backgroundColor: C.panel, borderRadius: 14, padding: 20, marginTop: 8 }, createAccountCard: { backgroundColor: C.panel, borderRadius: 12, padding: 18, marginTop: 27, borderTopWidth: 2, borderTopColor: C.divider }, inviteCode: { color: C.ink, fontFamily: 'Menlo', fontSize: 18, letterSpacing: 1, padding: 14, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, textAlign: 'center', marginBottom: 12 }, inviteContinue: { marginTop: 4 }, accountAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, accountProfileAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, marginBottom: 15 }, accountProfileName: { color: C.ink, fontFamily: 'Georgia', fontSize: 24, lineHeight: 30, fontWeight: '700' }, accountDid: { color: C.muted, fontSize: 10, marginTop: 1, marginBottom: 12 }, accountIdentityDetails: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 14, paddingTop: 13 }, accountIdentityLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.1, marginBottom: 4 }, accountIdentityValue: { color: C.ink, fontSize: 12, lineHeight: 17, marginBottom: 11 }, accountDescription: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 15 }, profileLink: { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 10, marginTop: 5 }, accountSyncing: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15 }, accountSavedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, accountSavedCopy: { flex: 1 }, accountRecordDate: { color: C.muted, fontSize: 10, marginLeft: 94, marginTop: -6, marginBottom: 8 }, viewedExpandButton: { minHeight: 43, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginTop: 6, marginBottom: 16, borderWidth: 1, borderColor: C.line, borderRadius: 22 }, accountRemoveButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: C.line }, blockedAccountRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 13 }, primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: C.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }, primaryButtonText: { color: C.bg, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, disabledButton: { opacity: 0.5 }, secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', marginTop: 18 }, privacyNote: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 15, lineHeight: 16 },
-  authorRow: { minHeight: 83, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', paddingVertical: 13 }, avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panel }, avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center' }, avatarInitial: { color: C.muted, fontFamily: 'Georgia', fontSize: 22 }, authorCopy: { flex: 1, paddingLeft: 13 }, authorName: { color: C.ink, fontFamily: 'Georgia', fontSize: 19, fontWeight: '700' }, chevron: { color: C.muted, fontSize: 26, paddingHorizontal: 5 }, handle: { color: C.muted, marginTop: -10, marginBottom: 14, fontSize: 13 }, backLink: { marginTop: 24, marginBottom: 12 },
-  footer: { marginTop: 25, backgroundColor: C.panel, padding: 18 }, footerBrand: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 19 }, footerText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
-  tabBar: { height: 62, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', overflow: 'hidden' }, articleTabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 8 }, tabButton: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabProfileImage: { width: 23, height: 23, borderRadius: 12, borderWidth: 1, borderColor: C.line }, tabProfileImageActive: { borderColor: C.ink, borderWidth: 2 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2, overflow: 'hidden' }, tabActive: { color: C.ink },
-});
