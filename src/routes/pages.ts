@@ -678,6 +678,65 @@ pages.get('/archive', async (c) => {
 });
 
 const COFFEE_FEED_URI = 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following';
+const isFeedPostUri = (uri: unknown): uri is string => typeof uri === 'string'
+  && /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/app\.bsky\.feed\.post\/[a-zA-Z0-9._~:-]+$/.test(uri);
+
+async function hydrateFeedPosts(uris: string[], pinnedUris = new Set<string>()) {
+  if (!uris.length) return [];
+  const postsUrl = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts');
+  uris.forEach((uri) => postsUrl.searchParams.append('uris', uri));
+  const postsResponse = await fetch(postsUrl, { headers: { Accept: 'application/json' } });
+  if (!postsResponse.ok) throw new Error(`Bluesky AppView returned ${postsResponse.status}`);
+  const postPayload = await postsResponse.json() as { posts?: Array<Record<string, any>> };
+  const postsByUri = new Map<string, Record<string, any>>((postPayload.posts || []).map((post) => [String(post.uri), post] as const));
+  return uris.flatMap((uri) => {
+    const post = postsByUri.get(uri);
+    if (!post || typeof post.record?.text !== 'string') return [];
+    const embed = post.embed;
+    const images = Array.isArray(embed?.images) ? embed.images : Array.isArray(embed?.media?.images) ? embed.media.images : [];
+    return [{
+      uri,
+      url: `https://bsky.app/profile/${encodeURIComponent(post.author?.handle || post.author?.did || '')}/post/${encodeURIComponent(uri.split('/').pop() || '')}`,
+      author: {
+        name: typeof post.author?.displayName === 'string' && post.author.displayName ? post.author.displayName : String(post.author?.handle || 'Bluesky user'),
+        handle: String(post.author?.handle || ''),
+        avatar: typeof post.author?.avatar === 'string' && post.author.avatar.startsWith('https://') ? post.author.avatar : '',
+      },
+      text: post.record.text.slice(0, 10000),
+      createdAt: typeof post.record.createdAt === 'string' ? post.record.createdAt : '',
+      reason: pinnedUris.has(uri) ? 'Pinned by Coffee & Code' : '',
+      images: images.slice(0, 4).flatMap((image: Record<string, any>) => {
+        const url = typeof image.thumb === 'string' ? image.thumb : typeof image.fullsize === 'string' ? image.fullsize : '';
+        return url.startsWith('https://') ? [{ url, alt: typeof image.alt === 'string' ? image.alt.slice(0, 500) : '' }] : [];
+      }),
+    }];
+  });
+}
+
+pages.post('/api/feed/posts', async (c) => {
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid feed request.' }, 400);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return c.json({ error: 'Invalid feed request.' }, 400);
+  const request = payload as Record<string, unknown>;
+  if (!Array.isArray(request.uris) || request.uris.length > 20 || !request.uris.every(isFeedPostUri)) {
+    return c.json({ error: 'Invalid feed post list.' }, 400);
+  }
+  const uris = [...new Set(request.uris as string[])];
+  const pinnedUris = Array.isArray(request.pinnedUris) && request.pinnedUris.length <= 20
+    ? new Set(request.pinnedUris.filter(isFeedPostUri))
+    : new Set<string>();
+  try {
+    const posts = await hydrateFeedPosts(uris, pinnedUris);
+    return c.json({ posts }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    console.error('Could not hydrate the Coffee & Code feed:', error);
+    return c.json({ error: 'The feed is temporarily unavailable. Please try again shortly.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+});
 
 pages.get('/api/feed/posts', async (c) => {
   const cursor = c.req.query('cursor');
@@ -693,42 +752,10 @@ pages.get('/api/feed/posts', async (c) => {
     const skeletonResponse = await fetch(skeletonUrl, { headers: { Accept: 'application/json' } });
     if (!skeletonResponse.ok) throw new Error(`Feed service returned ${skeletonResponse.status}`);
     const skeleton = await skeletonResponse.json() as { cursor?: unknown; feed?: Array<{ post?: unknown; reason?: unknown }> };
-    const uris = (Array.isArray(skeleton.feed) ? skeleton.feed : [])
-      .map((item) => item?.post)
-      .filter((uri): uri is string => typeof uri === 'string' && /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/app\.bsky\.feed\.post\/[a-zA-Z0-9._~:-]+$/.test(uri))
-      .slice(0, 20);
-    if (!uris.length) {
-      return c.json({ posts: [], cursor: typeof skeleton.cursor === 'string' ? skeleton.cursor : null }, 200, { 'Cache-Control': 'public, max-age=30' });
-    }
-
-    const postsUrl = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts');
-    uris.forEach((uri) => postsUrl.searchParams.append('uris', uri));
-    const postsResponse = await fetch(postsUrl, { headers: { Accept: 'application/json' } });
-    if (!postsResponse.ok) throw new Error(`Bluesky AppView returned ${postsResponse.status}`);
-    const postPayload = await postsResponse.json() as { posts?: Array<Record<string, any>> };
-    const postsByUri = new Map((postPayload.posts || []).map((post) => [post.uri, post]));
-    const posts = uris.flatMap((uri) => {
-      const post = postsByUri.get(uri);
-      if (!post || typeof post.record?.text !== 'string') return [];
-      const embed = post.embed;
-      const images = Array.isArray(embed?.images) ? embed.images : Array.isArray(embed?.media?.images) ? embed.media.images : [];
-      return [{
-        uri,
-        url: `https://bsky.app/profile/${encodeURIComponent(post.author?.handle || post.author?.did || '')}/post/${encodeURIComponent(uri.split('/').pop() || '')}`,
-        author: {
-          name: typeof post.author?.displayName === 'string' && post.author.displayName ? post.author.displayName : String(post.author?.handle || 'Bluesky user'),
-          handle: String(post.author?.handle || ''),
-          avatar: typeof post.author?.avatar === 'string' && post.author.avatar.startsWith('https://') ? post.author.avatar : '',
-        },
-        text: post.record.text.slice(0, 10000),
-        createdAt: typeof post.record.createdAt === 'string' ? post.record.createdAt : '',
-        reason: skeleton.feed?.find((item) => item.post === uri)?.reason ? 'Pinned by Coffee & Code' : '',
-        images: images.slice(0, 4).flatMap((image: Record<string, any>) => {
-          const url = typeof image.thumb === 'string' ? image.thumb : typeof image.fullsize === 'string' ? image.fullsize : '';
-          return url.startsWith('https://') ? [{ url, alt: typeof image.alt === 'string' ? image.alt.slice(0, 500) : '' }] : [];
-        }),
-      }];
-    });
+    const items = Array.isArray(skeleton.feed) ? skeleton.feed : [];
+    const uris = items.map((item) => item?.post).filter(isFeedPostUri).slice(0, 20);
+    const pinnedUris = new Set(items.filter((item) => item?.reason).map((item) => item.post).filter(isFeedPostUri));
+    const posts = await hydrateFeedPosts(uris, pinnedUris);
     return c.json({ posts, cursor: typeof skeleton.cursor === 'string' ? skeleton.cursor : null }, 200, { 'Cache-Control': 'public, max-age=30' });
   } catch (error) {
     console.error('Could not load the Coffee & Code feed:', error);
@@ -783,7 +810,7 @@ pages.get('/feed', (c) => {
       .feed-page__note .eyebrow { margin: 0 0 8px; }
       @media (max-width: 520px) { .feed-page__intro { font-size: 18px; }.feed-page__post-text, .feed-page__images { margin-left: 0; }.feed-page__note { padding: 18px; } }
     </style>
-    <script>
+    <script type="module">
       (() => {
         const list = document.querySelector('[data-feed-posts]');
         const status = document.querySelector('[data-feed-status]');
@@ -803,10 +830,28 @@ pages.get('/feed', (c) => {
           more.disabled = true;
           status.textContent = append ? 'Loading more posts…' : 'Loading posts…';
           try {
-            const url = new URL('/api/feed/posts', window.location.origin);
-            if (append && cursor) url.searchParams.set('cursor', cursor);
-            const response = await fetch(url, { headers: { Accept: 'application/json' } });
-            const data = await response.json();
+            const auth = window.coffeeAndCodeAuth;
+            const viewerDid = await auth?.getDid();
+            let response;
+            let data;
+            if (viewerDid) {
+              const skeleton = await auth.getFeedSkeleton(append ? cursor : null);
+              const items = Array.isArray(skeleton?.feed) ? skeleton.feed : [];
+              response = await fetch('/api/feed/posts', {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  uris: items.map((item) => item.post),
+                  pinnedUris: items.filter((item) => item.reason).map((item) => item.post),
+                }),
+              });
+              data = { ...await response.json(), cursor: skeleton?.cursor || null };
+            } else {
+              const url = new URL('/api/feed/posts', window.location.origin);
+              if (append && cursor) url.searchParams.set('cursor', cursor);
+              response = await fetch(url, { headers: { Accept: 'application/json' } });
+              data = await response.json();
+            }
             if (!response.ok) throw new Error(data.error || 'The feed could not be loaded.');
             if (!append) list.replaceChildren();
             for (const post of data.posts || []) {
@@ -833,6 +878,7 @@ pages.get('/feed', (c) => {
               postLink.target = '_blank';
               postLink.rel = 'noopener';
               header.append(postLink);
+              if (post.reason) article.append(make('p', 'eyebrow', post.reason));
               article.append(header);
               article.append(make('p', 'feed-page__post-text', post.text || ''));
               if (Array.isArray(post.images) && post.images.length) {
@@ -850,7 +896,7 @@ pages.get('/feed', (c) => {
             }
             cursor = data.cursor || null;
             more.hidden = !cursor || !(data.posts || []).length;
-            status.textContent = list.children.length ? '' : 'There are no public posts in the feed right now. Sign in to the feed manager to choose authors for your personal feed.';
+            status.textContent = list.children.length ? '' : viewerDid ? 'Your Coffee & Code feed has no posts yet. Add authors in the feed manager to get started.' : 'There are no public posts in the feed right now. Sign in to see your personalized feed.';
           } catch (error) {
             status.textContent = error instanceof Error ? error.message : 'The feed could not be loaded. Please try again.';
           } finally {

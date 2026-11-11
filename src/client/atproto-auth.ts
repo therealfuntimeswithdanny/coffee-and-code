@@ -74,6 +74,7 @@ declare global {
   interface Window {
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
+      getFeedSkeleton: (cursor?: string | null) => Promise<{ feed?: Array<{ post?: string; reason?: unknown }>; cursor?: string } | undefined>;
       blockUser: (did: string, alsoOnBluesky: boolean) => Promise<void>;
       unblockUser: (did: string) => Promise<void>;
       createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
@@ -974,6 +975,28 @@ window.coffeeAndCodeAuth = {
   getDid: async () => {
     await oauthReady;
     return session?.did;
+  },
+  getFeedSkeleton: async (cursor) => {
+    await oauthReady;
+    if (!session) return undefined;
+    const query = new URLSearchParams({
+      feed: 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following',
+      limit: '20',
+    });
+    if (cursor) query.set('cursor', cursor);
+    const response = await session.fetchHandler(`/xrpc/app.bsky.feed.getFeedSkeleton?${query.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+        'atproto-proxy': 'did:web:feed.coffeencode.cc#bsky_fg',
+      },
+    });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('Your sign-in needs feed access. Sign out and sign in again to approve the updated access, then reload this page.');
+      }
+      throw new Error('Your personalized feed could not be loaded. Please try again shortly.');
+    }
+    return await response.json();
   },
   blockUser: async (did: string, alsoOnBluesky: boolean) => {
     await oauthReady;
