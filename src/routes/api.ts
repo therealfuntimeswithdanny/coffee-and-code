@@ -32,6 +32,15 @@ async function loadDocuments(c: Context<{ Bindings: Env }>) {
   return { pds, documents };
 }
 
+async function loadDocumentsSafely(c: Context<{ Bindings: Env }>) {
+  try {
+    return await loadDocuments(c);
+  } catch (error) {
+    console.error('Could not load Coffee & Code posts:', error);
+    return null;
+  }
+}
+
 function findDocument(documents: StandardDocument[], rkey: string | undefined, uri: string | undefined) {
   const recordMatches = documents.filter((document) => document.rkey === rkey);
   const matches = uri ? recordMatches.filter((document) => document.uri === uri) : recordMatches;
@@ -58,9 +67,11 @@ async function markdownDocument(document: StandardDocument) {
 }
 
 api.get('/home', async (c) => {
-  const { pds, documents } = await loadDocuments(c);
+  const loaded = await loadDocumentsSafely(c);
+  if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
+  const { pds, documents } = loaded;
   if (!documents.length && !await isPdsAvailable(pds)) {
-    return c.json({ error: 'The publication is temporarily unavailable.' }, 503);
+    return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
 
   const pinned = documents
@@ -97,10 +108,9 @@ api.get('/home', async (c) => {
       description: c.env.PUB_DESCRIPTION,
     },
     promotion: {
-      eyebrow: 'CONTRIBUTOR CALL',
-      title: 'Bring your perspective to the page.',
-      description: 'Coffee & Code is strengthened by independent writers with something useful to say.',
-      action: 'Become a contributor',
+      title: "We're looking for writers",
+      description: 'Coffee & Code is made possible thanks to you! One way you can contribute is to write for us!',
+      action: 'Write for us',
       url: `${origin}/become-an-author`,
     },
     totalAvailable: documents.length,
@@ -119,9 +129,11 @@ api.get('/documents', async (c) => {
     return c.json({ error: 'limit must be an integer between 1 and 100.' }, 400);
   }
 
-  const { pds, documents } = await loadDocuments(c);
+  const loaded = await loadDocumentsSafely(c);
+  if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
+  const { pds, documents } = loaded;
   if (!documents.length && !await isPdsAvailable(pds)) {
-    return c.json({ error: 'The publication is temporarily unavailable.' }, 503);
+    return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
   const origin = new URL(c.req.url).origin;
 
@@ -133,9 +145,11 @@ api.get('/documents', async (c) => {
 });
 
 api.get('/documents/:rkey.md', async (c) => {
-  const { pds, documents } = await loadDocuments(c);
+  const loaded = await loadDocumentsSafely(c);
+  if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
+  const { pds, documents } = loaded;
   if (!documents.length && !await isPdsAvailable(pds)) {
-    return c.json({ error: 'The publication is temporarily unavailable.' }, 503);
+    return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
   const { document, ambiguous } = findDocument(documents, c.req.param('rkey'), c.req.query('uri'));
   if (!document) {
@@ -153,9 +167,11 @@ api.get('/documents/:rkey.md', async (c) => {
 });
 
 api.get('/documents/:rkey', async (c) => {
-  const { pds, documents } = await loadDocuments(c);
+  const loaded = await loadDocumentsSafely(c);
+  if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
+  const { pds, documents } = loaded;
   if (!documents.length && !await isPdsAvailable(pds)) {
-    return c.json({ error: 'The publication is temporarily unavailable.' }, 503);
+    return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
   const { document, ambiguous } = findDocument(documents, c.req.param('rkey'), c.req.query('uri'));
   if (!document) {

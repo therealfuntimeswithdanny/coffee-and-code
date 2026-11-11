@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ExpoOAuthClient } from './oauth-client-entry';
+import Constants from 'expo-constants';
 import { Agent } from '@atproto/api';
 
 const SESSION_KEY = 'coffee-and-code:account-did';
@@ -26,23 +26,39 @@ const authorMetadata = {
   scope: memberMetadata.scope.replace('include:cc.coffeencode.authPublic', 'include:cc.coffeencode.authAuthor include:cc.coffeencode.authPublic'),
 };
 
-const clients = {
-  member: new ExpoOAuthClient({ clientMetadata: memberMetadata, handleResolver: 'https://bsky.social' }),
-  author: new ExpoOAuthClient({ clientMetadata: authorMetadata, handleResolver: 'https://bsky.social' }),
-};
+// Expo Go does not contain the native DPoP/key module used by this client.
+// Keep the native package out of module initialization so public reading can
+// still run in Expo Go; load it only in a development/standalone build.
+const isExpoGo = Constants.appOwnership === 'expo';
+let clients;
+
+function getClients() {
+  if (isExpoGo) {
+    throw new Error('AT Protocol sign-in needs the Coffee & Code development app. Expo Go can still browse stories and use the public API.');
+  }
+  if (!clients) {
+    const { ExpoOAuthClient } = require('./oauth-client-entry');
+    clients = {
+      member: new ExpoOAuthClient({ clientMetadata: memberMetadata, handleResolver: 'https://bsky.social' }),
+      author: new ExpoOAuthClient({ clientMetadata: authorMetadata, handleResolver: 'https://bsky.social' }),
+    };
+  }
+  return clients;
+}
 
 export async function signIn(handle, author = false) {
-  const session = await clients[author ? 'author' : 'member'].signIn(handle, { redirect_uri: REDIRECT });
+  const session = await getClients()[author ? 'author' : 'member'].signIn(handle, { redirect_uri: REDIRECT });
   await AsyncStorage.setItem(SESSION_KEY, session.did);
   return { session, agent: new Agent(session), author };
 }
 
 export async function restoreSession() {
+  if (isExpoGo) return null;
   const did = await AsyncStorage.getItem(SESSION_KEY);
   if (!did) return null;
   for (const author of [false, true]) {
     try {
-      const client = clients[author ? 'author' : 'member'];
+      const client = getClients()[author ? 'author' : 'member'];
       const session = await client.restore(did);
       return { session, agent: new Agent(session), author };
     } catch { /* Try the other permission set. */ }
@@ -53,8 +69,10 @@ export async function restoreSession() {
 
 export async function signOut(account) {
   if (account?.session?.did) {
-    const client = clients[account.author ? 'author' : 'member'];
-    await client.revoke(account.session.did).catch(() => {});
+    if (!isExpoGo) {
+      const client = getClients()[account.author ? 'author' : 'member'];
+      await client.revoke(account.session.did).catch(() => {});
+    }
   }
   await AsyncStorage.removeItem(SESSION_KEY);
 }

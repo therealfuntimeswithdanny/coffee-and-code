@@ -13,3 +13,6 @@ build/
 ~*
 .wrangler/
 .claude/
+# The native iOS app and Expo config live under mobile/.
+/app.json
+/ios/

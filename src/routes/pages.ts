@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
+import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
 import { externalLinkUrl } from '../lib/externalLinks';
 import { isForumModerator } from './forum';
@@ -185,8 +185,18 @@ pages.get('/api/account/posts', async (c) => {
   if (authorDid && !/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(authorDid)) {
     return c.json({ error: 'A valid author DID is required.' }, 400);
   }
-  const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
-  const allArticles = await fetchArticles(pds, c.env.OWNER_DID);
+  let allArticles: StandardDocument[];
+  let pds: string;
+  try {
+    pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+    allArticles = await fetchArticles(pds, c.env.OWNER_DID);
+  } catch (error) {
+    console.error('Could not load account posts:', error);
+    return c.json({ error: 'Published posts are temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
+  }
+  if (!allArticles.length && !await isPdsAvailable(pds)) {
+    return c.json({ error: 'Published posts are temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
+  }
   const articles = authorDid
     ? allArticles.filter((post) => post.author?.did.toLowerCase() === authorDid.toLowerCase())
     : allArticles;

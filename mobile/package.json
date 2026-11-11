@@ -4,9 +4,10 @@
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --go",
+    "start:dev-client": "expo start --dev-client",
     "ios": "expo run:ios",
-    "android": "expo start --android"
+    "android": "expo run:android"
   },
   "dependencies": {
     "@atproto/api": "^0.30.3",
@@ -15,6 +16,8 @@
     "core-js": "^3.51.0",
     "expo": "~58.0.0",
     "expo-asset": "~58.0.20",
+    "expo-constants": "~58.0.15",
+    "expo-dev-client": "~58.0.18",
     "expo-status-bar": "~58.0.4",
     "expo-symbols": "~58.0.4",
     "expo-web-browser": "~58.0.7",
