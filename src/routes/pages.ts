@@ -677,6 +677,51 @@ pages.get('/archive', async (c) => {
   return c.html(renderLayout(c, 'Archive', body, metaTags));
 });
 
+pages.get('/feed', (c) => {
+  const feedUrl = 'https://bsky.app/profile/did:plc:z7hzwpuv5ytin56wecfxa4mx/feed/following';
+  const managerUrl = 'https://feed.coffeencode.cc/';
+  const body = `
+    <section class="feed-page" aria-labelledby="feed-title">
+      <header class="feed-page__header">
+        <p class="eyebrow">Coffee &amp; Code on Bluesky</p>
+        <h1 id="feed-title">A feed shaped by you.</h1>
+        <p class="feed-page__intro">Keep up with the writers and people you choose. The Coffee &amp; Code feed brings their Bluesky posts together in one place, with controls for what appears in your timeline.</p>
+        <div class="feed-page__actions">
+          <a class="feed-page__primary" href="${feedUrl}" target="_blank" rel="noopener">Open the feed on Bluesky <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+          <a class="read-link" href="${managerUrl}" target="_blank" rel="noopener">Manage your feed <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        </div>
+      </header>
+      <div class="section-heading"><span>How it works</span><span>Three steps</span></div>
+      <ol class="feed-page__steps">
+        <li><span class="feed-page__number">01</span><div><h2>Sign in to the feed manager</h2><p>Use your Bluesky handle at the Coffee &amp; Code feed site. Sign-in is completed with your account provider.</p></div></li>
+        <li><span class="feed-page__number">02</span><div><h2>Choose who to follow</h2><p>Add authors to your Coffee &amp; Code list. These are separate from your regular Bluesky follows, and you can manage them at any time.</p></div></li>
+        <li><span class="feed-page__number">03</span><div><h2>Open your custom timeline</h2><p>In Bluesky, add the Coffee &amp; Code feed to your feeds. Posts are sorted by recency, with your selected authors and optional filters applied.</p></div></li>
+      </ol>
+      <aside class="feed-page__note"><p class="eyebrow">Your choices, your repo</p><p>Your author list is stored in your AT Protocol account. Coffee &amp; Code reads it to build the feed you see.</p></aside>
+    </section>
+    <style>
+      .feed-page { margin: 0 auto; max-width: 920px; }
+      .feed-page__header { border-bottom: 1px solid var(--line); padding: 16px 0 42px; }
+      .feed-page__header h1 { font-family: Lora, serif; font-size: clamp(2.7rem, 7vw, 5rem); letter-spacing: -.055em; line-height: 1.04; margin: 0; max-width: 760px; }
+      .feed-page__intro { color: #e0d9c8; font-size: 20px; line-height: 1.65; margin: 20px 0 0; max-width: 720px; }
+      .feed-page__actions { align-items: center; display: flex; flex-wrap: wrap; gap: 22px; margin-top: 28px; }
+      .feed-page__primary { align-items: center; background: var(--accent); color: var(--paper); display: inline-flex; font-weight: 700; gap: 10px; min-height: 48px; padding: 11px 18px; text-decoration: none; }
+      .feed-page__primary:hover { background: #d2cbb9; }
+      .feed-page .section-heading { margin-top: 38px; }
+      .feed-page__steps { list-style: none; margin: 0; padding: 0; }
+      .feed-page__steps li { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 22px; grid-template-columns: 48px 1fr; padding: 24px 0; }
+      .feed-page__number { color: var(--accent); font-family: Lora, serif; font-size: 23px; }
+      .feed-page__steps h2 { font-family: Lora, serif; font-size: 23px; margin: 0 0 7px; }
+      .feed-page__steps p, .feed-page__note p:last-child { color: var(--muted); font-size: 17px; line-height: 1.65; margin: 0; max-width: 700px; }
+      .feed-page__note { background: var(--paper-deep); margin-top: 34px; padding: 22px 26px; }
+      .feed-page__note .eyebrow { margin: 0 0 8px; }
+      @media (max-width: 520px) { .feed-page__intro { font-size: 18px; }.feed-page__steps li { gap: 12px; grid-template-columns: 34px 1fr; }.feed-page__steps h2 { font-size: 20px; }.feed-page__note { padding: 18px; } }
+    </style>
+  `;
+  const metaTags = '<meta name="description" content="Follow the writers and people you choose with the Coffee &amp; Code custom Bluesky feed.">';
+  return c.html(renderLayout(c, 'Coffee & Code Feed', body, metaTags));
+});
+
 pages.get('/privacy', (c) => {
   const body = `
     <article class="privacy-page" aria-labelledby="privacy-title">
