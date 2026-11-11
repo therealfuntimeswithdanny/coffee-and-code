@@ -416,12 +416,14 @@ export function renderLeaflet(content: string): string {
                 if (!imageRef) return '';
 
                 const aspectRatio = block.aspectRatio;
+                const imageUrl = cdnBlobUrl({ did: block.image?.ref?.did || block.image?.did || '', cid: imageRef }, 'feed_fullsize');
+                const safeImageUrl = imageUrl || `/api/blob/${encodeURIComponent(imageRef)}`;
 
                 return `
                   <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
                     <img
-                      src="/api/blob/${imageRef}"
-                      alt="Article image"
+                      src="${escapeHtml(safeImageUrl)}"
+                      alt="${escapeHtml(block.alt || block.title || 'Article image')}"
                       class="prose-image"
                       loading="lazy"
                     />
@@ -436,11 +438,13 @@ export function renderLeaflet(content: string): string {
                     if (!imageRef) return '';
 
                     const aspectRatio = item.aspectRatio;
+                    const imageUrl = cdnBlobUrl({ did: item.image?.ref?.did || item.image?.did || '', cid: imageRef }, 'feed_fullsize');
+                    const safeImageUrl = imageUrl || `/api/blob/${encodeURIComponent(imageRef)}`;
                     return `
                       <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
                         <img
-                          src="/api/blob/${escapeHtml(imageRef)}"
-                          alt="Article image"
+                          src="${escapeHtml(safeImageUrl)}"
+                          alt="${escapeHtml(item.alt || 'Article image')}"
                           class="prose-image"
                           loading="lazy"
                         />
