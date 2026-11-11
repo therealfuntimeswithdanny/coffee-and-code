@@ -677,6 +677,65 @@ pages.get('/archive', async (c) => {
   return c.html(renderLayout(c, 'Archive', body, metaTags));
 });
 
+const COFFEE_FEED_URI = 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following';
+
+pages.get('/api/feed/posts', async (c) => {
+  const cursor = c.req.query('cursor');
+  if (cursor && (cursor.length > 512 || /[\r\n]/.test(cursor))) {
+    return c.json({ error: 'Invalid feed cursor.' }, 400);
+  }
+
+  try {
+    const skeletonUrl = new URL('https://feed.coffeencode.cc/xrpc/app.bsky.feed.getFeedSkeleton');
+    skeletonUrl.searchParams.set('feed', COFFEE_FEED_URI);
+    skeletonUrl.searchParams.set('limit', '20');
+    if (cursor) skeletonUrl.searchParams.set('cursor', cursor);
+    const skeletonResponse = await fetch(skeletonUrl, { headers: { Accept: 'application/json' } });
+    if (!skeletonResponse.ok) throw new Error(`Feed service returned ${skeletonResponse.status}`);
+    const skeleton = await skeletonResponse.json() as { cursor?: unknown; feed?: Array<{ post?: unknown; reason?: unknown }> };
+    const uris = (Array.isArray(skeleton.feed) ? skeleton.feed : [])
+      .map((item) => item?.post)
+      .filter((uri): uri is string => typeof uri === 'string' && /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/app\.bsky\.feed\.post\/[a-zA-Z0-9._~:-]+$/.test(uri))
+      .slice(0, 20);
+    if (!uris.length) {
+      return c.json({ posts: [], cursor: typeof skeleton.cursor === 'string' ? skeleton.cursor : null }, 200, { 'Cache-Control': 'public, max-age=30' });
+    }
+
+    const postsUrl = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts');
+    uris.forEach((uri) => postsUrl.searchParams.append('uris', uri));
+    const postsResponse = await fetch(postsUrl, { headers: { Accept: 'application/json' } });
+    if (!postsResponse.ok) throw new Error(`Bluesky AppView returned ${postsResponse.status}`);
+    const postPayload = await postsResponse.json() as { posts?: Array<Record<string, any>> };
+    const postsByUri = new Map((postPayload.posts || []).map((post) => [post.uri, post]));
+    const posts = uris.flatMap((uri) => {
+      const post = postsByUri.get(uri);
+      if (!post || typeof post.record?.text !== 'string') return [];
+      const embed = post.embed;
+      const images = Array.isArray(embed?.images) ? embed.images : Array.isArray(embed?.media?.images) ? embed.media.images : [];
+      return [{
+        uri,
+        url: `https://bsky.app/profile/${encodeURIComponent(post.author?.handle || post.author?.did || '')}/post/${encodeURIComponent(uri.split('/').pop() || '')}`,
+        author: {
+          name: typeof post.author?.displayName === 'string' && post.author.displayName ? post.author.displayName : String(post.author?.handle || 'Bluesky user'),
+          handle: String(post.author?.handle || ''),
+          avatar: typeof post.author?.avatar === 'string' && post.author.avatar.startsWith('https://') ? post.author.avatar : '',
+        },
+        text: post.record.text.slice(0, 10000),
+        createdAt: typeof post.record.createdAt === 'string' ? post.record.createdAt : '',
+        reason: skeleton.feed?.find((item) => item.post === uri)?.reason ? 'Pinned by Coffee & Code' : '',
+        images: images.slice(0, 4).flatMap((image: Record<string, any>) => {
+          const url = typeof image.thumb === 'string' ? image.thumb : typeof image.fullsize === 'string' ? image.fullsize : '';
+          return url.startsWith('https://') ? [{ url, alt: typeof image.alt === 'string' ? image.alt.slice(0, 500) : '' }] : [];
+        }),
+      }];
+    });
+    return c.json({ posts, cursor: typeof skeleton.cursor === 'string' ? skeleton.cursor : null }, 200, { 'Cache-Control': 'public, max-age=30' });
+  } catch (error) {
+    console.error('Could not load the Coffee & Code feed:', error);
+    return c.json({ error: 'The feed is temporarily unavailable. Please try again shortly.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+});
+
 pages.get('/feed', (c) => {
   const feedUrl = 'https://bsky.app/profile/did:plc:z7hzwpuv5ytin56wecfxa4mx/feed/following';
   const managerUrl = 'https://feed.coffeencode.cc/';
@@ -691,12 +750,10 @@ pages.get('/feed', (c) => {
           <a class="read-link" href="${managerUrl}" target="_blank" rel="noopener">Manage your feed <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </div>
       </header>
-      <div class="section-heading"><span>How it works</span><span>Three steps</span></div>
-      <ol class="feed-page__steps">
-        <li><span class="feed-page__number">01</span><div><h2>Sign in to the feed manager</h2><p>Use your Bluesky handle at the Coffee &amp; Code feed site. Sign-in is completed with your account provider.</p></div></li>
-        <li><span class="feed-page__number">02</span><div><h2>Choose who to follow</h2><p>Add authors to your Coffee &amp; Code list. These are separate from your regular Bluesky follows, and you can manage them at any time.</p></div></li>
-        <li><span class="feed-page__number">03</span><div><h2>Open your custom timeline</h2><p>In Bluesky, add the Coffee &amp; Code feed to your feeds. Posts are sorted by recency, with your selected authors and optional filters applied.</p></div></li>
-      </ol>
+      <div class="section-heading"><span>Latest posts</span><span>From your Coffee &amp; Code feed</span></div>
+      <p class="feed-page__status" data-feed-status role="status" aria-live="polite">Loading posts…</p>
+      <div class="feed-page__posts" data-feed-posts></div>
+      <button class="feed-page__more" type="button" data-feed-more hidden>Load more posts</button>
       <aside class="feed-page__note"><p class="eyebrow">Your choices, your repo</p><p>Your author list is stored in your AT Protocol account. Coffee &amp; Code reads it to build the feed you see.</p></aside>
     </section>
     <style>
@@ -708,15 +765,103 @@ pages.get('/feed', (c) => {
       .feed-page__primary { align-items: center; background: var(--accent); color: var(--paper); display: inline-flex; font-weight: 700; gap: 10px; min-height: 48px; padding: 11px 18px; text-decoration: none; }
       .feed-page__primary:hover { background: #d2cbb9; }
       .feed-page .section-heading { margin-top: 38px; }
-      .feed-page__steps { list-style: none; margin: 0; padding: 0; }
-      .feed-page__steps li { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 22px; grid-template-columns: 48px 1fr; padding: 24px 0; }
-      .feed-page__number { color: var(--accent); font-family: Lora, serif; font-size: 23px; }
-      .feed-page__steps h2 { font-family: Lora, serif; font-size: 23px; margin: 0 0 7px; }
-      .feed-page__steps p, .feed-page__note p:last-child { color: var(--muted); font-size: 17px; line-height: 1.65; margin: 0; max-width: 700px; }
+      .feed-page__status { color: var(--muted); font-size: 16px; }
+      .feed-page__post { border-bottom: 1px solid var(--line); padding: 23px 0; }
+      .feed-page__post-header { align-items: center; display: flex; gap: 12px; }
+      .feed-page__avatar { background: var(--paper-deep); border-radius: 50%; flex: 0 0 44px; height: 44px; object-fit: cover; width: 44px; }
+      .feed-page__byline { display: grid; line-height: 1.3; min-width: 0; }
+      .feed-page__byline strong { color: var(--ink); }
+      .feed-page__byline span, .feed-page__byline time { color: var(--muted); font-size: 13px; }
+      .feed-page__post-link { color: var(--muted); font-size: 13px; margin-left: auto; }
+      .feed-page__post-text { color: #e0d9c8; font-size: 17px; line-height: 1.65; margin: 16px 0 0 56px; overflow-wrap: anywhere; white-space: pre-wrap; }
+      .feed-page__images { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin: 14px 0 0 56px; }
+      .feed-page__images img { aspect-ratio: 1.5; background: var(--paper-deep); height: 100%; max-height: 320px; object-fit: cover; width: 100%; }
+      .feed-page__more { background: transparent; border: 1px solid var(--line-strong); color: var(--accent); cursor: pointer; font: inherit; font-weight: 700; margin-top: 22px; min-height: 46px; padding: 8px 16px; }
+      .feed-page__more:hover { background: var(--paper-deep); }
+      .feed-page__note p:last-child { color: var(--muted); font-size: 17px; line-height: 1.65; margin: 0; max-width: 700px; }
       .feed-page__note { background: var(--paper-deep); margin-top: 34px; padding: 22px 26px; }
       .feed-page__note .eyebrow { margin: 0 0 8px; }
-      @media (max-width: 520px) { .feed-page__intro { font-size: 18px; }.feed-page__steps li { gap: 12px; grid-template-columns: 34px 1fr; }.feed-page__steps h2 { font-size: 20px; }.feed-page__note { padding: 18px; } }
+      @media (max-width: 520px) { .feed-page__intro { font-size: 18px; }.feed-page__post-text, .feed-page__images { margin-left: 0; }.feed-page__note { padding: 18px; } }
     </style>
+    <script>
+      (() => {
+        const list = document.querySelector('[data-feed-posts]');
+        const status = document.querySelector('[data-feed-status]');
+        const more = document.querySelector('[data-feed-more]');
+        if (!list || !status || !more) return;
+        let cursor = null;
+        let loading = false;
+        const make = (tag, className, text) => {
+          const element = document.createElement(tag);
+          if (className) element.className = className;
+          if (text) element.textContent = text;
+          return element;
+        };
+        const load = async (append = false) => {
+          if (loading) return;
+          loading = true;
+          more.disabled = true;
+          status.textContent = append ? 'Loading more posts…' : 'Loading posts…';
+          try {
+            const url = new URL('/api/feed/posts', window.location.origin);
+            if (append && cursor) url.searchParams.set('cursor', cursor);
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'The feed could not be loaded.');
+            if (!append) list.replaceChildren();
+            for (const post of data.posts || []) {
+              const article = make('article', 'feed-page__post');
+              const header = make('div', 'feed-page__post-header');
+              if (post.author?.avatar) {
+                const avatar = make('img', 'feed-page__avatar');
+                avatar.src = post.author.avatar;
+                avatar.alt = '';
+                avatar.loading = 'lazy';
+                header.append(avatar);
+              }
+              const byline = make('div', 'feed-page__byline');
+              byline.append(make('strong', '', post.author?.name || 'Bluesky user'));
+              if (post.author?.handle) byline.append(make('span', '', '@' + post.author.handle));
+              if (post.createdAt && !Number.isNaN(Date.parse(post.createdAt))) {
+                const time = make('time', '', new Date(post.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+                time.dateTime = post.createdAt;
+                byline.append(time);
+              }
+              header.append(byline);
+              const postLink = make('a', 'feed-page__post-link', 'View on Bluesky ↗');
+              postLink.href = post.url;
+              postLink.target = '_blank';
+              postLink.rel = 'noopener';
+              header.append(postLink);
+              article.append(header);
+              article.append(make('p', 'feed-page__post-text', post.text || ''));
+              if (Array.isArray(post.images) && post.images.length) {
+                const images = make('div', 'feed-page__images');
+                for (const item of post.images) {
+                  const image = make('img', '');
+                  image.src = item.url;
+                  image.alt = item.alt || '';
+                  image.loading = 'lazy';
+                  images.append(image);
+                }
+                article.append(images);
+              }
+              list.append(article);
+            }
+            cursor = data.cursor || null;
+            more.hidden = !cursor || !(data.posts || []).length;
+            status.textContent = list.children.length ? '' : 'There are no public posts in the feed right now. Sign in to the feed manager to choose authors for your personal feed.';
+          } catch (error) {
+            status.textContent = error instanceof Error ? error.message : 'The feed could not be loaded. Please try again.';
+          } finally {
+            loading = false;
+            more.disabled = false;
+          }
+        };
+        more.addEventListener('click', () => load(true));
+        load();
+      })();
+    </script>
   `;
   const metaTags = '<meta name="description" content="Follow the writers and people you choose with the Coffee &amp; Code custom Bluesky feed.">';
   return c.html(renderLayout(c, 'Coffee & Code Feed', body, metaTags));
