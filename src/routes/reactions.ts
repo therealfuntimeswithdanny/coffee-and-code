@@ -4,7 +4,6 @@ import { Env } from '../types';
 const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
 const constellationBacklinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
-const constellationLinksCountEndpoint = 'https://constellation.microcosm.blue/links/count';
 
 async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend' | 'save') {
   const source = collection === 'recommend'
@@ -30,27 +29,6 @@ async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 
   const result = await response.json() as { total?: unknown };
   const total = Number(result.total);
   return Number.isFinite(total) && total >= 0 ? total : 0;
-}
-
-async function countLinks(subject: string, collection: 'like' | 'save') {
-  const url = new URL(constellationLinksCountEndpoint);
-  url.searchParams.set('target', subject);
-  url.searchParams.set('collection', collection === 'like'
-    ? 'cc.coffeencode.interact.like'
-    : 'cc.coffeencode.save');
-  url.searchParams.set('path', collection === 'like' ? '.document' : '.target.document');
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'CoffeeAndCode (coffeencode.cc; @coffeencode.bsky.social)',
-    },
-  });
-  if (!response.ok) throw new Error(`Constellation returned ${response.status}`);
-  const result = await response.json() as { total?: unknown };
-  if (typeof result.total !== 'number' || !Number.isFinite(result.total) || result.total < 0) {
-    throw new Error('Constellation returned an invalid link count');
-  }
-  return result.total;
 }
 
 async function countComments(subject: string) {
@@ -94,24 +72,30 @@ reactions.get('/', async (c) => {
     return c.json({ error: 'A valid DID is required.' }, 400);
   }
 
+  let partial = false;
+  const safe = async <T,>(label: string, request: Promise<T>, fallback: T): Promise<T> => {
+    try { return await request; }
+    catch (error) {
+      partial = true;
+      console.error(`Failed to load ${label}:`, error);
+      return fallback;
+    }
+  };
   try {
     const [likes, dislikes, views, comments, savedCount, liked, disliked, recommended, saved] = await Promise.all([
-      countLinks(subject, 'like'),
-      countBacklinks(subject, 'dislike'),
-      countBacklinks(subject, 'view'),
-      countComments(subject).catch((error) => {
-        console.error('Failed to load comment count:', error);
-        return 0;
-      }),
-      countLinks(subject, 'save'),
-      did ? hasBacklink(subject, 'like', did).then((has) => Number(has)) : Promise.resolve(0),
-      did ? hasBacklink(subject, 'dislike', did).then((has) => Number(has)) : Promise.resolve(0),
-      did ? hasBacklink(subject, 'recommend', did).then((has) => Number(has)) : Promise.resolve(0),
-      did ? hasBacklink(subject, 'save', did) : Promise.resolve(false),
+      safe('like count', countBacklinks(subject, 'like'), 0),
+      safe('dislike count', countBacklinks(subject, 'dislike'), 0),
+      safe('view count', countBacklinks(subject, 'view'), 0),
+      safe('comment count', countComments(subject), 0),
+      safe('save count', countBacklinks(subject, 'save'), 0),
+      did ? safe('your like state', hasBacklink(subject, 'like', did), false).then(Number) : Promise.resolve(0),
+      did ? safe('your dislike state', hasBacklink(subject, 'dislike', did), false).then(Number) : Promise.resolve(0),
+      did ? safe('your recommendation state', hasBacklink(subject, 'recommend', did), false).then(Number) : Promise.resolve(0),
+      did ? safe('your saved state', hasBacklink(subject, 'save', did), false) : Promise.resolve(false),
     ]);
     // Reaction writes are immediately followed by a refresh from the client.
     // Shared caching here made those refreshes return the previous totals.
-    return c.json({ likes, dislikes, views, comments, saves: savedCount, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0, saved }, 200, { 'Cache-Control': 'no-store' });
+    return c.json({ likes, dislikes, views, comments, saves: savedCount, liked: liked > 0, disliked: disliked > 0, recommended: recommended > 0, saved, partial }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load reaction counts:', error);
     return c.json({ error: 'Reaction counts are temporarily unavailable.' }, 502);

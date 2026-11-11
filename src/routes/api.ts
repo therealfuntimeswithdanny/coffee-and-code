@@ -22,7 +22,7 @@ function documentSummary(post: StandardDocument, origin: string, pds: string) {
           avatar: post.author.avatar ? proxyAvatarUrl(post.author.avatar) : undefined,
         }
       : undefined,
-    markdownUrl: `${origin}/api/documents/${encodeURIComponent(post.rkey)}.md?uri=${encodeURIComponent(post.uri)}`,
+    markdownUrl: `${origin}/api/documents?uri=${encodeURIComponent(post.uri)}`,
   };
 }
 
@@ -135,6 +135,26 @@ api.get('/home', async (c) => {
 });
 
 api.get('/documents', async (c) => {
+  const uri = c.req.query('uri');
+  if (uri) {
+    if (uri.length > 2048 || !/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.document\/[a-zA-Z0-9._~:-]+$/.test(uri)) {
+      return c.json({ error: 'A valid site.standard.document AT URI is required.' }, 400, { 'Cache-Control': 'no-store' });
+    }
+    try {
+      const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+      const document = await fetchArticleByUri(uri, pds, c.env.OWNER_DID);
+      if (!document) return c.json({ error: 'Document not found.' }, 404, { 'Cache-Control': 'no-store' });
+      return c.json({
+        ...documentSummary(document, new URL(c.req.url).origin, pds),
+        content: await markdownDocument(document),
+        format: 'markdown',
+      }, 200, { 'Cache-Control': 'public, max-age=60' });
+    } catch (error) {
+      console.error('Could not load the requested Coffee & Code post:', error);
+      return c.json({ error: 'The post is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+    }
+  }
+
   const rawLimit = c.req.query('limit');
   const limit = rawLimit === undefined ? 20 : Number(rawLimit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {

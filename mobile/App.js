@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
@@ -160,10 +161,13 @@ function StoryRow({ story, featured, compact, onPress }) {
   </Pressable>;
 }
 
-function TabButton({ label, icon, active, onPress, imageUri }) {
+function TabButton({ label, icon, active, onPress, imageUri, compactProgress }) {
+  const iconScale = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [1, 0.84] }) || 1;
+  const labelOpacity = compactProgress?.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 0.2, 0] }) || 1;
+  const labelHeight = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) || 12;
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}>
-    {imageUri ? <Image source={{ uri: imageUri }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}
-    <Text style={[styles.tabLabel, active && styles.tabActive]}>{label}</Text>
+    <Animated.View style={{ transform: [{ scale: iconScale }] }}>{imageUri ? <Image source={{ uri: imageUri }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}</Animated.View>
+    <Animated.Text style={[styles.tabLabel, active && styles.tabActive, { opacity: labelOpacity, height: labelHeight }]}>{label}</Animated.Text>
   </Pressable>;
 }
 
@@ -202,8 +206,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
-  const [articleNavVisible, setArticleNavVisible] = useState(true);
+  const navCompactProgress = useRef(new Animated.Value(0)).current;
+  const navCollapsedRef = useRef(false);
   const lastArticleScrollY = useRef(0);
+  const articleTouchStart = useRef(null);
   const commentsRequestId = useRef(0);
   const [error, setError] = useState('');
 
@@ -304,7 +310,7 @@ export default function App() {
             const uri = record.value.document;
             const post = postByUri.get(uri) || {};
             const key = storyRecordKey(uri);
-            return { ...post, uri, title: post.title || 'Viewed story', publishedAt: post.publishedAt, viewedAt: record.value.createdAt, markdownUrl: key ? `${API}/documents/${encodeURIComponent(key)}.md?uri=${encodeURIComponent(uri)}` : undefined };
+            return { ...post, uri, title: post.title || 'Viewed story', publishedAt: post.publishedAt, viewedAt: record.value.createdAt, markdownUrl: `${API}/documents?uri=${encodeURIComponent(uri)}` };
           });
         setViewedStories(viewed);
         setBlockedAccounts(blockRecords
@@ -382,18 +388,29 @@ export default function App() {
     }
   }, [account?.session?.did]);
 
+  const animateArticleNav = useCallback((collapsed) => {
+    if (navCollapsedRef.current === collapsed) return;
+    navCollapsedRef.current = collapsed;
+    Animated.timing(navCompactProgress, {
+      toValue: collapsed ? 1 : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [navCompactProgress]);
+
   const onArticleScroll = useCallback((event) => {
     const offset = event.nativeEvent.contentOffset.y;
     const delta = offset - lastArticleScrollY.current;
     if (offset <= 8) {
-      setArticleNavVisible(true);
+      animateArticleNav(false);
       lastArticleScrollY.current = offset;
       return;
     }
     if (Math.abs(delta) < 8) return;
-    setArticleNavVisible(delta < 0);
+    animateArticleNav(delta > 0);
     lastArticleScrollY.current = offset;
-  }, []);
+  }, [animateArticleNav]);
 
   const openStory = useCallback(async (story) => {
     setSelected(story);
@@ -405,21 +422,26 @@ export default function App() {
     setCommentCursor(null);
     setCommentError('');
     setReplyTarget(null);
-    setArticleNavVisible(true);
+    navCollapsedRef.current = false;
+    navCompactProgress.setValue(0);
     lastArticleScrollY.current = 0;
     void loadComments(story.uri);
     setEngagement(null);
     try {
-      const storyUrl = story.markdownUrl || `${API}/documents/${encodeURIComponent(story.uri.split('/').pop())}.md?uri=${encodeURIComponent(story.uri)}`;
-      const markdownResponse = await fetch(storyUrl).catch(() => null);
-      const storyResponse = markdownResponse?.ok ? markdownResponse : await fetch(`${API}/documents/${encodeURIComponent(story.uri.split('/').pop())}?uri=${encodeURIComponent(story.uri)}`);
+      const storyResponse = await fetch(`${API}/documents?uri=${encodeURIComponent(story.uri)}`, { cache: 'no-store' });
       if (!storyResponse.ok) throw new Error(`Story request failed (${storyResponse.status}). Please try again.`);
       const responseText = await storyResponse.text();
       if (!responseText.trim()) throw new Error('This story has no readable content.');
       try {
         const json = JSON.parse(responseText);
         if (json.error) throw new Error(json.error);
-        setBody(json.content || '');
+        if (Array.isArray(json.documents) && typeof json.content !== 'string') {
+          throw new Error('The article API returned the story list without its content. Deploy the latest Coffee & Code API Worker, then reopen this post.');
+        }
+        if (typeof json.content !== 'string' || !json.content.trim()) {
+          throw new Error('The post metadata loaded, but the API returned no article text. Please try again after the API is updated.');
+        }
+        setBody(json.content);
       } catch (parseError) {
         if (parseError instanceof SyntaxError) setBody(responseText);
         else throw parseError;
@@ -578,23 +600,50 @@ export default function App() {
     const collection = `cc.coffeencode.interact.${kind}`;
     setAccountBusy(true); setError('');
     try {
-      const { data } = await account.agent.com.atproto.repo.listRecords({ repo: account.session.did, collection, limit: 100 });
-      const existing = data.records.find((item) => item.value?.document === selected.uri);
+      const oppositeKind = kind === 'like' ? 'dislike' : 'like';
+      let oppositeWasActive = false;
+      const records = await listRepoRecords(account.agent, account.session.did, collection);
+      const existing = records.find((item) => item.value?.document === selected.uri);
       if (existing) await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection, rkey: existing.uri.split('/').pop() });
       else {
         const other = `cc.coffeencode.interact.${kind === 'like' ? 'dislike' : 'like'}`;
-        const { data: opposite } = await account.agent.com.atproto.repo.listRecords({ repo: account.session.did, collection: other, limit: 100 });
-        const previous = opposite.records.find((item) => item.value?.document === selected.uri);
+        const oppositeRecords = await listRepoRecords(account.agent, account.session.did, other);
+        const previous = oppositeRecords.find((item) => item.value?.document === selected.uri);
+        oppositeWasActive = Boolean(previous);
         await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection, record: { $type: collection, document: selected.uri, createdAt: new Date().toISOString() } });
         if (previous) await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: other, rkey: previous.uri.split('/').pop() });
       }
-      const response = await fetch(`${API}/reactions?subject=${encodeURIComponent(selected.uri)}&did=${encodeURIComponent(account.session.did)}`);
-      if (response.ok) setEngagement(await response.json());
+      const wasActive = Boolean(existing);
+      const localState = (current) => current && ({
+        ...current,
+        [`${kind}d`]: !wasActive,
+        [`${kind}s`]: Math.max(0, (current[`${kind}s`] || 0) + (wasActive ? -1 : 1)),
+        ...(oppositeWasActive ? {
+          [`${oppositeKind}d`]: false,
+          [`${oppositeKind}s`]: Math.max(0, (current[`${oppositeKind}s`] || 0) - 1),
+        } : {}),
+      });
+      setEngagement(localState);
+      const response = await fetch(`${API}/reactions?subject=${encodeURIComponent(selected.uri)}&did=${encodeURIComponent(account.session.did)}`, { cache: 'no-store' }).catch(() => null);
+      if (response?.ok) {
+        const indexed = await response.json();
+        setEngagement((current) => current && ({
+          ...indexed,
+          // The backlink index can lag behind a successful repo write. Keep
+          // this account's just-written state and optimistic count until it catches up.
+          [`${kind}d`]: !wasActive,
+          [`${kind}s`]: indexed[`${kind}d`] === !wasActive ? indexed[`${kind}s`] : current[`${kind}s`],
+          ...(oppositeWasActive ? {
+            [`${oppositeKind}d`]: false,
+            [`${oppositeKind}s`]: indexed[`${oppositeKind}d`] === false ? indexed[`${oppositeKind}s`] : current[`${oppositeKind}s`],
+          } : {}),
+        }));
+      }
     } catch (e) { setError(e.message || 'Could not update your reaction.'); }
     finally { setAccountBusy(false); }
   };
 
-  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setBody(''); setError(''); setReplyTarget(null); setArticleNavVisible(true); lastArticleScrollY.current = 0; };
+  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setBody(''); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
   const tags = [...new Set(allArchiveStories.flatMap((story) => story.tags || []))].sort((a, b) => a.localeCompare(b));
   const visibleStories = allArchiveStories.filter((story) => {
@@ -610,7 +659,33 @@ export default function App() {
   const remainingLatest = [...recentStories.slice(3), ...(feed?.more || [])];
   const pinnedStories = feed?.pinned || [];
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
-  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); animateArticleNav(false); };
+
+  const onArticleTouchStart = (event) => {
+    const touch = event.nativeEvent.touches?.[0] || event.nativeEvent;
+    articleTouchStart.current = { x: touch.pageX, y: touch.pageY };
+  };
+  const onArticleTouchEnd = (event) => {
+    const start = articleTouchStart.current;
+    articleTouchStart.current = null;
+    if (!start) return;
+    const touch = event.nativeEvent.changedTouches?.[0] || event.nativeEvent;
+    const dx = touch.pageX - start.x;
+    const dy = touch.pageY - start.y;
+    if (Math.abs(dy) > 110 && Math.abs(dx) < 70 && dy > 0 && lastArticleScrollY.current <= 8) {
+      closeStory();
+      return;
+    }
+    if (Math.abs(dx) < 88 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    const collection = [...topStories, ...pinnedStories, ...remainingLatest];
+    const index = collection.findIndex((story) => story.uri === selected?.uri);
+    if (dx > 0) {
+      if (index > 0) openStory(collection[index - 1]);
+      else closeStory();
+    } else if (index >= 0 && index < collection.length - 1) {
+      openStory(collection[index + 1]);
+    }
+  };
 
   const renderLatest = () => <ScrollView contentContainerStyle={styles.homeContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} /> }>
     <View style={styles.homeHeading}><View><Text style={styles.pageTitle}>Top Stories</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Search the archive" onPress={() => { setTab('Archive'); if (!archiveLoaded) loadArchive(); }} style={styles.archiveShortcut}><SymbolView name="magnifyingglass" size={20} tintColor={C.ink} /></Pressable></View>
@@ -740,8 +815,14 @@ export default function App() {
       <Text style={styles.brand}>Coffee & Code</Text>
       <View style={styles.headerSide} />
     </View>
-    {loading ? <View style={styles.center}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Loading the latest stories…</Text></View>
-      : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article} onScroll={onArticleScroll} scrollEventThrottle={16}>
+    {loading ? <View style={styles.launchLoading}>
+        <Image source={require('./assets/icon.png')} accessibilityLabel="Coffee & Code coffee cup icon" style={styles.launchMark} resizeMode="contain" />
+        <Text style={styles.launchTitle}>Coffee & Code</Text>
+        <Text style={styles.launchSubtitle}>Technology, thoughtfully covered.</Text>
+        <ActivityIndicator color={C.muted} size="small" style={styles.launchSpinner} />
+        <Text style={styles.launchStatus}>GETTING YOUR EDITION READY</Text>
+      </View>
+      : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article} onScroll={onArticleScroll} scrollEventThrottle={16} onTouchStart={onArticleTouchStart} onTouchEnd={onArticleTouchEnd} onTouchCancel={() => { articleTouchStart.current = null; }}>
         {!!selected.cover && <Image source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}
         <Text style={styles.articleTitle}>{selected.title}</Text>
         {!!selected.description && <Text style={styles.dek}>{selected.description}</Text>}
@@ -772,12 +853,12 @@ export default function App() {
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
       : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
-    {!loading && (!selected || articleNavVisible) && <View style={[styles.tabBar, selected && styles.articleTabBar]}>
-      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} />
-      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} />
-      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} />
-      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} />
-    </View>}
+    <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [62, 42] }) }]}>
+      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
+    </Animated.View>
   </SafeAreaView>;
 }
 
@@ -796,6 +877,7 @@ const styles = StyleSheet.create({
   heroTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 33, lineHeight: 39, marginBottom: 9 },
   storyTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 23, lineHeight: 29, marginBottom: 8 }, summary: { color: C.muted, fontSize: 15, lineHeight: 23, marginBottom: 8 }, meta: { color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }, read: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginTop: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }, muted: { color: C.muted, fontSize: 14 }, empty: { paddingVertical: 30 }, emptyTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22 }, emptyText: { color: C.muted, paddingVertical: 18, lineHeight: 24 }, error: { color: C.error, lineHeight: 23, marginBottom: 12 },
+  launchLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 46, backgroundColor: C.bg }, launchMark: { width: 126, height: 126, marginBottom: 21 }, launchTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 30, letterSpacing: -0.7 }, launchSubtitle: { color: C.muted, fontFamily: 'Georgia', fontSize: 15, marginTop: 8 }, launchSpinner: { marginTop: 42 }, launchStatus: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.6, marginTop: 13 },
   article: { paddingHorizontal: 22, paddingTop: 21, paddingBottom: 130 }, cover: { width: '100%', height: 218, marginBottom: 23, backgroundColor: C.panel }, articleTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 35, lineHeight: 41, marginBottom: 13 }, dek: { color: C.muted, fontFamily: 'Georgia', fontSize: 19, lineHeight: 28, marginBottom: 13 }, rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 20 },
   prose: { paddingTop: 2 }, paragraph: { color: C.reading, fontSize: 17, lineHeight: 28, marginBottom: 19 }, articleHeading: { color: C.ink, fontFamily: 'Georgia', fontSize: 26, lineHeight: 33, fontWeight: '700', marginTop: 9, marginBottom: 14 }, articleSubheading: { fontSize: 21, lineHeight: 28 }, quote: { color: C.reading, fontFamily: 'Georgia', fontSize: 19, lineHeight: 29, borderLeftWidth: 2, borderLeftColor: C.muted, paddingLeft: 15, marginBottom: 19 }, listBlock: { marginBottom: 8 }, listItem: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: 3 }, bullet: { width: 24, color: C.muted, fontSize: 17, lineHeight: 28 }, code: { color: C.reading, backgroundColor: C.panel, padding: 14, fontFamily: 'Menlo', fontSize: 13, lineHeight: 20, marginBottom: 18 }, articleImage: { width: '100%', height: 220, marginBottom: 20, backgroundColor: C.panel }, inlineLink: { color: C.muted, textDecorationLine: 'underline' }, returnButton: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 18, paddingVertical: 22 },
   pageTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 34, lineHeight: 40, marginTop: 24, marginBottom: 16 }, searchInput: { minHeight: 49, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 14, fontSize: 15, backgroundColor: C.panel, marginBottom: 10 },
@@ -808,5 +890,5 @@ const styles = StyleSheet.create({
   accountCard: { backgroundColor: C.panel, borderRadius: 14, padding: 20, marginTop: 8 }, accountAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, accountProfileAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, marginBottom: 15 }, accountProfileName: { color: C.ink, fontFamily: 'Georgia', fontSize: 24, lineHeight: 30, fontWeight: '700' }, accountDid: { color: C.muted, fontSize: 10, marginTop: 1, marginBottom: 12 }, accountIdentityDetails: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 14, paddingTop: 13 }, accountIdentityLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.1, marginBottom: 4 }, accountIdentityValue: { color: C.ink, fontSize: 12, lineHeight: 17, marginBottom: 11 }, accountDescription: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 15 }, profileLink: { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 10, marginTop: 5 }, accountSyncing: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15 }, accountSavedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, accountSavedCopy: { flex: 1 }, accountRecordDate: { color: C.muted, fontSize: 10, marginLeft: 94, marginTop: -6, marginBottom: 8 }, viewedExpandButton: { minHeight: 43, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginTop: 6, marginBottom: 16, borderWidth: 1, borderColor: C.line, borderRadius: 22 }, accountRemoveButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: C.line }, blockedAccountRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 13 }, primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: C.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }, primaryButtonText: { color: C.bg, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, disabledButton: { opacity: 0.5 }, secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', marginTop: 18 }, privacyNote: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 15, lineHeight: 16 },
   authorRow: { minHeight: 83, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', paddingVertical: 13 }, avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panel }, avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center' }, avatarInitial: { color: C.muted, fontFamily: 'Georgia', fontSize: 22 }, authorCopy: { flex: 1, paddingLeft: 13 }, authorName: { color: C.ink, fontFamily: 'Georgia', fontSize: 19, fontWeight: '700' }, chevron: { color: C.muted, fontSize: 26, paddingHorizontal: 5 }, handle: { color: C.muted, marginTop: -10, marginBottom: 14, fontSize: 13 }, backLink: { marginTop: 24, marginBottom: 12 },
   footer: { marginTop: 25, backgroundColor: C.panel, padding: 18 }, footerBrand: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 19 }, footerText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
-  tabBar: { minHeight: 60, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }, articleTabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 8 }, tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabProfileImage: { width: 23, height: 23, borderRadius: 12, borderWidth: 1, borderColor: C.line }, tabProfileImageActive: { borderColor: C.ink, borderWidth: 2 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2 }, tabActive: { color: C.ink },
+  tabBar: { height: 62, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', overflow: 'hidden' }, articleTabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 8 }, tabButton: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabProfileImage: { width: 23, height: 23, borderRadius: 12, borderWidth: 1, borderColor: C.line }, tabProfileImageActive: { borderColor: C.ink, borderWidth: 2 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2, overflow: 'hidden' }, tabActive: { color: C.ink },
 });
