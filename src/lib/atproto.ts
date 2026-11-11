@@ -569,6 +569,60 @@ export async function fetchArticles(
   });
 }
 
+export async function fetchArticleByUri(uri: string, fallbackPds: string, fallbackDid: string): Promise<StandardDocument | undefined> {
+  const match = uri.match(/^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/);
+  if (!match) return undefined;
+  const [, repoDid, rkey] = match;
+  const pdsUrl = await getPdsEndpoint(repoDid, fallbackPds);
+  const [record, configuredLists, configuredHandles] = await Promise.all([
+    fetchRecord(pdsUrl, repoDid, 'site.standard.document', rkey),
+    fetchConfiguredLists(fallbackPds, fallbackDid),
+    fetchConfiguredHandles(fallbackPds, fallbackDid),
+  ]);
+  if (!record?.value || record.uri !== uri) return undefined;
+  const publicationUri = typeof record.value.site === 'string' ? record.value.site : undefined;
+  const allowed = configuredLists.publicationUris.length
+    ? configuredLists.publicationUris.includes(publicationUri || '')
+    : repoDid === fallbackDid;
+  if (!allowed) return undefined;
+
+  const { content, format, mimeType } = extractDocumentContent(record.value);
+  const authorDid = typeof record.value.author === 'string'
+    ? record.value.author
+    : typeof record.value.author?.did === 'string'
+      ? record.value.author.did
+      : repoDid;
+  const author = await fetchAuthorProfile(authorDid, fallbackPds);
+  const path = canonicalDocumentPath(authorDid, author?.handle, rkey, configuredHandles);
+  const domainHandle = configuredHandles.get(authorDid.toLowerCase());
+  return {
+    uri,
+    cid: typeof record.cid === 'string' ? record.cid : '',
+    rkey,
+    title: typeof record.value.title === 'string' && record.value.title ? record.value.title : 'Untitled Post',
+    content,
+    publishedAt: typeof record.value.publishedAt === 'string'
+      ? record.value.publishedAt
+      : typeof record.value.createdAt === 'string' ? record.value.createdAt : new Date().toISOString(),
+    tags: documentTags(record.value.tags),
+    pinnedOrder: configuredLists.pinnedUris.indexOf(uri) >= 0 ? configuredLists.pinnedUris.indexOf(uri) : undefined,
+    path,
+    alternatePaths: domainHandle && author?.handle && domainHandle !== author.handle
+      ? [`/author/${encodeURIComponent(author.handle)}/${encodeURIComponent(rkey)}`]
+      : undefined,
+    description: typeof record.value.description === 'string'
+      ? record.value.description
+      : typeof record.value.summary === 'string' ? record.value.summary : '',
+    cover: documentCoverUrl(record.value, content, repoDid, pdsUrl),
+    format,
+    mimeType,
+    repoDid,
+    pdsUrl,
+    publicationUri,
+    author,
+  };
+}
+
 export function searchArticles(articles: StandardDocument[], query: string): StandardDocument[] {
   if (!query.trim()) return articles;
 

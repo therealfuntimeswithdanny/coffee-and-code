@@ -182,10 +182,11 @@ comments.get('/', async (c) => {
       records: commentsWithLikes,
       total: Number.isFinite(Number(index.total)) ? Number(index.total) : commentsWithLikes.length,
       cursor: typeof index.cursor === 'string' ? index.cursor : null,
+      hasMore: typeof index.cursor === 'string' && Boolean(index.cursor),
     }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load comments:', error);
-    return c.json({ error: 'Comments are temporarily unavailable.' }, 502);
+    return c.json({ error: 'Comments are temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
   }
 });
 

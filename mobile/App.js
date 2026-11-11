@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
@@ -176,6 +176,11 @@ export default function App() {
   const [activeAuthor, setActiveAuthor] = useState(null);
   const [saved, setSaved] = useState([]);
   const [comments, setComments] = useState([]);
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [commentCursor, setCommentCursor] = useState(null);
+  const [commentTotal, setCommentTotal] = useState(0);
+  const [commentError, setCommentError] = useState('');
+  const [replyTarget, setReplyTarget] = useState(null);
   const [engagement, setEngagement] = useState(null);
   const [activeTag, setActiveTag] = useState('');
   const [archiveStories, setArchiveStories] = useState([]);
@@ -197,6 +202,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
+  const [articleNavVisible, setArticleNavVisible] = useState(true);
+  const lastArticleScrollY = useRef(0);
+  const commentsRequestId = useRef(0);
   const [error, setError] = useState('');
 
   const loadFeed = useCallback(async (refresh = false) => {
@@ -343,12 +351,63 @@ export default function App() {
     return () => { cancelled = true; };
   }, [account?.session?.did, savedLoaded, accountRefresh]);
 
+  const loadComments = useCallback(async (storyUri, cursor = null, append = false) => {
+    const requestId = append ? commentsRequestId.current : ++commentsRequestId.current;
+    setCommentLoading(true);
+    setCommentError('');
+    try {
+      const params = new URLSearchParams({ subject: storyUri, limit: '40' });
+      if (account?.session?.did) params.set('did', account.session.did);
+      if (cursor) params.set('cursor', cursor);
+      const response = await fetch(`${API}/comments?${params.toString()}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Comments are temporarily unavailable.');
+      if (!Array.isArray(payload.records)) throw new Error('The comments response was incomplete.');
+      if (requestId !== commentsRequestId.current) return;
+      const records = payload.records;
+      setComments((current) => {
+        if (!append) return records;
+        const byUri = new Map(current.map((comment) => [comment.uri, comment]));
+        records.forEach((comment) => byUri.set(comment.uri, comment));
+        return [...byUri.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      });
+      setCommentCursor(typeof payload.cursor === 'string' && payload.cursor ? payload.cursor : null);
+      setCommentTotal(Number.isFinite(Number(payload.total)) ? Number(payload.total) : records.length);
+      return records;
+    } catch (e) {
+      if (requestId === commentsRequestId.current) setCommentError(e.message || 'Could not load comments.');
+      return null;
+    } finally {
+      if (requestId === commentsRequestId.current) setCommentLoading(false);
+    }
+  }, [account?.session?.did]);
+
+  const onArticleScroll = useCallback((event) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    const delta = offset - lastArticleScrollY.current;
+    if (offset <= 8) {
+      setArticleNavVisible(true);
+      lastArticleScrollY.current = offset;
+      return;
+    }
+    if (Math.abs(delta) < 8) return;
+    setArticleNavVisible(delta < 0);
+    lastArticleScrollY.current = offset;
+  }, []);
+
   const openStory = useCallback(async (story) => {
     setSelected(story);
     setBody('');
     setError('');
     setArticleLoading(true);
     setComments([]);
+    setCommentTotal(0);
+    setCommentCursor(null);
+    setCommentError('');
+    setReplyTarget(null);
+    setArticleNavVisible(true);
+    lastArticleScrollY.current = 0;
+    void loadComments(story.uri);
     setEngagement(null);
     try {
       const storyUrl = story.markdownUrl || `${API}/documents/${encodeURIComponent(story.uri.split('/').pop())}.md?uri=${encodeURIComponent(story.uri)}`;
@@ -365,11 +424,9 @@ export default function App() {
         if (parseError instanceof SyntaxError) setBody(responseText);
         else throw parseError;
       }
-      const [commentsResponse, engagementResponse] = await Promise.all([
-        fetch(`${API}/comments?subject=${encodeURIComponent(story.uri)}&limit=40${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
+      const [engagementResponse] = await Promise.all([
         fetch(`${API}/reactions?subject=${encodeURIComponent(story.uri)}${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
       ]);
-      if (commentsResponse?.ok) { const data = await commentsResponse.json(); setComments(data.records || []); }
       if (engagementResponse?.ok) setEngagement(await engagementResponse.json());
       if (account?.agent) {
         account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: VIEW_COLLECTION, record: { $type: VIEW_COLLECTION, document: story.uri, createdAt: new Date().toISOString() } })
@@ -381,7 +438,7 @@ export default function App() {
     } finally {
       setArticleLoading(false);
     }
-  }, [account]);
+  }, [account, loadComments]);
 
   const loadArchive = useCallback(async () => {
     setLoading(true);
@@ -458,20 +515,66 @@ export default function App() {
 
   const sendComment = async () => {
     const text = commentDraft.trim();
-    if (!account?.agent) { setTab('Account'); setError('Sign in to post a comment.'); return; }
-    if (!text) return;
-    setAccountBusy(true); setError('');
+    if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to post a comment.'); return; }
+    if (!text || accountBusy) return;
+    setAccountBusy(true); setError(''); setCommentError('');
     try {
-      await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: 'cc.coffeencode.comment', record: { $type: 'cc.coffeencode.comment', subject: { uri: selected.uri }, text, createdAt: new Date().toISOString() } });
+      const createdAt = new Date().toISOString();
+      const record = {
+        $type: 'cc.coffeencode.comment',
+        subject: { uri: selected.uri },
+        ...(replyTarget ? { reply: { parent: { uri: replyTarget.uri } } } : {}),
+        text,
+        createdAt,
+      };
+      const result = await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: 'cc.coffeencode.comment', record });
+      const optimisticComment = {
+        uri: result.data.uri,
+        did: account.session.did,
+        handle: accountProfile?.handle || account.session.did,
+        displayName: accountProfile?.displayName,
+        avatar: accountProfile?.avatar,
+        text,
+        createdAt,
+        parentUri: replyTarget?.uri,
+        likeCount: 0,
+        liked: false,
+      };
+      setComments((current) => [...current, optimisticComment].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+      setCommentTotal((current) => current + 1);
       setCommentDraft('');
-      const response = await fetch(`${API}/comments?subject=${encodeURIComponent(selected.uri)}&limit=40&did=${encodeURIComponent(account.session.did)}`);
-      if (response.ok) setComments((await response.json()).records || []);
-    } catch (e) { setError(e.message || 'Could not publish your comment.'); }
+      setReplyTarget(null);
+    } catch (e) { setCommentError(e.message || 'Could not publish your comment.'); }
+    finally { setAccountBusy(false); }
+  };
+
+  const toggleCommentLike = async (comment) => {
+    if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to like a comment.'); return; }
+    if (accountBusy) return;
+    setAccountBusy(true);
+    setCommentError('');
+    try {
+      const collection = 'cc.coffeencode.comment.like';
+      if (comment.liked) {
+        let rkey = comment.likeRkey;
+        if (!rkey) {
+          const records = await listRepoRecords(account.agent, account.session.did, collection);
+          rkey = records.find((record) => record.value?.subject?.uri === comment.uri)?.uri.split('/').pop();
+        }
+        if (!rkey) throw new Error('Could not find your comment like. Refresh comments and try again.');
+        await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection, rkey });
+        setComments((current) => current.map((item) => item.uri === comment.uri ? { ...item, liked: false, likeCount: Math.max(0, (item.likeCount || 0) - 1), likeRkey: undefined } : item));
+      } else {
+        const result = await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection, record: { $type: collection, subject: { uri: comment.uri }, createdAt: new Date().toISOString() } });
+        const rkey = result.data.uri.split('/').pop();
+        setComments((current) => current.map((item) => item.uri === comment.uri ? { ...item, liked: true, likeCount: (item.likeCount || 0) + 1, likeRkey: rkey } : item));
+      }
+    } catch (e) { setCommentError(e.message || 'Could not update your comment like.'); }
     finally { setAccountBusy(false); }
   };
 
   const toggleReaction = async (kind) => {
-    if (!account?.agent) { setTab('Account'); setError('Sign in to react to this story.'); return; }
+    if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to react to this story.'); return; }
     const collection = `cc.coffeencode.interact.${kind}`;
     setAccountBusy(true); setError('');
     try {
@@ -491,7 +594,7 @@ export default function App() {
     finally { setAccountBusy(false); }
   };
 
-  const closeStory = () => { setSelected(null); setBody(''); setError(''); };
+  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setBody(''); setError(''); setReplyTarget(null); setArticleNavVisible(true); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
   const tags = [...new Set(allArchiveStories.flatMap((story) => story.tags || []))].sort((a, b) => a.localeCompare(b));
   const visibleStories = allArchiveStories.filter((story) => {
@@ -507,6 +610,7 @@ export default function App() {
   const remainingLatest = [...recentStories.slice(3), ...(feed?.more || [])];
   const pinnedStories = feed?.pinned || [];
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); };
 
   const renderLatest = () => <ScrollView contentContainerStyle={styles.homeContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} /> }>
     <View style={styles.homeHeading}><View><Text style={styles.pageTitle}>Top Stories</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Search the archive" onPress={() => { setTab('Archive'); if (!archiveLoaded) loadArchive(); }} style={styles.archiveShortcut}><SymbolView name="magnifyingglass" size={20} tintColor={C.ink} /></Pressable></View>
@@ -556,6 +660,28 @@ export default function App() {
       {allowRemove && <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${story.title} from your reading list`} disabled={accountBusy} onPress={() => toggleSaved(story)} style={styles.accountRemoveButton}><Text style={styles.action}>REMOVE</Text></Pressable>}
     </View>)
     : <Text style={styles.emptyText}>{emptyText}</Text>;
+
+  const renderCommentThread = (comment, depth = 0, ancestors = new Set()) => {
+    if (ancestors.has(comment.uri)) return null;
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(comment.uri);
+    const replies = comments.filter((item) => item.parentUri === comment.uri);
+    return <React.Fragment key={comment.uri}>
+      <View style={[styles.comment, depth > 0 && styles.commentReply]}>
+        <View style={styles.commentHeader}>
+          {comment.avatar ? <Image source={{ uri: comment.avatar }} accessibilityLabel={`${comment.displayName || comment.handle} profile photo`} style={styles.commentAvatar} /> : <View style={styles.commentAvatarPlaceholder}><SymbolView name="person.fill" size={14} tintColor={C.muted} /></View>}
+          <View style={{ flex: 1 }}><Text style={styles.commentAuthor}>{comment.displayName || comment.handle}</Text><Text style={styles.meta}>{formatDate(comment.createdAt)}</Text></View>
+        </View>
+        {!!comment.parentUri && <Text style={styles.commentReplyLabel}>REPLY</Text>}
+        <Text style={styles.commentText}>{comment.text}</Text>
+        <View style={styles.commentActions}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(comment.liked) }} disabled={accountBusy} onPress={() => toggleCommentLike(comment)}><Text style={[styles.commentAction, comment.liked && styles.commentActionActive]}>{comment.liked ? 'LIKED' : 'LIKE'}  ·  {comment.likeCount || 0}</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => { setReplyTarget(comment); setCommentDraft(''); }}><Text style={styles.commentAction}>REPLY</Text></Pressable>
+        </View>
+      </View>
+      {replies.map((reply) => renderCommentThread(reply, depth + 1, nextAncestors))}
+    </React.Fragment>;
+  };
 
   const renderAccount = () => <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
@@ -615,36 +741,42 @@ export default function App() {
       <View style={styles.headerSide} />
     </View>
     {loading ? <View style={styles.center}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Loading the latest stories…</Text></View>
-      : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article}>
+      : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article} onScroll={onArticleScroll} scrollEventThrottle={16}>
         {!!selected.cover && <Image source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}
         <Text style={styles.articleTitle}>{selected.title}</Text>
         {!!selected.description && <Text style={styles.dek}>{selected.description}</Text>}
         <Text style={styles.meta}>{storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
         <View style={styles.engagementRow}>
-          <Text style={styles.engagementStat}>◉  {engagement?.views ?? '—'} reads</Text><Text style={styles.engagementStat}>▤  {comments.length || engagement?.comments || 0} comments</Text>
+          <Text style={styles.engagementStat}>◉  {engagement?.views ?? '—'} reads</Text><Text style={styles.engagementStat}>▤  {commentTotal || engagement?.comments || comments.length || 0} comments</Text>
         </View>
         <View style={styles.reactionActions}>
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.liked) }} disabled={accountBusy} onPress={() => toggleReaction('like')} style={[styles.reactionButton, engagement?.liked && styles.reactionSelected]}><SymbolView name="hand.thumbsup" size={17} tintColor={engagement?.liked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.liked && styles.reactionSelectedText]}>{engagement?.liked ? 'LIKED' : 'LIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.liked && styles.reactionSelectedText]}>{engagement?.likes ?? 0}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: saved.some((item) => item.uri === selected.uri) }} disabled={accountBusy} onPress={() => toggleSaved(selected)} style={[styles.reactionButton, saved.some((item) => item.uri === selected.uri) && styles.reactionSelected]}><SymbolView name="bookmark" size={17} tintColor={saved.some((item) => item.uri === selected.uri) ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{saved.some((item) => item.uri === selected.uri) ? 'SAVED' : 'SAVE'}</Text><Text style={[styles.reactionButtonCount, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{engagement?.saves ?? 0}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.disliked) }} disabled={accountBusy} onPress={() => toggleReaction('dislike')} style={[styles.reactionButton, engagement?.disliked && styles.reactionSelected]}><SymbolView name="hand.thumbsdown" size={17} tintColor={engagement?.disliked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.disliked ? 'DISLIKED' : 'DISLIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.dislikes ?? 0}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.liked) }} accessibilityLabel={`Like, ${engagement?.likes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('like')} style={[styles.reactionButton, engagement?.liked && styles.reactionSelected]}><SymbolView name="hand.thumbsup" size={14} tintColor={engagement?.liked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.liked && styles.reactionSelectedText]}>{engagement?.liked ? 'LIKED' : 'LIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.liked && styles.reactionSelectedText]}>{engagement?.likes ?? 0}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: saved.some((item) => item.uri === selected.uri) }} accessibilityLabel={`Save, ${engagement?.saves ?? 0}`} disabled={accountBusy} onPress={() => toggleSaved(selected)} style={[styles.reactionButton, saved.some((item) => item.uri === selected.uri) && styles.reactionSelected]}><SymbolView name="bookmark" size={14} tintColor={saved.some((item) => item.uri === selected.uri) ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{saved.some((item) => item.uri === selected.uri) ? 'SAVED' : 'SAVE'}</Text><Text style={[styles.reactionButtonCount, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{engagement?.saves ?? 0}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.disliked) }} accessibilityLabel={`Dislike, ${engagement?.dislikes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('dislike')} style={[styles.reactionButton, engagement?.disliked && styles.reactionSelected]}><SymbolView name="hand.thumbsdown" size={14} tintColor={engagement?.disliked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.disliked ? 'DISLIKED' : 'DISLIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.dislikes ?? 0}</Text></Pressable>
         </View>
         <View style={styles.rule} />
         {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody markdown={body} />}
-        <SectionBar title="Conversation" detail={`${comments.length} COMMENTS`} />
-        {comments.length ? comments.map((comment) => <View key={comment.uri} style={styles.comment}>
-          <View style={styles.commentHeader}>{comment.avatar ? <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} /> : <View style={styles.commentAvatarPlaceholder} />}<View><Text style={styles.commentAuthor}>{comment.displayName || comment.handle}</Text><Text style={styles.meta}>{formatDate(comment.createdAt)}</Text></View></View>
-          <Text style={styles.commentText}>{comment.text}</Text>
-        </View>) : <Text style={styles.emptyText}>No comments yet. Join the conversation on the Coffee & Code website.</Text>}
-        <View style={styles.commentComposer}><Text style={styles.fieldLabel}>{account ? 'ADD TO THE CONVERSATION' : 'SIGN IN TO JOIN THE CONVERSATION'}</Text><TextInput value={commentDraft} onChangeText={setCommentDraft} editable={Boolean(account) && !accountBusy} placeholder={account ? 'Write a thoughtful comment…' : 'Sign in from the Account tab to comment'} placeholderTextColor={C.muted} multiline maxLength={3000} style={[styles.commentInput, !account && styles.disabledInput]} /><Pressable disabled={!account || accountBusy || !commentDraft.trim()} onPress={sendComment} style={[styles.primaryButton, (!account || !commentDraft.trim()) && styles.disabledButton]}><Text style={styles.primaryButtonText}>{accountBusy ? 'PUBLISHING…' : 'PUBLISH COMMENT'}</Text></Pressable></View>
+        <SectionBar title="Conversation" detail={`${commentTotal || comments.length} COMMENTS`} />
+        {commentLoading && !comments.length && <ActivityIndicator color={C.muted} style={{ marginVertical: 18 }} />}
+        {!!commentError && <Text accessibilityRole="alert" style={styles.error}>{commentError}</Text>}
+        {comments.length ? comments.filter((comment) => !comment.parentUri || !comments.some((parent) => parent.uri === comment.parentUri)).map((comment) => renderCommentThread(comment)) : !commentLoading && !commentError && <Text style={styles.emptyText}>No comments yet. Start the conversation.</Text>}
+        {commentLoading && !!comments.length && <ActivityIndicator color={C.muted} style={{ marginVertical: 12 }} />}
+        {!!commentCursor && <Pressable accessibilityRole="button" disabled={commentLoading} onPress={() => loadComments(selected.uri, commentCursor, true)} style={styles.loadCommentsButton}><Text style={styles.action}>{commentLoading ? 'LOADING…' : 'LOAD MORE COMMENTS'}</Text></Pressable>}
+        <View style={styles.commentComposer}>
+          {!!replyTarget && <View style={styles.replyingTo}><View style={{ flex: 1 }}><Text style={styles.fieldLabel}>REPLYING TO</Text><Text style={styles.commentAuthor}>{replyTarget.displayName || replyTarget.handle}</Text></View><Pressable accessibilityRole="button" onPress={() => setReplyTarget(null)}><Text style={styles.action}>CANCEL</Text></Pressable></View>}
+          <Text style={styles.fieldLabel}>{account ? replyTarget ? 'WRITE A REPLY' : 'ADD TO THE CONVERSATION' : 'SIGN IN TO JOIN THE CONVERSATION'}</Text>
+          <TextInput value={commentDraft} onChangeText={setCommentDraft} editable={Boolean(account) && !accountBusy} placeholder={account ? replyTarget ? 'Write a reply…' : 'Write a thoughtful comment…' : 'Sign in from the Account tab to comment'} placeholderTextColor={C.muted} multiline maxLength={3000} style={[styles.commentInput, !account && styles.disabledInput]} />
+          <Pressable disabled={accountBusy || Boolean(account && !commentDraft.trim())} onPress={sendComment} style={[styles.primaryButton, (accountBusy || Boolean(account && !commentDraft.trim())) && styles.disabledButton]}><Text style={styles.primaryButtonText}>{accountBusy ? 'PUBLISHING…' : !account ? 'SIGN IN TO COMMENT' : replyTarget ? 'PUBLISH REPLY' : 'PUBLISH COMMENT'}</Text></Pressable>
+        </View>
         <Pressable onPress={() => Linking.openURL(`https://coffeencode.cc${selected.path || '/' }#comments`)} style={styles.outbound}><Text style={styles.action}>OPEN DISCUSSION ON THE WEBSITE  ↗</Text></Pressable>
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
       : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
-    {!selected && !loading && <View style={styles.tabBar}>
-      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => { setTab('Latest'); setActiveAuthor(null); }} />
-      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { setTab('Archive'); setActiveAuthor(null); if (!archiveLoaded) loadArchive(); }} />
-      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => { setTab('Saved'); setActiveAuthor(null); }} />
-      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => { setTab('Account'); setActiveAuthor(null); }} />
+    {!loading && (!selected || articleNavVisible) && <View style={[styles.tabBar, selected && styles.articleTabBar]}>
+      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} />
+      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} />
+      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} />
+      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} />
     </View>}
   </SafeAreaView>;
 }
@@ -664,17 +796,17 @@ const styles = StyleSheet.create({
   heroTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 33, lineHeight: 39, marginBottom: 9 },
   storyTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 23, lineHeight: 29, marginBottom: 8 }, summary: { color: C.muted, fontSize: 15, lineHeight: 23, marginBottom: 8 }, meta: { color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }, read: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginTop: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }, muted: { color: C.muted, fontSize: 14 }, empty: { paddingVertical: 30 }, emptyTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22 }, emptyText: { color: C.muted, paddingVertical: 18, lineHeight: 24 }, error: { color: C.error, lineHeight: 23, marginBottom: 12 },
-  article: { paddingHorizontal: 22, paddingTop: 21, paddingBottom: 46 }, cover: { width: '100%', height: 218, marginBottom: 23, backgroundColor: C.panel }, articleTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 35, lineHeight: 41, marginBottom: 13 }, dek: { color: C.muted, fontFamily: 'Georgia', fontSize: 19, lineHeight: 28, marginBottom: 13 }, rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 20 },
+  article: { paddingHorizontal: 22, paddingTop: 21, paddingBottom: 130 }, cover: { width: '100%', height: 218, marginBottom: 23, backgroundColor: C.panel }, articleTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 35, lineHeight: 41, marginBottom: 13 }, dek: { color: C.muted, fontFamily: 'Georgia', fontSize: 19, lineHeight: 28, marginBottom: 13 }, rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 20 },
   prose: { paddingTop: 2 }, paragraph: { color: C.reading, fontSize: 17, lineHeight: 28, marginBottom: 19 }, articleHeading: { color: C.ink, fontFamily: 'Georgia', fontSize: 26, lineHeight: 33, fontWeight: '700', marginTop: 9, marginBottom: 14 }, articleSubheading: { fontSize: 21, lineHeight: 28 }, quote: { color: C.reading, fontFamily: 'Georgia', fontSize: 19, lineHeight: 29, borderLeftWidth: 2, borderLeftColor: C.muted, paddingLeft: 15, marginBottom: 19 }, listBlock: { marginBottom: 8 }, listItem: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: 3 }, bullet: { width: 24, color: C.muted, fontSize: 17, lineHeight: 28 }, code: { color: C.reading, backgroundColor: C.panel, padding: 14, fontFamily: 'Menlo', fontSize: 13, lineHeight: 20, marginBottom: 18 }, articleImage: { width: '100%', height: 220, marginBottom: 20, backgroundColor: C.panel }, inlineLink: { color: C.muted, textDecorationLine: 'underline' }, returnButton: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 18, paddingVertical: 22 },
   pageTitle: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 34, lineHeight: 40, marginTop: 24, marginBottom: 16 }, searchInput: { minHeight: 49, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 14, fontSize: 15, backgroundColor: C.panel, marginBottom: 10 },
   tagStrip: { flexGrow: 0, marginVertical: 5 }, tagContent: { paddingRight: 8 }, tagChip: { borderWidth: 1, borderColor: C.line, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, marginRight: 7 }, tagChipActive: { backgroundColor: C.muted, borderColor: C.muted }, tagText: { color: C.muted, fontSize: 11 }, tagTextActive: { color: C.bg, fontWeight: '700' },
   engagementRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 13 }, engagementStat: { color: C.muted, fontSize: 11, marginRight: 13, marginVertical: 5 },
-  reactionActions: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 3 }, reactionButton: { flex: 1, minHeight: 76, borderWidth: 1, borderColor: C.line, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 3 }, reactionButtonLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 0.6 }, reactionButtonCount: { color: C.ink, fontSize: 16, fontWeight: '700', lineHeight: 19 }, reactionSelected: { backgroundColor: C.muted, borderColor: C.muted }, reactionSelectedText: { color: C.bg },
-  comment: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 15 }, commentHeader: { flexDirection: 'row', alignItems: 'center' }, commentAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10 }, commentAvatarPlaceholder: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.panel, marginRight: 10 }, commentAuthor: { color: C.ink, fontWeight: '700', fontSize: 13 }, commentText: { color: C.reading, fontSize: 15, lineHeight: 22, marginTop: 10 }, outbound: { paddingVertical: 17, alignItems: 'center', backgroundColor: C.panel, marginTop: 14 },
-  commentComposer: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 16, paddingTop: 17 }, fieldLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 9 }, commentInput: { minHeight: 92, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, color: C.ink, padding: 12, textAlignVertical: 'top', fontSize: 15, marginBottom: 10 }, disabledInput: { opacity: 0.7 },
+  reactionActions: { flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 3 }, reactionButton: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 4 }, reactionButtonLabel: { color: C.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.3 }, reactionButtonCount: { color: C.ink, fontSize: 12, fontWeight: '700', lineHeight: 15 }, reactionSelected: { backgroundColor: C.muted, borderColor: C.muted }, reactionSelectedText: { color: C.bg },
+  comment: { borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 15 }, commentReply: { marginLeft: 16, paddingLeft: 11, borderLeftWidth: 2, borderLeftColor: C.line }, commentHeader: { flexDirection: 'row', alignItems: 'center' }, commentAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10 }, commentAvatarPlaceholder: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.panel, marginRight: 10, alignItems: 'center', justifyContent: 'center' }, commentAuthor: { color: C.ink, fontWeight: '700', fontSize: 13 }, commentText: { color: C.reading, fontSize: 15, lineHeight: 22, marginTop: 10 }, commentReplyLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 10 }, commentActions: { flexDirection: 'row', gap: 20, marginTop: 12 }, commentAction: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 }, commentActionActive: { color: C.ink }, loadCommentsButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line, marginTop: 12 }, outbound: { paddingVertical: 17, alignItems: 'center', backgroundColor: C.panel, marginTop: 14 },
+  commentComposer: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 16, paddingTop: 17 }, replyingTo: { flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 14, backgroundColor: C.panel, borderLeftWidth: 2, borderLeftColor: C.divider }, fieldLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 9 }, commentInput: { minHeight: 92, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, color: C.ink, padding: 12, textAlignVertical: 'top', fontSize: 15, marginBottom: 10 }, disabledInput: { opacity: 0.7 },
   promotion: { marginTop: 22, padding: 19, borderRadius: 12, backgroundColor: C.panel }, promoTitle: { color: C.ink, fontFamily: 'Georgia', fontSize: 22, lineHeight: 27, fontWeight: '700' }, promoDescription: { color: C.muted, fontSize: 13, lineHeight: 19, marginVertical: 9 },
   accountCard: { backgroundColor: C.panel, borderRadius: 14, padding: 20, marginTop: 8 }, accountAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, accountProfileAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: C.panelLight, marginBottom: 15 }, accountProfileName: { color: C.ink, fontFamily: 'Georgia', fontSize: 24, lineHeight: 30, fontWeight: '700' }, accountDid: { color: C.muted, fontSize: 10, marginTop: 1, marginBottom: 12 }, accountIdentityDetails: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 14, paddingTop: 13 }, accountIdentityLabel: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.1, marginBottom: 4 }, accountIdentityValue: { color: C.ink, fontSize: 12, lineHeight: 17, marginBottom: 11 }, accountDescription: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 15 }, profileLink: { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 10, marginTop: 5 }, accountSyncing: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15 }, accountSavedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, accountSavedCopy: { flex: 1 }, accountRecordDate: { color: C.muted, fontSize: 10, marginLeft: 94, marginTop: -6, marginBottom: 8 }, viewedExpandButton: { minHeight: 43, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginTop: 6, marginBottom: 16, borderWidth: 1, borderColor: C.line, borderRadius: 22 }, accountRemoveButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: C.line }, blockedAccountRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 13 }, primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: C.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }, primaryButtonText: { color: C.bg, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, disabledButton: { opacity: 0.5 }, secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', marginTop: 18 }, privacyNote: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 15, lineHeight: 16 },
   authorRow: { minHeight: 83, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', paddingVertical: 13 }, avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panel }, avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.panelLight, alignItems: 'center', justifyContent: 'center' }, avatarInitial: { color: C.muted, fontFamily: 'Georgia', fontSize: 22 }, authorCopy: { flex: 1, paddingLeft: 13 }, authorName: { color: C.ink, fontFamily: 'Georgia', fontSize: 19, fontWeight: '700' }, chevron: { color: C.muted, fontSize: 26, paddingHorizontal: 5 }, handle: { color: C.muted, marginTop: -10, marginBottom: 14, fontSize: 13 }, backLink: { marginTop: 24, marginBottom: 12 },
   footer: { marginTop: 25, backgroundColor: C.panel, padding: 18 }, footerBrand: { color: C.ink, fontFamily: 'Georgia', fontWeight: '700', fontSize: 19 }, footerText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
-  tabBar: { minHeight: 60, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }, tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabProfileImage: { width: 23, height: 23, borderRadius: 12, borderWidth: 1, borderColor: C.line }, tabProfileImageActive: { borderColor: C.ink, borderWidth: 2 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2 }, tabActive: { color: C.ink },
+  tabBar: { minHeight: 60, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }, articleTabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 8 }, tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 }, tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 }, tabProfileImage: { width: 23, height: 23, borderRadius: 12, borderWidth: 1, borderColor: C.line }, tabProfileImageActive: { borderColor: C.ink, borderWidth: 2 }, tabLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2 }, tabActive: { color: C.ink },
 });

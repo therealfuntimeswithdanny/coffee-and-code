@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
+import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
 import { detectFormat, renderContent, renderHtmlAsMarkdown } from '../lib/contentRenderer';
 
 const api = new Hono<{ Bindings: Env }>();
@@ -48,6 +48,18 @@ function findDocument(documents: StandardDocument[], rkey: string | undefined, u
     document: matches.length === 1 ? matches[0] : undefined,
     ambiguous: !uri && matches.length > 1,
   };
+}
+
+async function findDocumentForRequest(documents: StandardDocument[], rkey: string | undefined, uri: string | undefined, pds: string, ownerDid: string) {
+  const result = findDocument(documents, rkey, uri);
+  if (result.document || result.ambiguous || !uri || !rkey) return result;
+  try {
+    const exact = await fetchArticleByUri(uri, pds, ownerDid);
+    return exact?.rkey === rkey ? { document: exact, ambiguous: false } : result;
+  } catch (error) {
+    console.error('Could not load the requested Coffee & Code post directly:', error);
+    return result;
+  }
 }
 
 async function markdownDocument(document: StandardDocument) {
@@ -151,13 +163,13 @@ api.get('/documents/:rkey.md', async (c) => {
   if (!documents.length && !await isPdsAvailable(pds)) {
     return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
-  const { document, ambiguous } = findDocument(documents, c.req.param('rkey'), c.req.query('uri'));
+  const { document, ambiguous } = await findDocumentForRequest(documents, c.req.param('rkey'), c.req.query('uri'), pds, c.env.OWNER_DID);
   if (!document) {
     return c.json({
       error: ambiguous
         ? 'Multiple documents use this record key. Specify the document uri query parameter.'
         : 'Document not found.',
-    }, ambiguous ? 409 : 404);
+    }, ambiguous ? 409 : 404, { 'Cache-Control': 'no-store' });
   }
 
   return c.body(await markdownDocument(document), 200, {
@@ -173,13 +185,13 @@ api.get('/documents/:rkey', async (c) => {
   if (!documents.length && !await isPdsAvailable(pds)) {
     return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
-  const { document, ambiguous } = findDocument(documents, c.req.param('rkey'), c.req.query('uri'));
+  const { document, ambiguous } = await findDocumentForRequest(documents, c.req.param('rkey'), c.req.query('uri'), pds, c.env.OWNER_DID);
   if (!document) {
     return c.json({
       error: ambiguous
         ? 'Multiple documents use this record key. Specify the document uri query parameter.'
         : 'Document not found.',
-    }, ambiguous ? 409 : 404);
+    }, ambiguous ? 409 : 404, { 'Cache-Control': 'no-store' });
   }
 
   return c.json({
