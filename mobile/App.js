@@ -781,7 +781,6 @@ export default function App() {
   };
 
   const renderLatest = () => <ScrollView contentContainerStyle={styles.homeContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} /> }>
-    <View style={styles.homeHeading}><View><Text style={styles.pageTitle}>Top Stories</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Search the archive" onPress={() => { setTab('Archive'); if (!archiveLoaded) loadArchive(); }} style={styles.archiveShortcut}><SymbolView name="magnifyingglass" size={20} tintColor={C.ink} /></Pressable></View>
     <SectionBar title="Latest" detail={`${feed?.totalAvailable ?? stories.length} STORIES`} />
     {error ? <View style={styles.empty}><Text style={styles.error}>{error}</Text><Pressable onPress={() => loadFeed()}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>
       : !stories.length ? <Text style={styles.emptyText}>No stories have been published yet. Please check back soon.</Text>
@@ -808,7 +807,7 @@ export default function App() {
 
   const renderSaved = () => <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.pageTitle}>Saved stories</Text>
-    {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Keep a story for later.</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your reading list. {account ? 'Your reading list syncs with your AT Protocol account and coffeencode.cc/account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
+    {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Keep a story for later.</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
 
   const renderAuthors = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
@@ -867,18 +866,18 @@ export default function App() {
       </View>
       {!!accountDataError && <Text accessibilityRole="alert" style={[styles.error, { marginTop: 12 }]}>{accountDataError}</Text>}
       {accountDataLoading && <View style={styles.accountSyncing}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Syncing your account…</Text></View>}
-      <SectionBar title="Posts you’ve viewed" detail={`${viewedStories.length} STORIES`} />
+      <SectionBar title="Read posts" detail={`${viewedStories.length} STORIES`} />
       {renderAccountStoryList(showAllViewed ? viewedStories : viewedStories.slice(0, 3), 'Posts you read while signed in will appear here.')}
       {viewedStories.length > 3 && <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAllViewed }} onPress={() => setShowAllViewed((visible) => !visible)} style={styles.viewedExpandButton}>
         <Text style={styles.action}>{showAllViewed ? 'SHOW LESS' : `SHOW ALL ${viewedStories.length} POSTS`}</Text><SymbolView name={showAllViewed ? 'chevron.up' : 'chevron.down'} size={13} tintColor={C.muted} />
       </Pressable>}
-      <SectionBar title="Reading list" detail={`${saved.length} STORIES`} />
-      {renderAccountStoryList(saved, 'Stories you save will appear here. Your reading list syncs with coffeencode.cc/account.', true)}
+      <SectionBar title="Saved list" detail={`${saved.length} STORIES`} />
+      {renderAccountStoryList(saved, 'Stories you save will appear here. Your saved list syncs with your Coffee & Code account.', true)}
       <SectionBar title="Blocked accounts" detail={`${blockedAccounts.length} ACCOUNTS`} />
       {blockedAccounts.length ? blockedAccounts.map((blocked) => <View key={blocked.did} style={styles.blockedAccountRow}>
         <View style={{ flex: 1 }}><Text style={styles.authorName}>{blocked.did}</Text><Text style={styles.meta}>Blocked {formatDate(blocked.createdAt)}</Text></View>
         <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => unblockAccount(blocked.did)} style={styles.accountRemoveButton}><Text style={styles.action}>UNBLOCK</Text></Pressable>
-      </View>) : <Text style={styles.emptyText}>You have not blocked any accounts.</Text>}
+      </View>) : <Text style={styles.emptyText}>You have not blocked any accounts on Coffee & Code.</Text>}
       {account.author && <>
         <SectionBar title="Author profile" detail="COFFEE & CODE" />
         <View style={styles.accountCard}>
@@ -892,22 +891,22 @@ export default function App() {
     </> : <View style={styles.accountCard}>
       <Text style={styles.accountDescription}>Sign in with your AT Protocol account. Your provider handles the password and shows the permissions requested by Coffee & Code.</Text>
       {IS_EXPO_GO ? <Text style={styles.accountDescription}>Expo Go supports reading the live publication API. AT Protocol sign-in and member actions need the Coffee & Code development app because they use a native OAuth module.</Text> : <>
-        <Text style={styles.fieldLabel}>HANDLE OR ACCOUNT PROVIDER</Text>
+        <Text style={styles.fieldLabel}>Your Handle, typically your yourname.coffeencode.cc, yourname.bsky.social or yourname.com</Text>
         <TextInput value={loginHandle} onChangeText={setLoginHandle} placeholder="name.bsky.social" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={handleLogin} style={styles.searchInput} accessibilityLabel="AT Protocol handle" />
         {!!error && <Text style={styles.error}>{error}</Text>}
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>CONTINUE SECURELY  →</Text>}</Pressable>
+        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>Sign in</Text>}</Pressable>
         <Text style={styles.privacyNote}>Coffee & Code never asks for or stores your password.</Text>
       </>}
       <View style={styles.createAccountCard}>
           <Text style={styles.accountProfileName}>New to Coffee & Code?</Text>
-          <Text style={styles.accountDescription}>Create an account on our AT Protocol service. You’ll need an invite code to finish signup.</Text>
+          <Text style={styles.accountDescription}>Create an account on our PDS (your gateway to thounds of apps, including Bluesky).</Text>
           {IS_EXPO_GO && <Text style={styles.accountDescription}>You can get the code here, then continue signup in the Coffee & Code development app.</Text>}
           {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
           {!!inviteError && <Text accessibilityRole="alert" style={styles.error}>{inviteError}</Text>}
           {!inviteCode ? <Pressable accessibilityRole="button" disabled={inviteLoading} onPress={getInviteCode} style={styles.secondaryButton}>
             {inviteLoading ? <ActivityIndicator color={C.muted} /> : <Text style={styles.action}>CREATE ACCOUNT</Text>}
           </Pressable> : <>
-            <Text style={styles.fieldLabel}>YOUR INVITE CODE · PRESS AND HOLD TO COPY</Text>
+            <Text style={styles.fieldLabel}>Copy this code, you will need this to continue your signup. We do this to prevent abuse and bot attacks</Text>
             <Text selectable style={styles.inviteCode}>{inviteCode}</Text>
             <Pressable accessibilityRole="button" disabled={accountBusy} onPress={continueAccountCreation} style={[styles.primaryButton, styles.inviteContinue]}>
               {accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>CONTINUE TO SIGNUP  →</Text>}
@@ -925,11 +924,11 @@ export default function App() {
       <View style={styles.headerSide} />
     </View>
     {loading ? <View style={styles.launchLoading}>
-        <Image source={require('./assets/icon.png')} accessibilityLabel="Coffee & Code coffee cup icon" style={styles.launchMark} resizeMode="contain" />
+        <Image source={require('./assets/SplashScreen.png')} accessibilityLabel="Coffee & Code splash screen" style={styles.launchMark} resizeMode="contain" />
         <Text style={styles.launchTitle}>Coffee & Code</Text>
-        <Text style={styles.launchSubtitle}>Technology, thoughtfully covered.</Text>
+        <Text style={styles.launchSubtitle}>by daniel morrisey</Text>
         <ActivityIndicator color={C.muted} size="small" style={styles.launchSpinner} />
-        <Text style={styles.launchStatus}>GETTING YOUR EDITION READY</Text>
+        <Text style={styles.launchStatus}>Loading...</Text>
       </View>
       : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article} onScroll={onArticleScroll} scrollEventThrottle={16} onTouchStart={onArticleTouchStart} onTouchEnd={onArticleTouchEnd} onTouchCancel={() => { articleTouchStart.current = null; }}>
         {!!selected.cover && <Image source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}

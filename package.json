@@ -7,7 +7,8 @@
     "dev": "npm run build:auth && wrangler dev",
     "deploy": "npm run build:auth && wrangler deploy",
     "mobile:install": "npm --prefix mobile install",
-    "start": "npm --prefix mobile start",
+    "start": "npm --prefix mobile run start:dev-client",
+    "start:expo-go": "npm --prefix mobile start",
     "ios": "npm --prefix mobile run ios"
   },
   "dependencies": {
