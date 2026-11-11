@@ -5,6 +5,31 @@ import { detectFormat, renderContent, renderHtmlAsMarkdown, renderLeaflet, rende
 
 const api = new Hono<{ Bindings: Env }>();
 
+function leafletFallbackMarkdown(document: StandardDocument, content: any): string {
+  const did = document.repoDid || document.uri.match(/^at:\/\/(did:[^/]+)\//)?.[1];
+  const pages = Array.isArray(content?.pages) ? content.pages : [];
+  return pages.flatMap((page: any) => Array.isArray(page.blocks) ? page.blocks : []).map((wrapper: any) => {
+    const block = wrapper?.block || wrapper;
+    if (block?.$type === 'pub.leaflet.blocks.text') return typeof block.plaintext === 'string' ? block.plaintext.trim() : '';
+    if (block?.$type === 'pub.leaflet.blocks.blockquote') return `> ${(block.plaintext || block.text || '').trim()}`;
+    if (block?.$type === 'pub.leaflet.blocks.horizontalRule') return '---';
+    if (block?.$type === 'pub.leaflet.blocks.image' || block?.$type === 'pub.leaflet.blocks.imageGallery') {
+      const images = block.$type === 'pub.leaflet.blocks.image' ? [block] : (block.images || []);
+      return images.map((item: any) => {
+        const cid = item.image?.ref?.$link;
+        if (!cid || !did) return '';
+        const imageUrl = `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${encodeURIComponent(cid)}/feed_fullsize`;
+        return `![${item.alt || 'Article image'}](${imageUrl})`;
+      }).filter(Boolean).join('\n\n');
+    }
+    if (block?.$type === 'pub.leaflet.blocks.iframe' || block?.$type === 'pub.leaflet.blocks.html') {
+      const html = renderLeaflet({ $type: 'pub.leaflet.content', pages: [{ blocks: [wrapper] }] });
+      return renderHtmlAsMarkdown(html);
+    }
+    return '';
+  }).filter(Boolean).join('\n\n');
+}
+
 function documentSummary(post: StandardDocument, origin: string, pds: string) {
   return {
     uri: post.uri,
@@ -70,8 +95,9 @@ async function markdownDocument(document: StandardDocument) {
     try { parsed = JSON.parse(content); } catch { parsed = undefined; }
   }
   const isLeaflet = parsed?.$type === 'pub.leaflet.content';
+  const renderedLeaflet = isLeaflet ? renderHtmlAsMarkdown(renderLeaflet(parsed)).trim() : '';
   const markdown = isLeaflet
-    ? renderHtmlAsMarkdown(renderLeaflet(parsed))
+    ? renderedLeaflet || leafletFallbackMarkdown(document, parsed)
     : document.format === 'markdown' || format === 'markdown'
       ? renderMarkdownEmbeds(content)
       : format === 'plaintext'

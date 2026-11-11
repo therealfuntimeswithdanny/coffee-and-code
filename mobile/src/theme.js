@@ -328,6 +328,12 @@ export const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 16,
   },
+  pageSubtitle: {
+    color: C.muted,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
   searchInput: {
     minHeight: 49,
     borderWidth: 1,
@@ -736,10 +742,6 @@ export const styles = StyleSheet.create({
   },
   tabActive: { color: C.ink },
   settingsCard: {
-    backgroundColor: C.panel,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
     marginTop: 4,
   },
   settingsRow: {

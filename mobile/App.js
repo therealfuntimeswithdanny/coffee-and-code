@@ -8,7 +8,7 @@ import { C, styles } from './src/theme';
 import { formatDate, storyAuthor } from './src/utils';
 import { ArticleBody, SectionBar, StoryRow, TabButton } from './src/components';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
-import AccountSettings from './src/AccountSettings';
+import AccountSettings, { accountSettingsPages, SettingsRow } from './src/AccountSettings';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
   StatusBar, Text, TextInput, View, RefreshControl,
@@ -24,6 +24,11 @@ const BLOCK_COLLECTION = 'cc.coffeencode.user.block';
 const LIKE_COLLECTION = 'cc.coffeencode.interact.like';
 const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
 
+function profileBlobUrl(blob, did, pdsEndpoint) {
+  const cid = blob?.ref?.$link;
+  if (typeof cid !== 'string' || !pdsEndpoint) return undefined;
+  return `${pdsEndpoint}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
+}
 
 
 
@@ -54,11 +59,11 @@ export default function App() {
   const [viewedStories, setViewedStories] = useState([]);
   const [showAllViewed, setShowAllViewed] = useState(false);
   const [blockedAccounts, setBlockedAccounts] = useState([]);
-  const [authorProfile, setAuthorProfile] = useState(null);
+  const [coffeeProfile, setCoffeeProfile] = useState(null);
   const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState(null);
   const [loginHandle, setLoginHandle] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -127,7 +132,7 @@ export default function App() {
         setAccountPds(null);
         setViewedStories([]);
         setBlockedAccounts([]);
-        setAuthorProfile(null);
+        setCoffeeProfile(null);
       }
       return;
     }
@@ -140,7 +145,7 @@ export default function App() {
       setViewedStories([]);
       setShowAllViewed(false);
       setBlockedAccounts([]);
-      setAuthorProfile(null);
+      setCoffeeProfile(null);
       setAccountDataLoading(true);
       setAccountDataError('');
       try {
@@ -201,14 +206,18 @@ export default function App() {
           AsyncStorage.setItem(SAVED_OWNER_KEY, did),
         ]);
 
-        if (activeAccount.author) {
-          try {
-            const { data } = await activeAccount.agent.com.atproto.repo.getRecord({ repo: did, collection: 'cc.coffeencode.author.profile', rkey: 'self' });
-            if (!cancelled) setAuthorProfile(data.value);
-          } catch {
-            if (!cancelled) setAuthorProfile(null);
+        try {
+          const { data } = await activeAccount.agent.com.atproto.repo.getRecord({ repo: did, collection: 'cc.coffeencode.profile', rkey: 'self' });
+          if (!cancelled && data.value?.$type === 'cc.coffeencode.profile') {
+            setCoffeeProfile({
+              ...data.value,
+              avatarUrl: profileBlobUrl(data.value.avatar, did, pdsEndpoint),
+              bannerUrl: profileBlobUrl(data.value.banner, did, pdsEndpoint),
+            });
           }
-        } else setAuthorProfile(null);
+        } catch {
+          if (!cancelled) setCoffeeProfile(null);
+        }
       } catch (e) {
         if (!cancelled) setAccountDataError(e.message || 'Could not sync your account details.');
       } finally {
@@ -551,7 +560,7 @@ export default function App() {
   const remainingLatest = [...recentStories.slice(3), ...(feed?.more || [])];
   const pinnedStories = feed?.pinned || [];
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
-  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsOpen(false); animateArticleNav(false); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); animateArticleNav(false); };
 
   const onArticleTouchStart = (event) => {
     const touch = event.nativeEvent.touches?.[0] || event.nativeEvent;
@@ -609,6 +618,11 @@ export default function App() {
     {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
 
+  const renderForum = () => <ScrollView contentContainerStyle={styles.content}>
+    <Text style={styles.pageTitle}>Forum</Text>
+    <View style={styles.empty}><Text style={styles.emptyTitle}>Coming soon</Text><Text style={styles.emptyText}>The Coffee &amp; Code forum is not available yet. Please check back soon.</Text></View>
+  </ScrollView>;
+
   const renderAuthors = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
     {activeAuthor ? <Pressable onPress={() => setActiveAuthor(null)} style={styles.backLink}><Text style={styles.action}>‹  ALL CONTRIBUTORS</Text></Pressable> : <Pressable onPress={() => { setTab('Latest'); setActiveAuthor(null); }} style={styles.backLink}><Text style={styles.action}>‹  BACK TO HOME</Text></Pressable>}
     <Text style={[styles.pageTitle, { marginTop: 0 }]}>{activeAuthor?.displayName || 'Authors'}</Text>
@@ -649,33 +663,41 @@ export default function App() {
     </React.Fragment>;
   };
 
-  const renderAccount = () => settingsOpen && account ? <AccountSettings
+  const renderAccount = () => settingsPage && account ? <AccountSettings
+    key={settingsPage}
     account={account}
     accountProfile={accountProfile}
+    coffeeProfile={coffeeProfile}
     accountPds={accountPds}
     blockedAccounts={blockedAccounts}
     savedCount={saved.length}
     viewedCount={viewedStories.length}
     accountBusy={accountBusy}
-    onBack={() => setSettingsOpen(false)}
+    initialPage={settingsPage}
+    onBack={() => setSettingsPage(null)}
     onUnblock={unblockAccount}
-    onSignOut={async () => { await signOut(account); setAccount(null); setSettingsOpen(false); }}
+    onSignOut={async () => { await signOut(account); setAccount(null); setSettingsPage(null); }}
   /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
     {account ? <>
       <View style={styles.accountCard}>
-        {accountProfile?.avatar ? <Image source={{ uri: accountProfile.avatar }} accessibilityLabel="Profile photo" style={styles.accountProfileAvatar} /> : <View style={styles.accountAvatar}><SymbolView name="person.fill" size={25} tintColor={C.ink} /></View>}
-        <Text style={styles.accountProfileName}>{accountProfile?.displayName || accountProfile?.handle || 'Your account'}</Text>
+        {!!coffeeProfile?.bannerUrl && <Image source={{ uri: coffeeProfile.bannerUrl }} accessibilityLabel="Coffee & Code profile banner" resizeMode="cover" style={{ width: '100%', height: 120, borderRadius: 10, marginBottom: 14, backgroundColor: C.panelLight }} />}
+        {!!coffeeProfile?.avatarUrl || !!accountProfile?.avatar ? <Image source={{ uri: coffeeProfile?.avatarUrl || accountProfile.avatar }} accessibilityLabel="Profile photo" style={styles.accountProfileAvatar} /> : <View style={styles.accountAvatar}><SymbolView name="person.fill" size={25} tintColor={C.ink} /></View>}
+        <Text style={styles.accountProfileName}>{coffeeProfile?.displayName || accountProfile?.displayName || accountProfile?.handle || 'Your account'}</Text>
+        {!!coffeeProfile?.pronouns && <Text style={styles.meta}>{coffeeProfile.pronouns}</Text>}
         <View style={styles.accountIdentityDetails}>
           <Text style={styles.accountIdentityLabel}>HANDLE</Text><Text selectable style={styles.accountIdentityValue}>{accountProfile?.handle ? `@${accountProfile.handle}` : 'Unavailable'}</Text>
           <Text style={styles.accountIdentityLabel}>DID</Text><Text selectable style={styles.accountIdentityValue}>{account.session.did}</Text>
           <Text style={styles.accountIdentityLabel}>PDS</Text><Text selectable style={styles.accountIdentityValue}>{accountPds === null ? 'Resolving…' : accountPds || 'Unavailable'}</Text>
         </View>
+        {!!coffeeProfile?.description && <Text style={styles.accountDescription}>{coffeeProfile.description}</Text>}
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(accountProfile?.handle || account.session.did)}`)} style={styles.profileLink}><Text style={styles.action}>VIEW PROFILE  ↗</Text></Pressable>
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); setAccount(null); setSettingsOpen(false); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); setAccount(null); setSettingsPage(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
       </View>
       <SectionBar title="Settings" />
-      <Pressable accessibilityRole="button" onPress={() => setSettingsOpen(true)} style={styles.settingsRow}><View style={styles.settingsIcon}><SymbolView name="gearshape.fill" size={17} tintColor={C.muted} /></View><View style={styles.settingsCopy}><Text style={styles.authorName}>App settings</Text><Text style={styles.meta}>Reading, privacy, account, and app details</Text></View><SymbolView name="chevron.right" size={15} tintColor={C.muted} /></Pressable>
+      <View style={styles.settingsCard}>
+        {accountSettingsPages.map((page) => <SettingsRow key={page.id} {...page} onPress={() => setSettingsPage(page.id)} />)}
+      </View>
       {!!accountDataError && <Text accessibilityRole="alert" style={[styles.error, { marginTop: 12 }]}>{accountDataError}</Text>}
       {accountDataLoading && <View style={styles.accountSyncing}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Syncing your account…</Text></View>}
       <SectionBar title="Read posts" detail={`${viewedStories.length} STORIES`} />
@@ -693,10 +715,9 @@ export default function App() {
       {account.author && <>
         <SectionBar title="Author profile" detail="COFFEE & CODE" />
         <View style={styles.accountCard}>
-          <Text style={styles.authorName}>{authorProfile?.displayName || accountProfile?.displayName || 'Author profile'}</Text>
-          {!!authorProfile?.pronouns && <Text style={styles.meta}>{authorProfile.pronouns}</Text>}
-          {!!authorProfile?.description && <Text style={styles.accountDescription}>{authorProfile.description}</Text>}
-          {!authorProfile && <Text style={styles.accountDescription}>Manage the author profile shown on your Coffee & Code author page.</Text>}
+          <Text style={styles.authorName}>{coffeeProfile?.displayName || accountProfile?.displayName || 'Author profile'}</Text>
+          {!!coffeeProfile?.pronouns && <Text style={styles.meta}>{coffeeProfile.pronouns}</Text>}
+          {!coffeeProfile && <Text style={styles.accountDescription}>Manage the author profile shown on your Coffee & Code author page.</Text>}
           <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://coffeencode.cc/account')} style={styles.profileLink}><Text style={styles.action}>MANAGE ON COFFEE & CODE  ↗</Text></Pressable>
         </View>
       </>}
@@ -771,7 +792,7 @@ export default function App() {
         </View>
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
-      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
+      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Forum' ? renderForum() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
     <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [62, 42] }) }]}>
       <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
