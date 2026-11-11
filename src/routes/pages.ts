@@ -7,6 +7,59 @@ import { isForumModerator } from './forum';
 
 const pages = new Hono<{ Bindings: Env }>();
 
+pages.get('/feed', (c) => {
+  const feedUri = 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following';
+  const blueskyFeedUrl = 'https://bsky.app/profile/did:plc:z7hzwpuv5ytin56wecfxa4mx/feed/following';
+  const feedUrl = 'https://feed.coffeencode.cc';
+  const pageUrl = new URL(c.req.url).toString();
+  const body = `
+    <section class="feed-page" aria-labelledby="feed-title">
+      <p class="eyebrow">Coffee &amp; Code on Bluesky</p>
+      <h1 id="feed-title">A feed shaped by the authors you choose.</h1>
+      <p class="feed-page__intro">Keep up with Coffee &amp; Code writers on Bluesky. Follow authors here, then see their latest posts together in one dedicated feed.</p>
+      <div class="feed-page__actions">
+        <a class="login-button" href="${blueskyFeedUrl}" target="_blank" rel="noopener noreferrer">Open the feed in Bluesky <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        <a class="feed-page__manage" href="${feedUrl}" target="_blank" rel="noopener noreferrer">Sign in or manage follows <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+      </div>
+      <section class="feed-page__details" aria-label="How the feed works">
+        <article><span class="feed-page__number">01</span><div><h2>Choose your authors</h2><p>Sign in with your Bluesky handle on the feed service and follow Coffee &amp; Code authors. These follows are independent of your regular Bluesky follows.</p></div></article>
+        <article><span class="feed-page__number">02</span><div><h2>Make it yours</h2><p>Set preferences for each author, filter posts by topic, and decide whether you want all posts or only posts linking to Coffee &amp; Code.</p></div></article>
+        <article><span class="feed-page__number">03</span><div><h2>Read in Bluesky</h2><p>Open the feed in Bluesky to see recent posts from the authors you selected. You can also manage your follows by messaging <strong>@coffeencode.cc</strong> on Bluesky.</p></div></article>
+      </section>
+      <p class="feed-page__note">The feed is public on Bluesky. Your author follows and preferences are saved in your own AT Protocol account.</p>
+      <a class="feed-page__uri" href="${blueskyFeedUrl}" aria-label="Coffee and Code following feed identifier">Feed identifier <code>${feedUri}</code></a>
+    </section>
+    <style>
+      .feed-page { margin: 0 auto; max-width: 940px; }
+      .feed-page > .eyebrow { margin: 0 0 13px; }
+      .feed-page h1 { font-family: Lora, serif; font-size: clamp(2.8rem, 7vw, 5.5rem); letter-spacing: -.04em; line-height: 1.03; margin: 0; max-width: 850px; }
+      .feed-page__intro { color: var(--muted); font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.65; margin: 22px 0 25px; max-width: 700px; }
+      .feed-page__actions { align-items: center; display: flex; flex-wrap: wrap; gap: 22px; }
+      .feed-page__actions .login-button { gap: 12px; min-height: 48px; padding: 12px 18px; }
+      .feed-page__manage { color: var(--accent); font-size: 15px; font-weight: 700; }
+      .feed-page__manage i { margin-left: 6px; }
+      .feed-page__details { border-top: 2px solid var(--ink); margin-top: 66px; }
+      .feed-page__details article { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 24px; grid-template-columns: 56px minmax(0, 1fr); padding: 25px 0; }
+      .feed-page__number { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .12em; padding-top: 6px; }
+      .feed-page__details h2 { font-family: Lora, serif; font-size: clamp(1.35rem, 3vw, 1.8rem); line-height: 1.2; margin: 0 0 8px; }
+      .feed-page__details p { color: var(--muted); margin: 0; max-width: 700px; }
+      .feed-page__details strong { color: var(--ink); }
+      .feed-page__note { color: var(--muted); font-size: 14px; margin: 22px 0 0; }
+      .feed-page__uri { color: var(--accent); display: inline-flex; flex-wrap: wrap; font-size: 12px; gap: 8px; margin-top: 26px; }
+      .feed-page__uri code { color: var(--muted); overflow-wrap: anywhere; }
+      @media (max-width: 600px) { .feed-page h1 { font-size: clamp(2.55rem, 12vw, 4rem); }.feed-page__details { margin-top: 46px; }.feed-page__details article { gap: 12px; grid-template-columns: 34px minmax(0, 1fr); padding: 20px 0; }.feed-page__actions { align-items: flex-start; flex-direction: column; gap: 16px; } }
+    </style>`;
+  const metaTags = `
+    <meta name="description" content="Follow Coffee &amp; Code authors on Bluesky with a feed you can shape around the writers and topics you care about.">
+    <meta property="og:title" content="Coffee &amp; Code Feed">
+    <meta property="og:description" content="A Bluesky feed shaped by the Coffee &amp; Code authors you choose.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+  return c.html(renderLayout(c, 'The Coffee & Code Feed', body, metaTags));
+});
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
