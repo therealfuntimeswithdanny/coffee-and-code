@@ -3,16 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
-const authorClientMetadataPath = new URL('../media/oauth-client-metadata-author.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
 const forumModeratorPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authModerator.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
-const authorClientMetadata = JSON.parse(await readFile(authorClientMetadataPath, 'utf8'));
 const permissionSet = JSON.parse(await readFile(permissionSetPath, 'utf8'));
 const forumModeratorPermissionSet = JSON.parse(await readFile(forumModeratorPermissionSetPath, 'utf8'));
 const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
-const expectedAuthorClientId = 'https://coffeencode.cc/oauth-client-metadata-author.json';
 const expectedRedirectUri = 'https://coffeencode.cc/auth';
+const expectedNativeRedirectUri = 'cc.coffeencode:/auth/callback';
 
 function assert(condition, message) {
   if (!condition) throw new Error(`OAuth metadata check failed: ${message}`);
@@ -36,18 +34,16 @@ function normalizeScope(scope) {
 }
 
 assert(metadata.client_id === expectedClientId, 'client_id must match the deployed metadata URL');
-assert(authorClientMetadata.client_id === expectedAuthorClientId, 'author client_id must match its metadata URL');
 assert(metadata.tos_uri === 'https://coffeencode.cc/terms', 'tos_uri must match the terms page');
 assertHttpsUrl(metadata.client_id, 'client_id');
-assertHttpsUrl(authorClientMetadata.client_id, 'author client_id');
 assertHttpsUrl(metadata.client_uri, 'client_uri');
 assert(new URL(metadata.client_uri).hostname === new URL(metadata.client_id).hostname, 'client_uri must use the client_id hostname');
 assertHttpsUrl(metadata.logo_uri, 'logo_uri');
 assertHttpsUrl(metadata.policy_uri, 'policy_uri');
-assert(Array.isArray(metadata.redirect_uris) && metadata.redirect_uris.length === 1, 'redirect_uris must contain the canonical callback');
-assert(metadata.redirect_uris[0] === expectedRedirectUri, 'redirect URI must match the /auth callback');
-assert(authorClientMetadata.redirect_uris?.[0] === expectedRedirectUri, 'author redirect URI must match the /auth callback');
-assertHttpsUrl(metadata.redirect_uris[0], 'redirect_uris[0]');
+assert(Array.isArray(metadata.redirect_uris) && metadata.redirect_uris.length === 2, 'redirect_uris must contain the website and mobile callbacks');
+assert(metadata.redirect_uris.includes(expectedRedirectUri), 'redirect URIs must include the /auth callback');
+assert(metadata.redirect_uris.includes(expectedNativeRedirectUri), 'redirect URIs must include the native app callback');
+assertHttpsUrl(expectedRedirectUri, 'website redirect URI');
 assert(metadata.grant_types?.includes('authorization_code'), 'authorization_code grant is required');
 assert(metadata.grant_types?.includes('refresh_token'), 'refresh_token grant is required');
 assert(metadata.response_types?.includes('code'), 'code response type is required');
@@ -57,9 +53,11 @@ assert(!requestedScopes.has(normalizeScope(moderatorScope)), 'member client must
 for (const scope of [
   'atproto',
   'include:cc.coffeencode.authPublic',
+  'include:cc.coffeencode.authAuthor',
   'include:site.standard.authSocial',
   'include:app.userinput.authBasic',
   'repo:cc.coffeencode.user.block?action=create&action=delete',
+  'repo:cc.coffeencode.save?action=create&action=delete',
   'repo:app.bsky.graph.follow?action=create&action=delete',
   'repo:app.bsky.graph.block?action=create&action=delete',
   'repo:app.bsky.feed.post?action=create&action=delete',
@@ -73,12 +71,6 @@ for (const scope of [
 ]) {
   assert(requestedScopes.has(normalizeScope(scope)), `required permission scope is missing: ${scope}`);
 }
-const authorRequestedScopes = new Set((authorClientMetadata.scope?.split(' ') ?? []).map(normalizeScope));
-for (const scope of requestedScopes) {
-  assert(authorRequestedScopes.has(scope), `author client is missing a standard permission scope: ${scope}`);
-}
-assert(authorRequestedScopes.has(normalizeScope('include:cc.coffeencode.authAuthor')), 'author client permission scope is missing: include:cc.coffeencode.authAuthor');
-assert(!authorRequestedScopes.has(normalizeScope(moderatorScope)), 'author client must not request the forum moderator permission set');
 assert(permissionSet.id === 'cc.coffeencode.fullPermissions', 'permission set id must match the requested include scope');
 assert(permissionSet.defs?.main?.type === 'permission-set', 'permission set must use the permission-set lexicon type');
 assert(permissionSet.defs.main.title && permissionSet.defs.main.detail, 'permission set must include a title and description');
@@ -143,7 +135,7 @@ for (const [collection, actions] of expectedRepoActions) {
   assert(grantedActions?.join(',') === [...actions].sort().join(','), `permission actions are incorrect for ${collection}`);
 }
 assert(metadata.token_endpoint_auth_method === 'none', 'browser client must be public');
-assert(metadata.application_type === 'web', 'application_type must be web');
+assert(metadata.application_type === 'native', 'application_type must be native for the shared app and website client');
 assert(metadata.dpop_bound_access_tokens === true, 'DPoP must be enabled');
 
 await build({

@@ -618,9 +618,9 @@ export default function App() {
     {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
 
-  const renderForum = () => <ScrollView contentContainerStyle={styles.content}>
-    <Text style={styles.pageTitle}>Forum</Text>
-    <View style={styles.empty}><Text style={styles.emptyTitle}>Coming soon</Text><Text style={styles.emptyText}>The Coffee &amp; Code forum is not available yet. Please check back soon.</Text></View>
+  const renderNotifications = () => <ScrollView contentContainerStyle={styles.content}>
+    <Text style={styles.pageTitle}>Notifications</Text>
+    <View style={styles.empty}><Text style={styles.emptyTitle}>Coming soon</Text><Text style={styles.emptyText}>The Coffee &amp; Code notifications system is not available yet. Please check back soon.</Text></View>
   </ScrollView>;
 
   const renderAuthors = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
@@ -724,7 +724,7 @@ export default function App() {
     </> : <View style={styles.accountCard}>
       <Text style={styles.accountDescription}>Sign in with your AT Protocol account. Your provider handles the password and shows the permissions requested by Coffee & Code.</Text>
       {IS_EXPO_GO ? <Text style={styles.accountDescription}>Expo Go supports reading the live publication API. AT Protocol sign-in and member actions need the Coffee & Code development app because they use a native OAuth module.</Text> : <>
-        <Text style={styles.fieldLabel}>Typically what you use to sing into orther At proto apps, Bluesky, Pckt, Leaflet, Anisota, rpg.actor, etc</Text>
+        <Text style={styles.fieldLabel}>Typically what you use to sign into orther At proto apps, Bluesky, Pckt, Leaflet, Anisota, rpg.actor, etc</Text>
         <TextInput value={loginHandle} onChangeText={setLoginHandle} placeholder="john-doe.coffeencode.cc or johndoe.com." placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={handleLogin} style={styles.searchInput} accessibilityLabel="AT Protocol handle" />
         {!!error && <Text style={styles.error}>{error}</Text>}
         <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>Sign in</Text>}</Pressable>
@@ -792,11 +792,11 @@ export default function App() {
         </View>
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
-      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Forum' ? renderForum() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
+      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Notifications' ? renderNotifications() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
     <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [62, 42] }) }]}>
       <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
-      <TabButton label="Forum" icon="message.fill" active={tab === 'Forum'} onPress={() => selectMainTab('Forum')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Notifications" icon="bell.fill" active={tab === 'Notifications'} onPress={() => selectMainTab('Notifications')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
     </Animated.View>

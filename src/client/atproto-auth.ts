@@ -5,19 +5,17 @@ import {
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
 import rawClientMetadata from '../../media/oauth-client-metadata.json';
-import rawAuthorClientMetadata from '../../media/oauth-client-metadata-author.json';
 
-type OAuthMetadataVersion = 'member' | 'author';
 type ForumImageInput = { file: File; alt: string };
 type ForumStrongRef = { uri: string; cid: string };
-const oauthMetadataVersions: Record<OAuthMetadataVersion, OAuthClientMetadataInput> = {
-  member: rawClientMetadata as OAuthClientMetadataInput,
-  author: rawAuthorClientMetadata as OAuthClientMetadataInput,
-};
-const metadataPreferenceKey = 'cc.oauth-metadata-version';
-const pendingMetadataVersionKey = 'cc.oauth-pending-metadata-version';
+const oauthMetadata = rawClientMetadata as OAuthClientMetadataInput;
+const authorScope = 'include:cc.coffeencode.authAuthor';
+const sharedScope = rawClientMetadata.scope;
+if (!sharedScope || !sharedScope.split(' ').includes(authorScope)) {
+  throw new Error('Shared OAuth client metadata must include the author scope.');
+}
+const memberScope = sharedScope.split(' ').filter((scope) => scope !== authorScope).join(' ');
 const handleResolver = 'https://database.coffeencode.cc';
-const oauthClients = new Map<OAuthMetadataVersion, BrowserOAuthClient>();
 
 let client: BrowserOAuthClient | undefined;
 let session: OAuthSession | undefined;
@@ -103,62 +101,6 @@ function clearAuthError() {
   authError.textContent = '';
 }
 
-function isMetadataVersion(value: string | null | undefined): value is OAuthMetadataVersion {
-  return value === 'member' || value === 'author';
-}
-
-function storedMetadataVersion(): OAuthMetadataVersion | undefined {
-  try {
-    const value = window.localStorage.getItem(metadataPreferenceKey);
-    return isMetadataVersion(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function storedPendingMetadataVersion(): OAuthMetadataVersion | undefined {
-  try {
-    const value = window.localStorage.getItem(pendingMetadataVersionKey);
-    return isMetadataVersion(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function clearPendingMetadataVersion() {
-  try {
-    window.localStorage.removeItem(pendingMetadataVersionKey);
-  } catch (error) {
-    console.error('Could not clear the pending OAuth metadata version:', error);
-  }
-}
-
-function rememberMetadataVersion(version: OAuthMetadataVersion) {
-  try {
-    window.localStorage.setItem(metadataPreferenceKey, version);
-    window.localStorage.setItem(pendingMetadataVersionKey, version);
-  } catch {
-    throw new Error('Your browser could not remember the OAuth client for the sign-in callback. Allow site storage and try again.');
-  }
-}
-
-function getOAuthClient(version: OAuthMetadataVersion) {
-  let oauthClient = oauthClients.get(version);
-  if (!oauthClient) {
-    oauthClient = new BrowserOAuthClient({
-      clientMetadata: oauthMetadataVersions[version],
-      handleResolver,
-      onSessionDeleted: (did) => {
-        if (session?.did !== did) return;
-        session = undefined;
-        renderAccount();
-      },
-    });
-    oauthClients.set(version, oauthClient);
-  }
-  return oauthClient;
-}
-
 function initializeOAuthClient(oauthClient: BrowserOAuthClient) {
   let initialized = clientInitializations.get(oauthClient);
   if (!initialized) {
@@ -168,28 +110,16 @@ function initializeOAuthClient(oauthClient: BrowserOAuthClient) {
   return initialized;
 }
 
-async function selectedOAuthClient(handle?: string) {
+async function requestedScope(handle?: string) {
   await oauthReady;
-  let version: OAuthMetadataVersion = 'member';
-  if (handle) {
-    const query = new URLSearchParams({ handle });
-    const authorResponse = await fetch(`/api/authors/check?${query}`, { cache: 'no-store' });
-    if (!authorResponse.ok) throw new Error('Could not check whether this account is a Coffee & Code author. Please try again.');
-    const authorResult = await authorResponse.json() as { isAuthor?: unknown };
-    if (typeof authorResult.isAuthor !== 'boolean') throw new Error('Author check returned an invalid response.');
-    if (authorResult.isAuthor) version = 'author';
-  }
-  rememberMetadataVersion(version);
-  const selectedClient = getOAuthClient(version);
-  client = selectedClient;
-  const initialized = await initializeOAuthClient(selectedClient);
-  session = initialized?.session;
-  if (initialized && 'state' in initialized) callbackState = initialized.state;
-  renderAccount();
-  return selectedClient;
+  if (!handle) return memberScope;
+  const query = new URLSearchParams({ handle });
+  const authorResponse = await fetch(`/api/authors/check?${query}`, { cache: 'no-store' });
+  if (!authorResponse.ok) throw new Error('Could not check whether this account is a Coffee & Code author. Please try again.');
+  const authorResult = await authorResponse.json() as { isAuthor?: unknown };
+  if (typeof authorResult.isAuthor !== 'boolean') throw new Error('Author check returned an invalid response.');
+  return authorResult.isAuthor ? sharedScope : memberScope;
 }
-
-const initialMetadataVersion = storedPendingMetadataVersion() || storedMetadataVersion() || 'member';
 
 function renderAccount() {
   const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
@@ -896,11 +826,19 @@ async function loadAccountSavedPosts(did: string) {
 }
 
 try {
-  const clientOrigin = new URL(oauthMetadataVersions.member.client_id!).origin;
+  const clientOrigin = new URL(oauthMetadata.client_id!).origin;
   if (window.location.origin !== clientOrigin) {
     throw new Error(`AT Protocol sign-in is configured for ${clientOrigin}.`);
   }
-  client = getOAuthClient(initialMetadataVersion);
+  client = new BrowserOAuthClient({
+    clientMetadata: oauthMetadata,
+    handleResolver,
+    onSessionDeleted: (did) => {
+      if (session?.did !== did) return;
+      session = undefined;
+      renderAccount();
+    },
+  });
 } catch (error) {
   initializationError = error;
 }
@@ -922,8 +860,6 @@ const oauthReady = (async () => {
   } catch (error) {
     initializationError = error;
     if (authForm) showAuthError(`Sign-in could not initialize: ${errorMessage(error)}`);
-  } finally {
-    if (storedPendingMetadataVersion() === initialMetadataVersion) clearPendingMetadataVersion();
   }
 
   renderAccount();
@@ -965,11 +901,12 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
   createCoffeeAccountButton.disabled = true;
   createCoffeeAccountButton.textContent = 'Connecting…';
   try {
-    const signInClient = await selectedOAuthClient('account.coffeencode.cc');
+    const scope = await requestedScope('account.coffeencode.cc');
+    const activeClient = client;
+    if (!activeClient) throw initializationError || new Error('OAuth client is unavailable.');
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-    await signInClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create' });
+    await activeClient.signInRedirect('https://account.coffeencode.cc', { state: returnPath, prompt: 'create', scope });
   } catch (error) {
-    clearPendingMetadataVersion();
     showAuthError(errorMessage(error));
     createCoffeeAccountButton.disabled = false;
     createCoffeeAccountButton.textContent = 'Continue to account creation';
@@ -1302,11 +1239,12 @@ if (authForm) {
     }
 
     try {
-      const signInClient = await selectedOAuthClient(handle);
+      const scope = await requestedScope(handle);
+      const activeClient = client;
+      if (!activeClient) throw initializationError || new Error('OAuth client is unavailable.');
       const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-      await signInClient.signInRedirect(handle, { state: returnPath });
+      await activeClient.signInRedirect(handle, { state: returnPath, scope });
     } catch (error) {
-      clearPendingMetadataVersion();
       showAuthError(errorMessage(error));
       if (submit) {
         submit.disabled = false;
