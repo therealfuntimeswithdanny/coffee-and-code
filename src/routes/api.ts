@@ -215,22 +215,31 @@ api.get('/documents', async (c) => {
 api.get('/notifications', async (c) => {
   const rawLimit = c.req.query('limit');
   const limit = rawLimit === undefined ? 40 : Number(rawLimit);
+  const did = c.req.query('did') || '';
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     return c.json({ error: 'limit must be an integer between 1 and 100.' }, 400);
+  }
+  if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did)) {
+    return c.json({ error: 'A valid account DID is required.' }, 400);
   }
 
   type Backlink = { did: string; collection: string; rkey: string };
   type Activity = {
     uri: string;
-    type: 'comment' | 'comment.like';
+    type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like';
     actorDid: string;
     subjectUri: string;
     documentUri: string;
     documentTitle: string;
     documentPath: string;
+    targetUri?: string;
     recordKey: string;
     createdAt?: string;
     text?: string;
+    targetText?: string;
+    actorName?: string;
+    actorHandle?: string;
+    actorAvatar?: string;
   };
   const backlinkUrl = (subjectUri: string, source: string) => {
     const url = new URL('https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks');
@@ -254,11 +263,14 @@ api.get('/notifications', async (c) => {
     const { documents } = await loadDocuments(c);
     const documentUris = [...new Set(documents.map((document) => document.uri).filter(Boolean))];
     const documentByUri = new Map(documents.map((document) => [document.uri, document]));
+    const userDocuments = documents.filter((document) =>
+      document.author?.did.toLowerCase() === did.toLowerCase()
+      || (!document.author && document.repoDid?.toLowerCase() === did.toLowerCase()));
     const commentsByDocument = await Promise.all(documentUris.map(async (uri) => ({
       uri,
       records: await fetchBacklinks(uri, 'cc.coffeencode.comment:subject.uri', 'cc.coffeencode.comment'),
     })));
-    const commentEntries = commentsByDocument.flatMap(({ uri, records }) => records.map((record) => ({
+    const documentComments = commentsByDocument.flatMap(({ uri, records }) => records.map((record) => ({
       ...record,
       subjectUri: uri,
       documentTitle: documentByUri.get(uri)?.title || 'Untitled story',
@@ -266,42 +278,104 @@ api.get('/notifications', async (c) => {
       uri: `at://${record.did}/cc.coffeencode.comment/${record.rkey}`,
     })));
 
-    const likesByComment = await Promise.all(commentEntries.map(async (comment) => ({
-      comment,
-      records: await fetchBacklinks(comment.uri, 'cc.coffeencode.comment.like:subject.uri', 'cc.coffeencode.comment.like'),
-    })));
-    const activities: Activity[] = [
-      ...commentEntries.map((comment) => ({
+    const ownComments = documentComments.filter((comment) => comment.did.toLowerCase() === did.toLowerCase());
+    const [commentLikes, repliesToOwnComments, postLikes] = await Promise.all([
+      Promise.all(ownComments.map(async (comment) => ({
+        comment,
+        records: await fetchBacklinks(comment.uri, 'cc.coffeencode.comment.like:subject.uri', 'cc.coffeencode.comment.like'),
+      }))),
+      Promise.all(ownComments.map(async (comment) => ({
+        comment,
+        records: await fetchBacklinks(comment.uri, 'cc.coffeencode.comment:reply.parent.uri', 'cc.coffeencode.comment'),
+      }))),
+      Promise.all(userDocuments.map(async (document) => ({
+        document,
+        records: await fetchBacklinks(document.uri, 'cc.coffeencode.interact.like:document', 'cc.coffeencode.interact.like'),
+      }))),
+    ]);
+
+    const ownReplyUris = new Set(repliesToOwnComments.flatMap(({ records }) => records
+      .filter((record) => record.did.toLowerCase() !== did.toLowerCase())
+      .map((record) => `at://${record.did}/cc.coffeencode.comment/${record.rkey}`)));
+    const activitiesByUri = new Map<string, Activity>();
+    for (const comment of documentComments) {
+      if (comment.did.toLowerCase() === did.toLowerCase() || ownReplyUris.has(comment.uri)) continue;
+      if (!userDocuments.some((document) => document.uri === comment.subjectUri)) continue;
+      activitiesByUri.set(comment.uri, {
         uri: comment.uri,
-        type: 'comment' as const,
+        type: 'comment',
         actorDid: comment.did,
         subjectUri: comment.subjectUri,
         documentUri: comment.subjectUri,
         documentTitle: comment.documentTitle,
         documentPath: comment.documentPath,
         recordKey: comment.rkey,
-      })),
-      ...likesByComment.flatMap(({ comment, records }) => records.map((record) => ({
-        uri: `at://${record.did}/cc.coffeencode.comment.like/${record.rkey}`,
-        type: 'comment.like' as const,
-        actorDid: record.did,
-        subjectUri: comment.uri,
-        documentUri: comment.subjectUri,
-        documentTitle: comment.documentTitle,
-        documentPath: comment.documentPath,
-        recordKey: record.rkey,
-      }))),
-    ];
+      });
+    }
+    for (const { comment, records } of repliesToOwnComments) {
+      for (const record of records) {
+        if (record.did.toLowerCase() === did.toLowerCase()) continue;
+        const uri = `at://${record.did}/cc.coffeencode.comment/${record.rkey}`;
+        activitiesByUri.set(uri, {
+          uri,
+          type: 'comment.reply',
+          actorDid: record.did,
+          subjectUri: comment.uri,
+          documentUri: comment.subjectUri,
+          documentTitle: comment.documentTitle,
+          documentPath: comment.documentPath,
+          targetUri: comment.uri,
+          recordKey: record.rkey,
+        });
+      }
+    }
+    for (const { comment, records } of commentLikes) {
+      for (const record of records) {
+        if (record.did.toLowerCase() === did.toLowerCase()) continue;
+        const uri = `at://${record.did}/cc.coffeencode.comment.like/${record.rkey}`;
+        activitiesByUri.set(uri, {
+          uri,
+          type: 'comment.like',
+          actorDid: record.did,
+          subjectUri: comment.uri,
+          documentUri: comment.subjectUri,
+          documentTitle: comment.documentTitle,
+          documentPath: comment.documentPath,
+          targetUri: comment.uri,
+          recordKey: record.rkey,
+        });
+      }
+    }
+    for (const { document, records } of postLikes) {
+      for (const record of records) {
+        if (record.did.toLowerCase() === did.toLowerCase()) continue;
+        const uri = `at://${record.did}/cc.coffeencode.interact.like/${record.rkey}`;
+        activitiesByUri.set(uri, {
+          uri,
+          type: 'post.like',
+          actorDid: record.did,
+          subjectUri: document.uri,
+          documentUri: document.uri,
+          documentTitle: document.title || 'Untitled story',
+          documentPath: document.path,
+          recordKey: record.rkey,
+        });
+      }
+    }
+    const activities = [...activitiesByUri.values()];
 
     // Fetch the small activity window's records for displayable text and time.
     // TID record keys sort by creation time, providing a useful candidate
     // window before we fetch records for their timestamps.
     activities.sort((a, b) => b.recordKey.localeCompare(a.recordKey));
-    const records = await Promise.all(activities.slice(0, limit).map(async (activity) => {
+    const selectedActivities = activities.slice(0, limit);
+    const records = await Promise.all(selectedActivities.map(async (activity) => {
       try {
-        const collection = activity.type === 'comment'
-          ? 'cc.coffeencode.comment'
-          : 'cc.coffeencode.comment.like';
+        const collection = activity.type === 'comment.like'
+          ? 'cc.coffeencode.comment.like'
+          : activity.type === 'post.like'
+            ? 'cc.coffeencode.interact.like'
+            : 'cc.coffeencode.comment';
         const rkey = activity.recordKey;
         const pds = await getPdsEndpoint(activity.actorDid, c.env.OWNER_PDS);
         const recordUrl = new URL(`${pds}/xrpc/com.atproto.repo.getRecord`);
@@ -313,7 +387,7 @@ api.get('/notifications', async (c) => {
           const { recordKey: _recordKey, ...notification } = activity;
           return notification;
         }
-        const data = await response.json() as { value?: { createdAt?: string; text?: string } };
+        const data = await response.json() as { value?: { createdAt?: string; text?: string; document?: string } };
         return {
           uri: activity.uri,
           type: activity.type,
@@ -322,16 +396,59 @@ api.get('/notifications', async (c) => {
           documentUri: activity.documentUri,
           documentTitle: activity.documentTitle,
           documentPath: activity.documentPath,
+          ...(activity.targetUri ? { targetUri: activity.targetUri } : {}),
           ...(typeof data.value?.createdAt === 'string' ? { createdAt: data.value.createdAt } : {}),
-          ...(activity.type === 'comment' && typeof data.value?.text === 'string' ? { text: data.value.text } : {}),
+          ...((activity.type === 'comment' || activity.type === 'comment.reply') && typeof data.value?.text === 'string' ? { text: data.value.text } : {}),
         };
       } catch {
         const { recordKey: _recordKey, ...notification } = activity;
         return notification;
       }
     }));
-    records.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || b.uri.localeCompare(a.uri));
-    return c.json({ notifications: records, limit }, 200, { 'Cache-Control': 'no-store' });
+
+    const targetCommentUris = [...new Set(records
+      .filter((activity) => activity.type === 'comment.like' && activity.targetUri)
+      .map((activity) => activity.targetUri!))];
+    const commentTextByUri = new Map<string, string>();
+    const ownPds = await getPdsEndpoint(did, c.env.OWNER_PDS);
+    await Promise.all(targetCommentUris.map(async (uri) => {
+      const match = uri.match(/^at:\/\/(did:[^/]+)\/cc\.coffeencode\.comment\/([a-zA-Z0-9._~:-]+)$/);
+      if (!match || match[1].toLowerCase() !== did.toLowerCase()) return;
+      try {
+        const recordUrl = new URL(`${ownPds}/xrpc/com.atproto.repo.getRecord`);
+        recordUrl.searchParams.set('repo', did);
+        recordUrl.searchParams.set('collection', 'cc.coffeencode.comment');
+        recordUrl.searchParams.set('rkey', match[2]);
+        const response = await fetch(recordUrl, { headers: { Accept: 'application/json' } });
+        if (!response.ok) return;
+        const data = await response.json() as { value?: { text?: unknown } };
+        if (typeof data.value?.text === 'string') commentTextByUri.set(uri, data.value.text);
+      } catch { /* The like notification remains useful without the quoted comment. */ }
+    }));
+
+    const actorDids = [...new Set(records.map((activity) => activity.actorDid))];
+    const profiles = await Promise.all(actorDids.map(async (actorDid): Promise<[string, { handle?: string; displayName?: string; avatar?: string }]> => {
+      try {
+        const profileUrl = new URL('https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile');
+        profileUrl.searchParams.set('actor', actorDid);
+        const response = await fetch(profileUrl, { headers: { Accept: 'application/json' } });
+        if (response.ok) return [actorDid, await response.json() as { handle?: string; displayName?: string; avatar?: string }];
+      } catch { /* Profile decoration is optional. */ }
+      return [actorDid, {}];
+    }));
+    const profileByDid = new Map(profiles);
+    const notifications = records.map((activity) => {
+      const profile = profileByDid.get(activity.actorDid);
+      return {
+        ...activity,
+        ...(activity.targetUri && commentTextByUri.has(activity.targetUri) ? { targetText: commentTextByUri.get(activity.targetUri) } : {}),
+        actorName: profile?.displayName || profile?.handle || activity.actorDid,
+        ...(profile?.handle ? { actorHandle: profile.handle } : {}),
+        ...(profile?.avatar ? { actorAvatar: proxyAvatarUrl(profile.avatar) } : {}),
+      };
+    });
+    notifications.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || b.uri.localeCompare(a.uri));
+    return c.json({ notifications, limit }, 200, { 'Cache-Control': 'no-store' });
   } catch (error) {
     console.error('Failed to load notifications:', error);
     return c.json({ error: 'Notifications are temporarily unavailable.' }, 502);

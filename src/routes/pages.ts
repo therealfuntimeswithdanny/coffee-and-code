@@ -43,11 +43,17 @@ pages.get('/notifications', (c) => {
       .notifications-page .section-heading { align-items: baseline; }
       .notifications-page .section-heading h2 { font: inherit; font-size: 16px; letter-spacing: .1em; margin: 0; text-transform: uppercase; }
       .notifications-list { list-style: none; margin: 0; padding: 0; }
-      .notification-item { border-bottom: 1px solid var(--line); display: grid; gap: 8px; padding: 20px 4px; }
+      .notification-item { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: 20px 40px minmax(0, 1fr); padding: 18px 4px; }
+      .notification-item__icon { color: var(--muted); font-size: 17px; padding-top: 2px; text-align: center; }
+      .notification-item__icon--like { color: #ed6b79; }
+      .notification-item__avatar { background: var(--paper-deep); border-radius: 50%; height: 40px; object-fit: cover; width: 40px; }
+      .notification-item__avatar--placeholder { align-items: center; color: var(--muted); display: inline-flex; justify-content: center; }
+      .notification-item__content { min-width: 0; }
       .notification-item__summary { line-height: 1.5; margin: 0; }
-      .notification-item__summary a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-      .notification-item__text { background: var(--paper-deep); border-left: 3px solid var(--line-strong); color: var(--muted); margin: 4px 0 0; padding: 12px 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
-      .notification-item time { color: var(--muted); font-size: 13px; }
+      .notification-item__actor { color: var(--ink) !important; font-weight: 700; text-decoration: none !important; }
+      .notification-item__story { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+      .notification-item__text { background: transparent; border: 0; color: var(--muted); margin: 2px 0 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .notification-item time { color: var(--muted); display: block; font-size: 12px; margin-top: 3px; }
       .notifications-page__inbox > section { margin-top: 36px; }
       @media (max-width: 600px) { .notifications-page h1 { font-size: clamp(2.6rem, 12vw, 4rem); }.notifications-page__actions { align-items: flex-start; flex-direction: column; } }
     </style>`;

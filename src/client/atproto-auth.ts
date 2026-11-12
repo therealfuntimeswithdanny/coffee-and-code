@@ -1381,14 +1381,18 @@ async function readNotificationsMarker() {
 
 type NotificationItem = {
   uri: string;
-  type: 'comment' | 'comment.like';
+  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like';
   actorDid: string;
+  actorName?: string;
+  actorHandle?: string;
+  actorAvatar?: string;
   subjectUri: string;
   documentUri: string;
   documentTitle: string;
   documentPath: string;
   createdAt?: string;
   text?: string;
+  targetText?: string;
 };
 
 let notificationItems: NotificationItem[] = [];
@@ -1414,30 +1418,68 @@ function renderNotifications() {
     items.forEach((item) => {
       const row = document.createElement('li');
       row.className = 'notification-item';
+      const icon = document.createElement('span');
+      icon.className = `notification-item__icon${item.type.includes('like') ? ' notification-item__icon--like' : ''}`;
+      icon.setAttribute('aria-hidden', 'true');
+      const iconGlyph = document.createElement('i');
+      iconGlyph.className = item.type.includes('like') ? 'fa-solid fa-heart' : 'fa-regular fa-comment';
+      icon.appendChild(iconGlyph);
+      row.appendChild(icon);
+
+      if (item.actorAvatar) {
+        const avatar = document.createElement('img');
+        avatar.className = 'notification-item__avatar';
+        avatar.src = item.actorAvatar;
+        avatar.alt = '';
+        avatar.width = 40;
+        avatar.height = 40;
+        avatar.loading = 'lazy';
+        row.appendChild(avatar);
+      } else {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'notification-item__avatar notification-item__avatar--placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+        placeholder.innerHTML = '<i class="fa-solid fa-user"></i>';
+        row.appendChild(placeholder);
+      }
+
+      const content = document.createElement('div');
+      content.className = 'notification-item__content';
       const summary = document.createElement('p');
       summary.className = 'notification-item__summary';
       const actor = document.createElement('a');
       actor.href = `/user/${encodeURIComponent(item.actorDid)}`;
-      actor.textContent = item.actorDid;
+      actor.className = 'notification-item__actor';
+      actor.textContent = item.actorName || item.actorHandle || item.actorDid;
       summary.appendChild(actor);
-      summary.appendChild(document.createTextNode(item.type === 'comment' ? ' commented on ' : ' liked a comment on '));
       const story = document.createElement('a');
+      story.className = 'notification-item__story';
       story.href = item.documentPath.startsWith('/') && !item.documentPath.startsWith('//') ? item.documentPath : '/';
       story.textContent = item.documentTitle || 'a story';
-      summary.appendChild(story);
-      row.appendChild(summary);
-      if (item.type === 'comment' && item.text) {
+      const action = item.type === 'comment.like'
+        ? ' likes your reply'
+        : item.type === 'post.like'
+          ? ' likes your post'
+          : item.type === 'comment.reply'
+            ? ' Replied to you'
+            : ' Replied to ';
+      summary.appendChild(document.createTextNode(action));
+      if (item.type === 'comment' || item.type === 'post.like') summary.appendChild(story);
+      content.appendChild(summary);
+      const quoteText = item.type === 'comment.like' ? item.targetText : item.text;
+      if (quoteText) {
         const quote = document.createElement('blockquote');
         quote.className = 'notification-item__text';
-        quote.textContent = item.text;
-        row.appendChild(quote);
+        quote.textContent = `“${quoteText}”`;
+        content.appendChild(quote);
       }
       if (item.createdAt) {
         const time = document.createElement('time');
         time.dateTime = item.createdAt;
-        time.textContent = new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-        row.appendChild(time);
+        time.textContent = relativeNotificationTime(item.createdAt);
+        content.appendChild(time);
       }
+      row.appendChild(content);
       fragment.appendChild(row);
     });
     list.replaceChildren(fragment);
@@ -1470,7 +1512,7 @@ async function loadNotificationsPage() {
   try {
     const did = session.did;
     const [response, marker] = await Promise.all([
-      fetch('/api/notifications?limit=100', { cache: 'no-store' }),
+      fetch(`/api/notifications?limit=100&did=${encodeURIComponent(did)}`, { cache: 'no-store' }),
       readNotificationsMarker(),
     ]);
     if (session?.did !== did) return;
@@ -1502,6 +1544,15 @@ notificationsMarkRead?.addEventListener('click', async () => {
     notificationsMarkRead.disabled = false;
   }
 });
+
+function relativeNotificationTime(value: string) {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 1000));
+  if (elapsedSeconds < 60) return 'now';
+  if (elapsedSeconds < 3600) return `${Math.floor(elapsedSeconds / 60)}m`;
+  if (elapsedSeconds < 86400) return `${Math.floor(elapsedSeconds / 3600)}h`;
+  if (elapsedSeconds < 604800) return `${Math.floor(elapsedSeconds / 86400)}d`;
+  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 async function recordKey(document: string, prefix = 'post') {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(document));
