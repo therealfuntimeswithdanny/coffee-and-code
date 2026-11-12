@@ -60,6 +60,12 @@ const headerAccountPlaceholder = document.querySelector<HTMLElement>('[data-acco
 const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobile-account-link]');
 const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
 const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
+const notificationsPage = document.querySelector<HTMLElement>('[data-notifications-page]');
+const notificationsSignedOut = notificationsPage?.querySelector<HTMLElement>('[data-notifications-signed-out]');
+const notificationsInbox = notificationsPage?.querySelector<HTMLElement>('[data-notifications-inbox]');
+const notificationsStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-status]');
+const notificationsMarkRead = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-mark-read]');
+const notificationLinks = document.querySelectorAll<HTMLElement>('[data-notifications-link]');
 let signupInviteCode: string | undefined;
 let accountAuthorRecord: Record<string, unknown> | undefined;
 let accountAuthorDid: string | undefined;
@@ -74,6 +80,9 @@ declare global {
   interface Window {
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
+      getNotificationsReadAt: () => Promise<string | undefined>;
+      markNotificationsRead: () => Promise<string>;
+      getFeedSkeleton: (cursor?: string | null) => Promise<{ feed?: Array<{ post?: string; reason?: unknown }>; cursor?: string } | undefined>;
       blockUser: (did: string, alsoOnBluesky: boolean) => Promise<void>;
       unblockUser: (did: string) => Promise<void>;
       createComment: (record: { subject: { uri: string }; reply?: { parent: { uri: string } }; text: string; createdAt: string }) => Promise<void>;
@@ -134,6 +143,8 @@ function renderAccount() {
     mobileAccountLink.hidden = !session;
     mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
   }
+  notificationLinks.forEach((link) => { link.hidden = !session; });
+  if (notificationsPage) void loadNotificationsPage();
   if (session) {
     const activeDid = session.did;
     void loadUserBlocks(activeDid).then(() => renderBlockManager(activeDid)).catch((error) => {
@@ -975,6 +986,56 @@ window.coffeeAndCodeAuth = {
     await oauthReady;
     return session?.did;
   },
+  getNotificationsReadAt: async () => {
+    await oauthReady;
+    const marker = await readNotificationsMarker();
+    return marker.lastRead;
+  },
+  markNotificationsRead: async () => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const marker = await readNotificationsMarker();
+    const lastRead = new Date().toISOString();
+    const record = { $type: 'cc.coffeencode.notifications.read', lastRead };
+    if (marker.exists) {
+      await repoRequest('com.atproto.repo.putRecord', {
+        repo: activeSession.did,
+        collection: 'cc.coffeencode.notifications.read',
+        rkey: 'self',
+        record,
+      });
+    } else {
+      await repoRequest('com.atproto.repo.createRecord', {
+        repo: activeSession.did,
+        collection: 'cc.coffeencode.notifications.read',
+        rkey: 'self',
+        record,
+      });
+    }
+    return lastRead;
+  },
+  getFeedSkeleton: async (cursor) => {
+    await oauthReady;
+    if (!session) return undefined;
+    const query = new URLSearchParams({
+      feed: 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following',
+      limit: '20',
+    });
+    if (cursor) query.set('cursor', cursor);
+    const response = await session.fetchHandler(`/xrpc/app.bsky.feed.getFeedSkeleton?${query.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+        'atproto-proxy': 'did:web:feed.coffeencode.cc#bsky_fg',
+      },
+    });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('Your sign-in needs feed access. Sign out and sign in again to approve the updated access, then reload this page.');
+      }
+      throw new Error('Your personalized feed could not be loaded. Please try again shortly.');
+    }
+    return await response.json();
+  },
   blockUser: async (did: string, alsoOnBluesky: boolean) => {
     await oauthReady;
     await blockUser(did, alsoOnBluesky);
@@ -1287,6 +1348,210 @@ async function repoRequest(path: string, body?: unknown) {
   }
   const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
   throw new Error(detail || `AT Protocol request failed (${response.status}).`);
+}
+
+async function readNotificationsMarker() {
+  const activeSession = requireSession();
+  const query = new URLSearchParams({
+    repo: activeSession.did,
+    collection: 'cc.coffeencode.notifications.read',
+    rkey: 'self',
+  });
+  const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+  if (response.status === 404) return { exists: false, lastRead: undefined as string | undefined };
+  if (response.status === 400) {
+    const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
+    // PDS implementations commonly encode a missing record as the XRPC
+    // RecordNotFound error with HTTP 400 instead of returning HTTP 404.
+    if (payload?.error === 'RecordNotFound') return { exists: false, lastRead: undefined as string | undefined };
+  }
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Your account needs notification read access. Sign out and sign in again to approve the updated permissions.');
+    }
+    throw new Error(`Could not load your notification read status (${response.status}).`);
+  }
+  const data = await response.json() as { value?: { lastRead?: unknown } };
+  const lastRead = data.value?.lastRead;
+  return {
+    exists: true,
+    lastRead: typeof lastRead === 'string' && Number.isFinite(Date.parse(lastRead)) ? lastRead : undefined,
+  };
+}
+
+type NotificationItem = {
+  uri: string;
+  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like';
+  actorDid: string;
+  actorName?: string;
+  actorHandle?: string;
+  actorAvatar?: string;
+  subjectUri: string;
+  documentUri: string;
+  documentTitle: string;
+  documentPath: string;
+  createdAt?: string;
+  text?: string;
+  targetText?: string;
+};
+
+let notificationItems: NotificationItem[] = [];
+let notificationLastRead: string | undefined;
+
+function renderNotifications() {
+  if (!notificationsPage) return;
+  const unreadList = notificationsPage.querySelector<HTMLUListElement>('[data-notifications-unread]');
+  const readList = notificationsPage.querySelector<HTMLUListElement>('[data-notifications-read]');
+  const unreadCount = notificationsPage.querySelector<HTMLElement>('[data-notifications-unread-count]');
+  const readCount = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-count]');
+  const unreadEmpty = notificationsPage.querySelector<HTMLElement>('[data-notifications-unread-empty]');
+  const readEmpty = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-empty]');
+  if (!unreadList || !readList || !unreadCount || !readCount || !unreadEmpty || !readEmpty) return;
+
+  const cutoff = notificationLastRead ? Date.parse(notificationLastRead) : Number.NEGATIVE_INFINITY;
+  const hasValidTime = (item: NotificationItem) => typeof item.createdAt === 'string' && Number.isFinite(Date.parse(item.createdAt));
+  const unread = notificationItems.filter((item) => !hasValidTime(item) || Date.parse(item.createdAt!) > cutoff);
+  const read = notificationItems.filter((item) => hasValidTime(item) && Date.parse(item.createdAt!) <= cutoff);
+
+  const fillList = (list: HTMLUListElement, items: NotificationItem[]) => {
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => {
+      const row = document.createElement('li');
+      row.className = 'notification-item';
+      const icon = document.createElement('span');
+      icon.className = `notification-item__icon${item.type.includes('like') ? ' notification-item__icon--like' : ''}`;
+      icon.setAttribute('aria-hidden', 'true');
+      const iconGlyph = document.createElement('i');
+      iconGlyph.className = item.type.includes('like') ? 'fa-solid fa-heart' : 'fa-regular fa-comment';
+      icon.appendChild(iconGlyph);
+      row.appendChild(icon);
+
+      if (item.actorAvatar) {
+        const avatar = document.createElement('img');
+        avatar.className = 'notification-item__avatar';
+        avatar.src = item.actorAvatar;
+        avatar.alt = '';
+        avatar.width = 40;
+        avatar.height = 40;
+        avatar.loading = 'lazy';
+        row.appendChild(avatar);
+      } else {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'notification-item__avatar notification-item__avatar--placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+        placeholder.innerHTML = '<i class="fa-solid fa-user"></i>';
+        row.appendChild(placeholder);
+      }
+
+      const content = document.createElement('div');
+      content.className = 'notification-item__content';
+      const summary = document.createElement('p');
+      summary.className = 'notification-item__summary';
+      const actor = document.createElement('a');
+      actor.href = `/user/${encodeURIComponent(item.actorDid)}`;
+      actor.className = 'notification-item__actor';
+      actor.textContent = item.actorName || item.actorHandle || item.actorDid;
+      summary.appendChild(actor);
+      const story = document.createElement('a');
+      story.className = 'notification-item__story';
+      story.href = item.documentPath.startsWith('/') && !item.documentPath.startsWith('//') ? item.documentPath : '/';
+      story.textContent = item.documentTitle || 'a story';
+      const action = item.type === 'comment.like'
+        ? ' likes your reply'
+        : item.type === 'post.like'
+          ? ' likes your post'
+          : item.type === 'comment.reply'
+            ? ' Replied to you'
+            : ' Replied to ';
+      summary.appendChild(document.createTextNode(action));
+      if (item.type === 'comment' || item.type === 'post.like') summary.appendChild(story);
+      content.appendChild(summary);
+      const quoteText = item.type === 'comment.like' ? item.targetText : item.text;
+      if (quoteText) {
+        const quote = document.createElement('blockquote');
+        quote.className = 'notification-item__text';
+        quote.textContent = `“${quoteText}”`;
+        content.appendChild(quote);
+      }
+      if (item.createdAt) {
+        const time = document.createElement('time');
+        time.dateTime = item.createdAt;
+        time.textContent = relativeNotificationTime(item.createdAt);
+        content.appendChild(time);
+      }
+      row.appendChild(content);
+      fragment.appendChild(row);
+    });
+    list.replaceChildren(fragment);
+  };
+
+  fillList(unreadList, unread);
+  fillList(readList, read);
+  unreadCount.textContent = String(unread.length);
+  readCount.textContent = String(read.length);
+  unreadEmpty.hidden = unread.length > 0;
+  readEmpty.hidden = read.length > 0;
+  if (notificationsMarkRead) notificationsMarkRead.hidden = unread.length === 0;
+  const readStatus = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-status]');
+  if (readStatus) readStatus.textContent = notificationLastRead
+    ? `Last read ${new Date(notificationLastRead).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.`
+    : 'These notifications have not been marked read yet.';
+}
+
+async function loadNotificationsPage() {
+  if (!notificationsPage || !notificationsStatus || !notificationsInbox || !notificationsSignedOut) return;
+  notificationsInbox.hidden = true;
+  notificationsSignedOut.hidden = true;
+  notificationsStatus.hidden = false;
+  notificationsStatus.textContent = 'Loading notifications…';
+  if (!session) {
+    notificationsStatus.hidden = true;
+    notificationsSignedOut.hidden = false;
+    return;
+  }
+  try {
+    const did = session.did;
+    const [response, marker] = await Promise.all([
+      fetch(`/api/notifications?limit=100&did=${encodeURIComponent(did)}`, { cache: 'no-store' }),
+      readNotificationsMarker(),
+    ]);
+    if (session?.did !== did) return;
+    if (!response.ok) throw new Error('Notifications are temporarily unavailable. Please try again shortly.');
+    const data = await response.json() as { notifications?: NotificationItem[] };
+    notificationItems = Array.isArray(data.notifications) ? data.notifications : [];
+    notificationLastRead = marker.lastRead;
+    renderNotifications();
+    notificationsStatus.hidden = true;
+    notificationsInbox.hidden = false;
+  } catch (error) {
+    notificationsStatus.textContent = errorMessage(error);
+  }
+}
+
+notificationsMarkRead?.addEventListener('click', async () => {
+  if (!notificationsMarkRead) return;
+  notificationsMarkRead.disabled = true;
+  const readStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-read-status]');
+  if (readStatus) readStatus.textContent = 'Saving your read status…';
+  try {
+    const lastRead = await window.coffeeAndCodeAuth?.markNotificationsRead();
+    if (!lastRead) throw new Error('Could not save your notification read status.');
+    notificationLastRead = lastRead;
+    renderNotifications();
+  } catch (error) {
+    if (readStatus) readStatus.textContent = errorMessage(error);
+  } finally {
+    notificationsMarkRead.disabled = false;
+  }
+});
+
+function relativeNotificationTime(value: string) {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 1000));
+  if (elapsedSeconds < 60) return 'now';
+  if (elapsedSeconds < 3600) return `${Math.floor(elapsedSeconds / 60)}m`;
+  if (elapsedSeconds < 86400) return `${Math.floor(elapsedSeconds / 3600)}h`;
+  if (elapsedSeconds < 604800) return `${Math.floor(elapsedSeconds / 86400)}d`;
+  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 async function recordKey(document: string, prefix = 'post') {
