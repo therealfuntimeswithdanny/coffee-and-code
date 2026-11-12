@@ -23,6 +23,7 @@ const VIEW_COLLECTION = 'cc.coffeencode.interact.view';
 const BLOCK_COLLECTION = 'cc.coffeencode.user.block';
 const LIKE_COLLECTION = 'cc.coffeencode.interact.like';
 const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
+const NOTIFICATION_READ_COLLECTION = 'cc.coffeencode.notifications.read';
 
 function profileBlobUrl(blob, did, pdsEndpoint) {
   const cid = blob?.ref?.$link;
@@ -30,9 +31,40 @@ function profileBlobUrl(blob, did, pdsEndpoint) {
   return `${pdsEndpoint}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
 }
 
+async function readNotificationMarker(agent, did) {
+  try {
+    const { data } = await agent.com.atproto.repo.getRecord({
+      repo: did,
+      collection: NOTIFICATION_READ_COLLECTION,
+      rkey: 'self',
+    });
+    const lastRead = data.value?.lastRead;
+    return {
+      exists: true,
+      lastRead: typeof lastRead === 'string' && Number.isFinite(Date.parse(lastRead)) ? lastRead : undefined,
+    };
+  } catch (error) {
+    const status = error.status || error.statusCode;
+    if (status === 404 || (status === 400 && error.error === 'RecordNotFound')) {
+      return { exists: false, lastRead: undefined };
+    }
+    if (status === 401 || status === 403) {
+      throw new Error('Your account needs notification read access. Sign out and sign in again to approve the updated permissions.');
+    }
+    throw new Error(`Could not load your notification read status${status ? ` (${status})` : ''}.`);
+  }
+}
 
-
-
+function relativeNotificationTime(value) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return '';
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (elapsedSeconds < 60) return 'now';
+  if (elapsedSeconds < 3600) return `${Math.floor(elapsedSeconds / 60)}m`;
+  if (elapsedSeconds < 86400) return `${Math.floor(elapsedSeconds / 3600)}h`;
+  if (elapsedSeconds < 604800) return `${Math.floor(elapsedSeconds / 86400)}d`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 export default function App() {
   const [feed, setFeed] = useState(null);
@@ -53,6 +85,13 @@ export default function App() {
   const [archiveStories, setArchiveStories] = useState([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [savedLoaded, setSavedLoaded] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsReadAt, setNotificationsReadAt] = useState(undefined);
+  const [notificationMarkerExists, setNotificationMarkerExists] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsRefreshing, setNotificationsRefreshing] = useState(false);
+  const [notificationsMarkingRead, setNotificationsMarkingRead] = useState(false);
+  const [notificationsError, setNotificationsError] = useState('');
   const [account, setAccount] = useState(null);
   const [accountProfile, setAccountProfile] = useState(null);
   const [accountPds, setAccountPds] = useState(null);
@@ -78,6 +117,7 @@ export default function App() {
   const lastArticleScrollY = useRef(0);
   const articleTouchStart = useRef(null);
   const commentsRequestId = useRef(0);
+  const notificationsRequestId = useRef(0);
   const [error, setError] = useState('');
 
   const loadFeed = useCallback(async (refresh = false) => {
@@ -105,7 +145,42 @@ export default function App() {
     }
   }, []);
 
+  const loadNotifications = useCallback(async (refresh = false) => {
+    if (!account?.agent) return;
+    const requestId = ++notificationsRequestId.current;
+    const did = account.session.did;
+    if (refresh) setNotificationsRefreshing(true);
+    else setNotificationsLoading(true);
+    setNotificationsError('');
+    try {
+      const [response, marker] = await Promise.all([
+        fetch(`${API}/notifications?limit=100&did=${encodeURIComponent(did)}`, { cache: 'no-store' }),
+        readNotificationMarker(account.agent, did),
+      ]);
+      if (!response.ok) throw new Error('Notifications are temporarily unavailable. Please try again.');
+      const payload = await response.json();
+      if (!Array.isArray(payload.notifications)) throw new Error('The notifications service returned an invalid response.');
+      if (requestId !== notificationsRequestId.current) return;
+      setNotifications(payload.notifications);
+      setNotificationsReadAt(marker.lastRead);
+      setNotificationMarkerExists(marker.exists);
+    } catch (loadError) {
+      if (requestId === notificationsRequestId.current) {
+        setNotificationsError(loadError.message || 'Could not load notifications.');
+      }
+    } finally {
+      if (requestId === notificationsRequestId.current) {
+        setNotificationsLoading(false);
+        setNotificationsRefreshing(false);
+      }
+    }
+  }, [account]);
+
   useEffect(() => { loadFeed(); }, [loadFeed]);
+  useEffect(() => {
+    if (tab === 'Notifications' && account?.agent) void loadNotifications();
+    else notificationsRequestId.current += 1;
+  }, [tab, account, loadNotifications]);
   useEffect(() => {
     AsyncStorage.getItem(SAVED_KEY)
       .then((value) => setSaved(value ? JSON.parse(value) : []))
@@ -471,6 +546,33 @@ export default function App() {
     finally { setAccountBusy(false); }
   };
 
+  const markNotificationsRead = async () => {
+    if (!account?.agent || notificationsMarkingRead) return;
+    setNotificationsMarkingRead(true);
+    setNotificationsError('');
+    const lastRead = new Date().toISOString();
+    const record = { $type: NOTIFICATION_READ_COLLECTION, lastRead };
+    try {
+      const request = {
+        repo: account.session.did,
+        collection: NOTIFICATION_READ_COLLECTION,
+        rkey: 'self',
+        record,
+      };
+      if (notificationMarkerExists) {
+        await account.agent.com.atproto.repo.putRecord(request);
+      } else {
+        await account.agent.com.atproto.repo.createRecord(request);
+      }
+      setNotificationMarkerExists(true);
+      setNotificationsReadAt(lastRead);
+    } catch (markError) {
+      setNotificationsError(markError.message || 'Could not save your notification read status.');
+    } finally {
+      setNotificationsMarkingRead(false);
+    }
+  };
+
   const toggleCommentLike = async (comment) => {
     if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to like a comment.'); return; }
     if (accountBusy) return;
@@ -618,10 +720,67 @@ export default function App() {
     {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
 
-  const renderNotifications = () => <ScrollView contentContainerStyle={styles.content}>
-    <Text style={styles.pageTitle}>Notifications</Text>
-    <View style={styles.empty}><Text style={styles.emptyTitle}>Coming soon</Text><Text style={styles.emptyText}>The Coffee &amp; Code notifications api is not available yet. Please check back soon.</Text></View>
-  </ScrollView>;
+  const renderNotificationItem = (item) => {
+    const message = item.type === 'comment.like' ? 'liked your reply'
+      : item.type === 'post.like' ? 'liked your story'
+        : item.type === 'comment.reply' ? 'replied to your comment on'
+          : 'commented on';
+    const story = stories.find((candidate) => candidate.uri === item.documentUri)
+      || { uri: item.documentUri, title: item.documentTitle || 'Story' };
+    const time = item.createdAt ? relativeNotificationTime(item.createdAt) : '';
+    return <Pressable key={item.uri} accessibilityRole="button" accessibilityLabel={`${item.actorName || item.actorHandle || 'Someone'} ${message} ${item.documentTitle || 'a story'}`} onPress={() => openStory(story)} style={styles.notificationRow}>
+      {item.actorAvatar
+        ? <Image source={{ uri: item.actorAvatar }} accessibilityLabel={`${item.actorName || 'User'} profile photo`} style={styles.notificationAvatar} />
+        : <View style={styles.notificationAvatarPlaceholder}><Text style={styles.notificationAvatarInitial}>{(item.actorName || item.actorHandle || '?')[0].toUpperCase()}</Text></View>}
+      <View style={styles.notificationCopy}>
+        <Text style={styles.notificationSummary}><Text style={styles.notificationActor}>{item.actorName || item.actorHandle || item.actorDid}</Text>{` ${message} `}<Text style={styles.notificationStory}>{item.documentTitle || 'a story'}</Text></Text>
+        {!!(item.text || item.targetText) && <Text numberOfLines={3} style={styles.notificationQuote}>“{item.type === 'comment.like' ? item.targetText : item.text}”</Text>}
+        {!!time && <Text style={styles.notificationTime}>{time}</Text>}
+      </View>
+      <SymbolView name={item.type.includes('like') ? 'heart.fill' : 'bubble.left'} size={15} tintColor={item.type.includes('like') ? C.error : C.muted} />
+    </Pressable>;
+  };
+
+  const renderNotifications = () => {
+    if (!account?.agent) return <ScrollView contentContainerStyle={styles.content}>
+      <Text style={styles.pageTitle}>Notifications</Text>
+      <View style={styles.empty}>
+        <Text style={styles.emptyTitle}>Your inbox is waiting</Text>
+        <Text style={styles.emptyText}>Sign in to see comments on your stories and likes on those comments.</Text>
+        <Pressable accessibilityRole="button" onPress={() => selectMainTab('Account')} style={styles.notificationSignIn}><Text style={styles.primaryButtonText}>GO TO SIGN IN</Text></Pressable>
+      </View>
+    </ScrollView>;
+
+    const cutoff = notificationsReadAt ? Date.parse(notificationsReadAt) : Number.NEGATIVE_INFINITY;
+    const unread = notifications.filter((item) => {
+      const timestamp = Date.parse(item.createdAt || '');
+      return !Number.isFinite(timestamp) || timestamp > cutoff;
+    });
+    const read = notifications.filter((item) => {
+      const timestamp = Date.parse(item.createdAt || '');
+      return Number.isFinite(timestamp) && timestamp <= cutoff;
+    });
+    const renderSection = (title, items, emptyText) => <View>
+      <SectionBar title={title} detail={String(items.length)} />
+      {items.length ? items.map(renderNotificationItem) : <Text style={styles.notificationEmpty}>{emptyText}</Text>}
+    </View>;
+
+    return <ScrollView contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={notificationsRefreshing} onRefresh={() => loadNotifications(true)} tintColor={C.muted} />}>
+      <Text style={styles.pageTitle}>Notifications</Text>
+      <Text style={styles.pageSubtitle}>Comments on your stories and likes on those comments.</Text>
+      {!!notificationsError && <View><Text accessibilityRole="alert" style={styles.error}>{notificationsError}</Text><Pressable accessibilityRole="button" onPress={() => loadNotifications()}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>}
+      {notificationsLoading
+        ? <ActivityIndicator color={C.muted} style={{ marginVertical: 28 }} />
+        : <>
+          {!!unread.length && <Pressable accessibilityRole="button" disabled={notificationsMarkingRead} onPress={markNotificationsRead} style={[styles.notificationMarkRead, notificationsMarkingRead && styles.disabledButton]}>
+            <Text style={styles.notificationMarkReadText}>{notificationsMarkingRead ? 'SAVING…' : 'MARK ALL AS READ'}</Text>
+          </Pressable>}
+          {renderSection('Unread', unread, 'No unread notifications.')}
+          {renderSection('Read', read, 'No read notifications yet.')}
+        </>}
+    </ScrollView>;
+  };
 
   const renderAuthors = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
     {activeAuthor ? <Pressable onPress={() => setActiveAuthor(null)} style={styles.backLink}><Text style={styles.action}>‹  ALL CONTRIBUTORS</Text></Pressable> : <Pressable onPress={() => { setTab('Latest'); setActiveAuthor(null); }} style={styles.backLink}><Text style={styles.action}>‹  BACK TO HOME</Text></Pressable>}

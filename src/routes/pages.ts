@@ -10,14 +10,9 @@ const pages = new Hono<{ Bindings: Env }>();
 pages.get('/notifications', (c) => {
   const body = `
     <section class="notifications-page" data-notifications-page aria-labelledby="notifications-title">
-      <p class="eyebrow">Your inbox</p>
       <h1 id="notifications-title">Notifications</h1>
       <p class="notifications-page__intro">Comments on your stories and likes on those comments, gathered from across AT Protocol.</p>
       <p class="notifications-page__status" data-notifications-status role="status" aria-live="polite">Loading notifications…</p>
-      <div data-notifications-signed-out hidden>
-        <p>Sign in to see which notifications you’ve read.</p>
-        <a href="/auth?returnTo=%2Fnotifications" class="login-button">Log in</a>
-      </div>
       <div class="notifications-page__inbox" data-notifications-inbox hidden>
         <div class="notifications-page__actions"><p data-notifications-read-status></p><button type="button" class="auth-signout" data-notifications-mark-read hidden>Mark all as read</button></div>
         <section aria-labelledby="notifications-unread-title">
@@ -42,8 +37,8 @@ pages.get('/notifications', (c) => {
       .notifications-page__actions p { color: var(--muted); font-size: 14px; margin: 0; }
       .notifications-page .section-heading { align-items: baseline; }
       .notifications-page .section-heading h2 { font: inherit; font-size: 16px; letter-spacing: .1em; margin: 0; text-transform: uppercase; }
-      .notifications-list { list-style: none; margin: 0; padding: 0; }
-      .notification-item { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: 20px 40px minmax(0, 1fr); padding: 18px 4px; }
+      .notifications-list { list-style: none; margin: 0; padding: 0; width: 100%; }
+      .notification-item { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: 20px 40px minmax(0, 1fr); padding: 18px 4px; width: 100%; }
       .notification-item__icon { color: var(--muted); font-size: 17px; padding-top: 2px; text-align: center; }
       .notification-item__icon--like { color: #ed6b79; }
       .notification-item__avatar { background: var(--paper-deep); border-radius: 50%; height: 40px; object-fit: cover; width: 40px; }
@@ -433,7 +428,7 @@ pages.get('/account', (c) => {
         </section>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth">Log in</a></div>
+      <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth" data-login-link>Log in</a></div>
     </section>
   `;
 

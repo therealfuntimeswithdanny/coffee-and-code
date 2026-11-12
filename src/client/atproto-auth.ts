@@ -20,6 +20,7 @@ const handleResolver = 'https://database.coffeencode.cc';
 let client: BrowserOAuthClient | undefined;
 let session: OAuthSession | undefined;
 let initializationError: unknown;
+let oauthInitialized = false;
 let callbackState: string | null | undefined;
 const clientInitializations = new WeakMap<BrowserOAuthClient, Promise<Awaited<ReturnType<BrowserOAuthClient['init']>>>>();
 
@@ -61,7 +62,6 @@ const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobil
 const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
 const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
 const notificationsPage = document.querySelector<HTMLElement>('[data-notifications-page]');
-const notificationsSignedOut = notificationsPage?.querySelector<HTMLElement>('[data-notifications-signed-out]');
 const notificationsInbox = notificationsPage?.querySelector<HTMLElement>('[data-notifications-inbox]');
 const notificationsStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-status]');
 const notificationsMarkRead = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-mark-read]');
@@ -133,7 +133,11 @@ async function requestedScope(handle?: string) {
 function renderAccount() {
   const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
   const displayName = session ? 'Your account' : '';
-  loginLinks.forEach((link) => { link.hidden = Boolean(session); });
+  const returnTo = safeReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  loginLinks.forEach((link) => {
+    link.hidden = Boolean(session);
+    link.setAttribute('href', `/auth?returnTo=${encodeURIComponent(returnTo)}`);
+  });
   if (headerAccount) {
     headerAccount.hidden = !session;
     headerAccount.setAttribute('aria-label', session ? `Account for ${displayName}` : 'Your account');
@@ -144,7 +148,7 @@ function renderAccount() {
     mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
   }
   notificationLinks.forEach((link) => { link.hidden = !session; });
-  if (notificationsPage) void loadNotificationsPage();
+  if (notificationsPage && oauthInitialized) void loadNotificationsPage();
   if (session) {
     const activeDid = session.did;
     void loadUserBlocks(activeDid).then(() => renderBlockManager(activeDid)).catch((error) => {
@@ -861,18 +865,20 @@ if (initializationError && authForm) {
 }
 
 const oauthReady = (async () => {
-  if (!client) return;
-  try {
-    const initialized = await initializeOAuthClient(client);
-    if (initialized) {
-      session = initialized.session;
-      if ('state' in initialized) callbackState = initialized.state;
+  if (client) {
+    try {
+      const initialized = await initializeOAuthClient(client);
+      if (initialized) {
+        session = initialized.session;
+        if ('state' in initialized) callbackState = initialized.state;
+      }
+    } catch (error) {
+      initializationError = error;
+      if (authForm) showAuthError(`Sign-in could not initialize: ${errorMessage(error)}`);
     }
-  } catch (error) {
-    initializationError = error;
-    if (authForm) showAuthError(`Sign-in could not initialize: ${errorMessage(error)}`);
   }
 
+  oauthInitialized = true;
   renderAccount();
   if (callbackState !== undefined && window.location.pathname === '/auth') {
     window.location.replace(safeReturnPath(callbackState));
@@ -1499,14 +1505,12 @@ function renderNotifications() {
 }
 
 async function loadNotificationsPage() {
-  if (!notificationsPage || !notificationsStatus || !notificationsInbox || !notificationsSignedOut) return;
+  if (!notificationsPage || !notificationsStatus || !notificationsInbox) return;
   notificationsInbox.hidden = true;
-  notificationsSignedOut.hidden = true;
   notificationsStatus.hidden = false;
   notificationsStatus.textContent = 'Loading notifications…';
   if (!session) {
-    notificationsStatus.hidden = true;
-    notificationsSignedOut.hidden = false;
+    window.location.assign(`/auth?returnTo=${encodeURIComponent('/notifications')}`);
     return;
   }
   try {
