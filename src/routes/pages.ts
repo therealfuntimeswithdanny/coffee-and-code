@@ -7,6 +7,61 @@ import { isForumModerator } from './forum';
 
 const pages = new Hono<{ Bindings: Env }>();
 
+pages.get('/notifications', (c) => {
+  const body = `
+    <section class="notifications-page" data-notifications-page aria-labelledby="notifications-title">
+      <p class="eyebrow">Your inbox</p>
+      <h1 id="notifications-title">Notifications</h1>
+      <p class="notifications-page__intro">Comments on your stories and likes on those comments, gathered from across AT Protocol.</p>
+      <p class="notifications-page__status" data-notifications-status role="status" aria-live="polite">Loading notifications…</p>
+      <div data-notifications-signed-out hidden>
+        <p>Sign in to see which notifications you’ve read.</p>
+        <a href="/auth?returnTo=%2Fnotifications" class="login-button">Log in</a>
+      </div>
+      <div class="notifications-page__inbox" data-notifications-inbox hidden>
+        <div class="notifications-page__actions"><p data-notifications-read-status></p><button type="button" class="auth-signout" data-notifications-mark-read hidden>Mark all as read</button></div>
+        <section aria-labelledby="notifications-unread-title">
+          <div class="section-heading"><h2 id="notifications-unread-title">Unread</h2><span data-notifications-unread-count></span></div>
+          <ul class="notifications-list" data-notifications-unread></ul>
+          <p class="notifications-page__empty" data-notifications-unread-empty hidden>No unread notifications.</p>
+        </section>
+        <section aria-labelledby="notifications-read-title">
+          <div class="section-heading"><h2 id="notifications-read-title">Read</h2><span data-notifications-read-count></span></div>
+          <ul class="notifications-list" data-notifications-read></ul>
+          <p class="notifications-page__empty" data-notifications-read-empty hidden>No read notifications yet.</p>
+        </section>
+      </div>
+    </section>
+    <style>
+      .notifications-page { margin: 0 auto; max-width: 860px; }
+      .notifications-page > .eyebrow { margin: 0 0 12px; }
+      .notifications-page h1 { font-family: Lora, serif; font-size: clamp(2.8rem, 7vw, 5rem); letter-spacing: -.04em; line-height: 1.04; margin: 0; }
+      .notifications-page__intro { color: var(--muted); font-size: 19px; line-height: 1.55; margin: 20px 0 34px; max-width: 680px; }
+      .notifications-page__status, .notifications-page__empty { color: var(--muted); }
+      .notifications-page__actions { align-items: center; display: flex; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
+      .notifications-page__actions p { color: var(--muted); font-size: 14px; margin: 0; }
+      .notifications-page .section-heading { align-items: baseline; }
+      .notifications-page .section-heading h2 { font: inherit; font-size: 16px; letter-spacing: .1em; margin: 0; text-transform: uppercase; }
+      .notifications-list { list-style: none; margin: 0; padding: 0; }
+      .notification-item { border-bottom: 1px solid var(--line); display: grid; gap: 8px; padding: 20px 4px; }
+      .notification-item__summary { line-height: 1.5; margin: 0; }
+      .notification-item__summary a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+      .notification-item__text { background: var(--paper-deep); border-left: 3px solid var(--line-strong); color: var(--muted); margin: 4px 0 0; padding: 12px 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .notification-item time { color: var(--muted); font-size: 13px; }
+      .notifications-page__inbox > section { margin-top: 36px; }
+      @media (max-width: 600px) { .notifications-page h1 { font-size: clamp(2.6rem, 12vw, 4rem); }.notifications-page__actions { align-items: flex-start; flex-direction: column; } }
+    </style>`;
+  const metaTags = `
+    <meta name="description" content="Comments on your Coffee &amp; Code stories and likes on those comments.">
+    <meta property="og:title" content="Notifications | Coffee &amp; Code">
+    <meta property="og:description" content="Comments and likes on your Coffee &amp; Code stories.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${new URL(c.req.url).origin}/notifications">
+    <link rel="canonical" href="${new URL(c.req.url).origin}/notifications">
+  `;
+  return c.html(renderLayout(c, 'Notifications', body, metaTags));
+});
+
 pages.get('/feed', (c) => {
   const feedUri = 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following';
   const blueskyFeedUrl = 'https://bsky.app/profile/did:plc:z7hzwpuv5ytin56wecfxa4mx/feed/following';

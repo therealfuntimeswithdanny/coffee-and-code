@@ -60,6 +60,12 @@ const headerAccountPlaceholder = document.querySelector<HTMLElement>('[data-acco
 const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobile-account-link]');
 const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
 const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
+const notificationsPage = document.querySelector<HTMLElement>('[data-notifications-page]');
+const notificationsSignedOut = notificationsPage?.querySelector<HTMLElement>('[data-notifications-signed-out]');
+const notificationsInbox = notificationsPage?.querySelector<HTMLElement>('[data-notifications-inbox]');
+const notificationsStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-status]');
+const notificationsMarkRead = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-mark-read]');
+const notificationLinks = document.querySelectorAll<HTMLElement>('[data-notifications-link]');
 let signupInviteCode: string | undefined;
 let accountAuthorRecord: Record<string, unknown> | undefined;
 let accountAuthorDid: string | undefined;
@@ -74,6 +80,8 @@ declare global {
   interface Window {
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
+      getNotificationsReadAt: () => Promise<string | undefined>;
+      markNotificationsRead: () => Promise<string>;
       getFeedSkeleton: (cursor?: string | null) => Promise<{ feed?: Array<{ post?: string; reason?: unknown }>; cursor?: string } | undefined>;
       blockUser: (did: string, alsoOnBluesky: boolean) => Promise<void>;
       unblockUser: (did: string) => Promise<void>;
@@ -135,6 +143,8 @@ function renderAccount() {
     mobileAccountLink.hidden = !session;
     mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
   }
+  notificationLinks.forEach((link) => { link.hidden = !session; });
+  if (notificationsPage) void loadNotificationsPage();
   if (session) {
     const activeDid = session.did;
     void loadUserBlocks(activeDid).then(() => renderBlockManager(activeDid)).catch((error) => {
@@ -976,6 +986,34 @@ window.coffeeAndCodeAuth = {
     await oauthReady;
     return session?.did;
   },
+  getNotificationsReadAt: async () => {
+    await oauthReady;
+    const marker = await readNotificationsMarker();
+    return marker.lastRead;
+  },
+  markNotificationsRead: async () => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const marker = await readNotificationsMarker();
+    const lastRead = new Date().toISOString();
+    const record = { $type: 'cc.coffeencode.notifications.read', lastRead };
+    if (marker.exists) {
+      await repoRequest('com.atproto.repo.putRecord', {
+        repo: activeSession.did,
+        collection: 'cc.coffeencode.notifications.read',
+        rkey: 'self',
+        record,
+      });
+    } else {
+      await repoRequest('com.atproto.repo.createRecord', {
+        repo: activeSession.did,
+        collection: 'cc.coffeencode.notifications.read',
+        rkey: 'self',
+        record,
+      });
+    }
+    return lastRead;
+  },
   getFeedSkeleton: async (cursor) => {
     await oauthReady;
     if (!session) return undefined;
@@ -1311,6 +1349,153 @@ async function repoRequest(path: string, body?: unknown) {
   const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
   throw new Error(detail || `AT Protocol request failed (${response.status}).`);
 }
+
+async function readNotificationsMarker() {
+  const activeSession = requireSession();
+  const query = new URLSearchParams({
+    repo: activeSession.did,
+    collection: 'cc.coffeencode.notifications.read',
+    rkey: 'self',
+  });
+  const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+  if (response.status === 404) return { exists: false, lastRead: undefined as string | undefined };
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Your account needs notification read access. Sign out and sign in again to approve the updated permissions.');
+    }
+    throw new Error(`Could not load your notification read status (${response.status}).`);
+  }
+  const data = await response.json() as { value?: { lastRead?: unknown } };
+  const lastRead = data.value?.lastRead;
+  return {
+    exists: true,
+    lastRead: typeof lastRead === 'string' && Number.isFinite(Date.parse(lastRead)) ? lastRead : undefined,
+  };
+}
+
+type NotificationItem = {
+  uri: string;
+  type: 'comment' | 'comment.like';
+  actorDid: string;
+  subjectUri: string;
+  documentUri: string;
+  documentTitle: string;
+  documentPath: string;
+  createdAt?: string;
+  text?: string;
+};
+
+let notificationItems: NotificationItem[] = [];
+let notificationLastRead: string | undefined;
+
+function renderNotifications() {
+  if (!notificationsPage) return;
+  const unreadList = notificationsPage.querySelector<HTMLUListElement>('[data-notifications-unread]');
+  const readList = notificationsPage.querySelector<HTMLUListElement>('[data-notifications-read]');
+  const unreadCount = notificationsPage.querySelector<HTMLElement>('[data-notifications-unread-count]');
+  const readCount = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-count]');
+  const unreadEmpty = notificationsPage.querySelector<HTMLElement>('[data-notifications-unread-empty]');
+  const readEmpty = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-empty]');
+  if (!unreadList || !readList || !unreadCount || !readCount || !unreadEmpty || !readEmpty) return;
+
+  const cutoff = notificationLastRead ? Date.parse(notificationLastRead) : Number.NEGATIVE_INFINITY;
+  const hasValidTime = (item: NotificationItem) => typeof item.createdAt === 'string' && Number.isFinite(Date.parse(item.createdAt));
+  const unread = notificationItems.filter((item) => !hasValidTime(item) || Date.parse(item.createdAt!) > cutoff);
+  const read = notificationItems.filter((item) => hasValidTime(item) && Date.parse(item.createdAt!) <= cutoff);
+
+  const fillList = (list: HTMLUListElement, items: NotificationItem[]) => {
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => {
+      const row = document.createElement('li');
+      row.className = 'notification-item';
+      const summary = document.createElement('p');
+      summary.className = 'notification-item__summary';
+      const actor = document.createElement('a');
+      actor.href = `/user/${encodeURIComponent(item.actorDid)}`;
+      actor.textContent = item.actorDid;
+      summary.appendChild(actor);
+      summary.appendChild(document.createTextNode(item.type === 'comment' ? ' commented on ' : ' liked a comment on '));
+      const story = document.createElement('a');
+      story.href = item.documentPath.startsWith('/') && !item.documentPath.startsWith('//') ? item.documentPath : '/';
+      story.textContent = item.documentTitle || 'a story';
+      summary.appendChild(story);
+      row.appendChild(summary);
+      if (item.type === 'comment' && item.text) {
+        const quote = document.createElement('blockquote');
+        quote.className = 'notification-item__text';
+        quote.textContent = item.text;
+        row.appendChild(quote);
+      }
+      if (item.createdAt) {
+        const time = document.createElement('time');
+        time.dateTime = item.createdAt;
+        time.textContent = new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        row.appendChild(time);
+      }
+      fragment.appendChild(row);
+    });
+    list.replaceChildren(fragment);
+  };
+
+  fillList(unreadList, unread);
+  fillList(readList, read);
+  unreadCount.textContent = String(unread.length);
+  readCount.textContent = String(read.length);
+  unreadEmpty.hidden = unread.length > 0;
+  readEmpty.hidden = read.length > 0;
+  if (notificationsMarkRead) notificationsMarkRead.hidden = unread.length === 0;
+  const readStatus = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-status]');
+  if (readStatus) readStatus.textContent = notificationLastRead
+    ? `Last read ${new Date(notificationLastRead).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.`
+    : 'These notifications have not been marked read yet.';
+}
+
+async function loadNotificationsPage() {
+  if (!notificationsPage || !notificationsStatus || !notificationsInbox || !notificationsSignedOut) return;
+  notificationsInbox.hidden = true;
+  notificationsSignedOut.hidden = true;
+  notificationsStatus.hidden = false;
+  notificationsStatus.textContent = 'Loading notifications…';
+  if (!session) {
+    notificationsStatus.hidden = true;
+    notificationsSignedOut.hidden = false;
+    return;
+  }
+  try {
+    const did = session.did;
+    const [response, marker] = await Promise.all([
+      fetch('/api/notifications?limit=100', { cache: 'no-store' }),
+      readNotificationsMarker(),
+    ]);
+    if (session?.did !== did) return;
+    if (!response.ok) throw new Error('Notifications are temporarily unavailable. Please try again shortly.');
+    const data = await response.json() as { notifications?: NotificationItem[] };
+    notificationItems = Array.isArray(data.notifications) ? data.notifications : [];
+    notificationLastRead = marker.lastRead;
+    renderNotifications();
+    notificationsStatus.hidden = true;
+    notificationsInbox.hidden = false;
+  } catch (error) {
+    notificationsStatus.textContent = errorMessage(error);
+  }
+}
+
+notificationsMarkRead?.addEventListener('click', async () => {
+  if (!notificationsMarkRead) return;
+  notificationsMarkRead.disabled = true;
+  const readStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-read-status]');
+  if (readStatus) readStatus.textContent = 'Saving your read status…';
+  try {
+    const lastRead = await window.coffeeAndCodeAuth?.markNotificationsRead();
+    if (!lastRead) throw new Error('Could not save your notification read status.');
+    notificationLastRead = lastRead;
+    renderNotifications();
+  } catch (error) {
+    if (readStatus) readStatus.textContent = errorMessage(error);
+  } finally {
+    notificationsMarkRead.disabled = false;
+  }
+});
 
 async function recordKey(document: string, prefix = 'post') {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(document));

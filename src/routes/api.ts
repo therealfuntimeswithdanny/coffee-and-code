@@ -225,6 +225,9 @@ api.get('/notifications', async (c) => {
     type: 'comment' | 'comment.like';
     actorDid: string;
     subjectUri: string;
+    documentUri: string;
+    documentTitle: string;
+    documentPath: string;
     recordKey: string;
     createdAt?: string;
     text?: string;
@@ -250,6 +253,7 @@ api.get('/notifications', async (c) => {
   try {
     const { documents } = await loadDocuments(c);
     const documentUris = [...new Set(documents.map((document) => document.uri).filter(Boolean))];
+    const documentByUri = new Map(documents.map((document) => [document.uri, document]));
     const commentsByDocument = await Promise.all(documentUris.map(async (uri) => ({
       uri,
       records: await fetchBacklinks(uri, 'cc.coffeencode.comment:subject.uri', 'cc.coffeencode.comment'),
@@ -257,6 +261,8 @@ api.get('/notifications', async (c) => {
     const commentEntries = commentsByDocument.flatMap(({ uri, records }) => records.map((record) => ({
       ...record,
       subjectUri: uri,
+      documentTitle: documentByUri.get(uri)?.title || 'Untitled story',
+      documentPath: documentByUri.get(uri)?.path || '/',
       uri: `at://${record.did}/cc.coffeencode.comment/${record.rkey}`,
     })));
 
@@ -270,6 +276,9 @@ api.get('/notifications', async (c) => {
         type: 'comment' as const,
         actorDid: comment.did,
         subjectUri: comment.subjectUri,
+        documentUri: comment.subjectUri,
+        documentTitle: comment.documentTitle,
+        documentPath: comment.documentPath,
         recordKey: comment.rkey,
       })),
       ...likesByComment.flatMap(({ comment, records }) => records.map((record) => ({
@@ -277,6 +286,9 @@ api.get('/notifications', async (c) => {
         type: 'comment.like' as const,
         actorDid: record.did,
         subjectUri: comment.uri,
+        documentUri: comment.subjectUri,
+        documentTitle: comment.documentTitle,
+        documentPath: comment.documentPath,
         recordKey: record.rkey,
       }))),
     ];
@@ -307,6 +319,9 @@ api.get('/notifications', async (c) => {
           type: activity.type,
           actorDid: activity.actorDid,
           subjectUri: activity.subjectUri,
+          documentUri: activity.documentUri,
+          documentTitle: activity.documentTitle,
+          documentPath: activity.documentPath,
           ...(typeof data.value?.createdAt === 'string' ? { createdAt: data.value.createdAt } : {}),
           ...(activity.type === 'comment' && typeof data.value?.text === 'string' ? { text: data.value.text } : {}),
         };
