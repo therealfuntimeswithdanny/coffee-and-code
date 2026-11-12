@@ -12,6 +12,8 @@ export const C = {
   error: "#f1b9a8",
 };
 
+export const TAB_BAR_HEIGHT = 62;
+
 export const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
@@ -753,7 +755,7 @@ export const styles = StyleSheet.create({
   },
   footerText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
   tabBar: {
-    height: 62,
+    height: TAB_BAR_HEIGHT,
     borderTopWidth: 1,
     borderTopColor: C.line,
     backgroundColor: C.bg,
@@ -768,7 +770,7 @@ export const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 10,
-    elevation: 8,
+    elevation: 0,
   },
   tabButton: {
     flex: 1,
@@ -778,6 +780,22 @@ export const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   tabIcon: { color: C.muted, fontSize: 21, lineHeight: 23 },
+  tabIconWrap: { position: "relative", alignItems: "center", justifyContent: "center" },
+  notificationTabBadge: {
+    position: "absolute",
+    top: -5,
+    right: -11,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: C.bg,
+    backgroundColor: "#ed6b79",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  notificationTabBadgeText: { color: "#fff", fontSize: 9, lineHeight: 12, fontWeight: "900" },
   tabProfileImage: {
     width: 23,
     height: 23,

@@ -216,11 +216,18 @@ api.get('/notifications', async (c) => {
   const rawLimit = c.req.query('limit');
   const limit = rawLimit === undefined ? 40 : Number(rawLimit);
   const did = c.req.query('did') || '';
+  const countOnly = c.req.query('count') === '1';
+  const forceRefresh = c.req.query('refresh') === '1';
+  const rawLastRead = c.req.query('lastRead');
+  const lastRead = rawLastRead && Number.isFinite(Date.parse(rawLastRead)) ? rawLastRead : undefined;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     return c.json({ error: 'limit must be an integer between 1 and 100.' }, 400);
   }
   if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did)) {
     return c.json({ error: 'A valid account DID is required.' }, 400);
+  }
+  if (countOnly && rawLastRead && !lastRead) {
+    return c.json({ error: 'lastRead must be a valid timestamp.' }, 400);
   }
 
   type Backlink = { did: string; collection: string; rkey: string };
@@ -241,6 +248,30 @@ api.get('/notifications', async (c) => {
     actorHandle?: string;
     actorAvatar?: string;
   };
+  type CachedNotification = Omit<Activity, 'recordKey'>;
+  const cacheKey = `notifications:${did}:latest`;
+  const responseForNotifications = (notifications: CachedNotification[], cacheStatus: 'HIT' | 'MISS' | 'BYPASS') => {
+    if (countOnly) {
+      const cutoff = lastRead ? Date.parse(lastRead) : Number.NEGATIVE_INFINITY;
+      const unreadCount = notifications.filter((notification) => {
+        const timestamp = notification.createdAt ? Date.parse(notification.createdAt) : Number.NaN;
+        return !Number.isFinite(timestamp) || timestamp > cutoff;
+      }).length;
+      return c.json({ unreadCount }, 200, { 'Cache-Control': 'no-store', 'X-Notifications-Cache': cacheStatus });
+    }
+    return c.json({ notifications: notifications.slice(0, limit), limit }, 200, {
+      'Cache-Control': 'no-store',
+      'X-Notifications-Cache': cacheStatus,
+    });
+  };
+  if (!forceRefresh) {
+    try {
+      const cached = await c.env.NOTIFICATIONS_CACHE.get<CachedNotification[]>(cacheKey, 'json');
+      if (cached && Array.isArray(cached)) return responseForNotifications(cached, 'HIT');
+    } catch (error) {
+      console.error('Could not read notification cache:', error);
+    }
+  }
   const backlinkUrl = (subjectUri: string, source: string) => {
     const url = new URL('https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks');
     url.searchParams.set('subject', subjectUri);
@@ -368,7 +399,7 @@ api.get('/notifications', async (c) => {
     // TID record keys sort by creation time, providing a useful candidate
     // window before we fetch records for their timestamps.
     activities.sort((a, b) => b.recordKey.localeCompare(a.recordKey));
-    const selectedActivities = activities.slice(0, limit);
+    const selectedActivities = activities.slice(0, 100);
     const records = await Promise.all(selectedActivities.map(async (activity) => {
       try {
         const collection = activity.type === 'comment.like'
@@ -448,7 +479,12 @@ api.get('/notifications', async (c) => {
       };
     });
     notifications.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || b.uri.localeCompare(a.uri));
-    return c.json({ notifications, limit }, 200, { 'Cache-Control': 'no-store' });
+    try {
+      await c.env.NOTIFICATIONS_CACHE.put(cacheKey, JSON.stringify(notifications), { expirationTtl: 300 });
+    } catch (error) {
+      console.error('Could not write notification cache:', error);
+    }
+    return responseForNotifications(notifications, forceRefresh ? 'BYPASS' : 'MISS');
   } catch (error) {
     console.error('Failed to load notifications:', error);
     return c.json({ error: 'Notifications are temporarily unavailable.' }, 502);

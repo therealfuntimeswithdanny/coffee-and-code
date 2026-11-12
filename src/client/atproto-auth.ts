@@ -64,8 +64,10 @@ const signedOutAccount = document.querySelector<HTMLElement>('[data-account-sign
 const notificationsPage = document.querySelector<HTMLElement>('[data-notifications-page]');
 const notificationsInbox = notificationsPage?.querySelector<HTMLElement>('[data-notifications-inbox]');
 const notificationsStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-status]');
+const notificationsRefresh = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-refresh]');
 const notificationsMarkRead = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-mark-read]');
 const notificationLinks = document.querySelectorAll<HTMLElement>('[data-notifications-link]');
+const notificationBadges = document.querySelectorAll<HTMLElement>('[data-notifications-badge]');
 let signupInviteCode: string | undefined;
 let accountAuthorRecord: Record<string, unknown> | undefined;
 let accountAuthorDid: string | undefined;
@@ -75,6 +77,8 @@ let blockedRecords: UserBlockRecord[] = [];
 let blockedRecordsDid: string | undefined;
 let blockedRecordsPromise: Promise<UserBlockRecord[]> | undefined;
 let activeBlockedDids = new Set<string>();
+let notificationBadgeDid: string | undefined;
+let notificationBadgeRequestDid: string | undefined;
 
 declare global {
   interface Window {
@@ -148,6 +152,15 @@ function renderAccount() {
     mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
   }
   notificationLinks.forEach((link) => { link.hidden = !session; });
+  if (session && oauthInitialized) {
+    if (notificationBadgeDid !== session.did) setNotificationBadgeCount(0);
+    if (!notificationsPage) void loadNotificationBadge(session.did);
+  }
+  if (!session) {
+    notificationBadgeDid = undefined;
+    notificationBadgeRequestDid = undefined;
+    setNotificationBadgeCount(0);
+  }
   if (notificationsPage && oauthInitialized) void loadNotificationsPage();
   if (session) {
     const activeDid = session.did;
@@ -1404,6 +1417,50 @@ type NotificationItem = {
 let notificationItems: NotificationItem[] = [];
 let notificationLastRead: string | undefined;
 
+function unreadNotificationCount(items: NotificationItem[], lastRead?: string) {
+  const cutoff = lastRead ? Date.parse(lastRead) : Number.NEGATIVE_INFINITY;
+  return items.filter((item) => {
+    const timestamp = typeof item.createdAt === 'string' ? Date.parse(item.createdAt) : Number.NaN;
+    return !Number.isFinite(timestamp) || timestamp > cutoff;
+  }).length;
+}
+
+function setNotificationBadgeCount(count: number) {
+  notificationBadges.forEach((badge) => {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.hidden = count < 1;
+    const link = badge.closest<HTMLElement>('[data-notifications-link]');
+    if (link) {
+      const label = count > 0 ? `Notifications, ${count} unread` : 'Notifications';
+      link.setAttribute('aria-label', label);
+      link.setAttribute('title', label);
+    }
+  });
+}
+
+async function loadNotificationBadge(did: string) {
+  if (notificationBadgeDid === did || notificationBadgeRequestDid === did) return;
+  notificationBadgeRequestDid = did;
+  try {
+    const marker = await readNotificationsMarker();
+    const query = new URLSearchParams({ did, count: '1' });
+    if (marker.lastRead) query.set('lastRead', marker.lastRead);
+    const response = await fetch(`/api/notifications?${query}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Could not load notification count (${response.status}).`);
+    const data = await response.json() as { unreadCount?: unknown };
+    if (typeof data.unreadCount !== 'number' || !Number.isInteger(data.unreadCount) || data.unreadCount < 0) {
+      throw new Error('The notification count response was invalid.');
+    }
+    if (session?.did !== did || notificationBadgeRequestDid !== did) return;
+    notificationBadgeDid = did;
+    setNotificationBadgeCount(data.unreadCount);
+  } catch (error) {
+    console.error('Could not load unread notification count:', error);
+  } finally {
+    if (notificationBadgeRequestDid === did) notificationBadgeRequestDid = undefined;
+  }
+}
+
 function renderNotifications() {
   if (!notificationsPage) return;
   const unreadList = notificationsPage.querySelector<HTMLUListElement>('[data-notifications-unread]');
@@ -1502,9 +1559,10 @@ function renderNotifications() {
   if (readStatus) readStatus.textContent = notificationLastRead
     ? `Last read ${new Date(notificationLastRead).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.`
     : 'These notifications have not been marked read yet.';
+  setNotificationBadgeCount(unread.length);
 }
 
-async function loadNotificationsPage() {
+async function loadNotificationsPage(refresh = true) {
   if (!notificationsPage || !notificationsStatus || !notificationsInbox) return;
   notificationsInbox.hidden = true;
   notificationsStatus.hidden = false;
@@ -1516,7 +1574,7 @@ async function loadNotificationsPage() {
   try {
     const did = session.did;
     const [response, marker] = await Promise.all([
-      fetch(`/api/notifications?limit=100&did=${encodeURIComponent(did)}`, { cache: 'no-store' }),
+      fetch(`/api/notifications?limit=100&did=${encodeURIComponent(did)}${refresh ? '&refresh=1' : ''}`, { cache: 'no-store' }),
       readNotificationsMarker(),
     ]);
     if (session?.did !== did) return;
@@ -1524,6 +1582,7 @@ async function loadNotificationsPage() {
     const data = await response.json() as { notifications?: NotificationItem[] };
     notificationItems = Array.isArray(data.notifications) ? data.notifications : [];
     notificationLastRead = marker.lastRead;
+    notificationBadgeDid = did;
     renderNotifications();
     notificationsStatus.hidden = true;
     notificationsInbox.hidden = false;
@@ -1546,6 +1605,18 @@ notificationsMarkRead?.addEventListener('click', async () => {
     if (readStatus) readStatus.textContent = errorMessage(error);
   } finally {
     notificationsMarkRead.disabled = false;
+  }
+});
+
+notificationsRefresh?.addEventListener('click', async () => {
+  if (!notificationsRefresh) return;
+  notificationsRefresh.disabled = true;
+  notificationsRefresh.textContent = 'Refreshing…';
+  try {
+    await loadNotificationsPage(true);
+  } finally {
+    notificationsRefresh.disabled = false;
+    notificationsRefresh.textContent = 'Refresh';
   }
 });
 

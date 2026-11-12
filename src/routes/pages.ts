@@ -14,7 +14,7 @@ pages.get('/notifications', (c) => {
       <p class="notifications-page__intro">Comments on your stories and likes on those comments, gathered from across AT Protocol.</p>
       <p class="notifications-page__status" data-notifications-status role="status" aria-live="polite">Loading notifications…</p>
       <div class="notifications-page__inbox" data-notifications-inbox hidden>
-        <div class="notifications-page__actions"><p data-notifications-read-status></p><button type="button" class="auth-signout" data-notifications-mark-read hidden>Mark all as read</button></div>
+        <div class="notifications-page__actions"><p data-notifications-read-status></p><div class="notifications-page__action-buttons"><button type="button" class="auth-signout" data-notifications-refresh>Refresh</button><button type="button" class="auth-signout" data-notifications-mark-read hidden>Mark all as read</button></div></div>
         <section aria-labelledby="notifications-unread-title">
           <div class="section-heading"><h2 id="notifications-unread-title">Unread</h2><span data-notifications-unread-count></span></div>
           <ul class="notifications-list" data-notifications-unread></ul>
@@ -34,6 +34,7 @@ pages.get('/notifications', (c) => {
       .notifications-page__intro { color: var(--muted); font-size: 19px; line-height: 1.55; margin: 20px 0 34px; max-width: 680px; }
       .notifications-page__status, .notifications-page__empty { color: var(--muted); }
       .notifications-page__actions { align-items: center; display: flex; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
+      .notifications-page__action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
       .notifications-page__actions p { color: var(--muted); font-size: 14px; margin: 0; }
       .notifications-page .section-heading { align-items: baseline; }
       .notifications-page .section-heading h2 { font: inherit; font-size: 16px; letter-spacing: .1em; margin: 0; text-transform: uppercase; }

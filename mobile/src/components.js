@@ -126,13 +126,12 @@ export function StoryRow({ story, featured, compact, onPress }) {
   </Pressable>;
 }
 
-export function TabButton({ label, icon, active, onPress, imageUri, compactProgress }) {
+export function TabButton({ label, icon, active, onPress, imageUri, compactProgress, badgeCount = 0 }) {
   const iconScale = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [1, 0.84] }) || 1;
   const labelOpacity = compactProgress?.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 0.2, 0] }) || 1;
   const labelHeight = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) || 12;
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}>
-    <Animated.View style={{ transform: [{ scale: iconScale }] }}>{imageUri ? <Image source={{ uri: imageUri }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}</Animated.View>
+    <Animated.View style={[styles.tabIconWrap, { transform: [{ scale: iconScale }] }]}>{imageUri ? <Image source={{ uri: imageUri }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</Animated.View>
     <Animated.Text style={[styles.tabLabel, active && styles.tabActive, { opacity: labelOpacity, height: labelHeight }]}>{label}</Animated.Text>
   </Pressable>;
 }
-

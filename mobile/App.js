@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
-import { C, styles } from './src/theme';
+import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
 import { formatDate, storyAuthor } from './src/utils';
 import { ArticleBody, SectionBar, StoryRow, TabButton } from './src/components';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
@@ -86,7 +86,9 @@ export default function App() {
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [savedLoaded, setSavedLoaded] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
   const [notificationsReadAt, setNotificationsReadAt] = useState(undefined);
+  const [notificationsLoadedAt, setNotificationsLoadedAt] = useState(null);
   const [notificationMarkerExists, setNotificationMarkerExists] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsRefreshing, setNotificationsRefreshing] = useState(false);
@@ -118,6 +120,8 @@ export default function App() {
   const articleTouchStart = useRef(null);
   const commentsRequestId = useRef(0);
   const notificationsRequestId = useRef(0);
+  const notificationInitialLoadDid = useRef(null);
+  const notificationAutoMarkAttemptedAt = useRef(null);
   const [error, setError] = useState('');
 
   const loadFeed = useCallback(async (refresh = false) => {
@@ -151,19 +155,33 @@ export default function App() {
     const did = account.session.did;
     if (refresh) setNotificationsRefreshing(true);
     else setNotificationsLoading(true);
+    setNotificationsLoadedAt(null);
     setNotificationsError('');
     try {
-      const [response, marker] = await Promise.all([
-        fetch(`${API}/notifications?limit=100&did=${encodeURIComponent(did)}`, { cache: 'no-store' }),
-        readNotificationMarker(account.agent, did),
-      ]);
+      const marker = await readNotificationMarker(account.agent, did);
+      const params = new URLSearchParams({ did, limit: '100' });
+      const countParams = new URLSearchParams({ did, count: '1' });
+      if (marker.lastRead) countParams.set('lastRead', marker.lastRead);
+      if (refresh) {
+        params.set('refresh', '1');
+        countParams.set('refresh', '1');
+      }
+      const response = await fetch(`${API}/notifications?${params}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('Notifications are temporarily unavailable. Please try again.');
       const payload = await response.json();
       if (!Array.isArray(payload.notifications)) throw new Error('The notifications service returned an invalid response.');
+      const countResponse = await fetch(`${API}/notifications?${countParams}`, { cache: 'no-store' });
+      if (!countResponse.ok) throw new Error('Could not load the unread notification count.');
+      const countPayload = await countResponse.json();
+      if (!Number.isInteger(countPayload.unreadCount) || countPayload.unreadCount < 0) {
+        throw new Error('The notifications service returned an invalid unread count.');
+      }
       if (requestId !== notificationsRequestId.current) return;
       setNotifications(payload.notifications);
+      setNotificationsUnreadCount(countPayload.unreadCount);
       setNotificationsReadAt(marker.lastRead);
       setNotificationMarkerExists(marker.exists);
+      setNotificationsLoadedAt(Date.now());
     } catch (loadError) {
       if (requestId === notificationsRequestId.current) {
         setNotificationsError(loadError.message || 'Could not load notifications.');
@@ -180,6 +198,21 @@ export default function App() {
   useEffect(() => {
     if (tab === 'Notifications' && account?.agent) void loadNotifications();
     else notificationsRequestId.current += 1;
+  }, [tab, account, loadNotifications]);
+  useEffect(() => {
+    if (!account?.agent) {
+      notificationInitialLoadDid.current = null;
+      setNotifications([]);
+      setNotificationsUnreadCount(0);
+      setNotificationsReadAt(undefined);
+      setNotificationMarkerExists(false);
+      setNotificationsLoadedAt(null);
+      return;
+    }
+    const did = account.session.did;
+    if (tab === 'Notifications' || notificationInitialLoadDid.current === did) return;
+    notificationInitialLoadDid.current = did;
+    void loadNotifications();
   }, [tab, account, loadNotifications]);
   useEffect(() => {
     AsyncStorage.getItem(SAVED_KEY)
@@ -566,12 +599,28 @@ export default function App() {
       }
       setNotificationMarkerExists(true);
       setNotificationsReadAt(lastRead);
+      setNotificationsUnreadCount(0);
     } catch (markError) {
       setNotificationsError(markError.message || 'Could not save your notification read status.');
     } finally {
       setNotificationsMarkingRead(false);
     }
   };
+
+  useEffect(() => {
+    if (tab !== 'Notifications' || !account?.agent || !notificationsLoadedAt || notificationsLoading) return undefined;
+    const cutoff = notificationsReadAt ? Date.parse(notificationsReadAt) : Number.NEGATIVE_INFINITY;
+    const hasUnread = notifications.some((item) => {
+      const timestamp = Date.parse(item.createdAt || '');
+      return !Number.isFinite(timestamp) || timestamp > cutoff;
+    });
+    if (!hasUnread || notificationsMarkingRead || notificationAutoMarkAttemptedAt.current === notificationsLoadedAt) return undefined;
+    const timeout = setTimeout(() => {
+      notificationAutoMarkAttemptedAt.current = notificationsLoadedAt;
+      void markNotificationsRead();
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, [tab, account, notificationsLoadedAt, notificationsLoading, notificationsMarkingRead, notifications, notificationsReadAt]);
 
   const toggleCommentLike = async (comment) => {
     if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to like a comment.'); return; }
@@ -661,6 +710,7 @@ export default function App() {
   const topStories = recentStories.slice(0, 3);
   const remainingLatest = [...recentStories.slice(3), ...(feed?.more || [])];
   const pinnedStories = feed?.pinned || [];
+  const notificationBadgeCount = account?.agent ? notificationsUnreadCount : 0;
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
   const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); animateArticleNav(false); };
 
@@ -952,10 +1002,10 @@ export default function App() {
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
       : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Notifications' ? renderNotifications() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
-    <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [62, 42] }) }]}>
+    <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [TAB_BAR_HEIGHT, 42] }) }]}>
       <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
-      <TabButton label="Notifications" icon="bell.fill" active={tab === 'Notifications'} onPress={() => selectMainTab('Notifications')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Notifications" icon="bell.fill" active={tab === 'Notifications'} onPress={() => selectMainTab('Notifications')} compactProgress={selected ? navCompactProgress : null} badgeCount={notificationBadgeCount} />
       <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
     </Animated.View>
