@@ -1,0 +1,27 @@
+[Unit]
+Description=Coffee & Code Jetstream Notification Intake
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=notification-intake
+Group=notification-intake
+WorkingDirectory=/notfiaction-intake
+EnvironmentFile=/etc/notification-intake.env
+ExecStart=/notfiaction-intake/.venv/bin/python /notfiaction-intake/intake.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/notification-intake
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

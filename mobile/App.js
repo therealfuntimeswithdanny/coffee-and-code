@@ -620,7 +620,7 @@ export default function App() {
 
   const renderNotifications = () => <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.pageTitle}>Notifications</Text>
-    <View style={styles.empty}><Text style={styles.emptyTitle}>Coming soon</Text><Text style={styles.emptyText}>The Coffee &amp; Code notifications system is not available yet. Please check back soon.</Text></View>
+    <View style={styles.empty}><Text style={styles.emptyTitle}>Coming soon</Text><Text style={styles.emptyText}>The Coffee &amp; Code notifications api is not available yet. Please check back soon.</Text></View>
   </ScrollView>;
 
   const renderAuthors = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadFeed(true)} tintColor={C.muted} />}>
