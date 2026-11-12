@@ -1359,6 +1359,12 @@ async function readNotificationsMarker() {
   });
   const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
   if (response.status === 404) return { exists: false, lastRead: undefined as string | undefined };
+  if (response.status === 400) {
+    const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
+    // PDS implementations commonly encode a missing record as the XRPC
+    // RecordNotFound error with HTTP 400 instead of returning HTTP 404.
+    if (payload?.error === 'RecordNotFound') return { exists: false, lastRead: undefined as string | undefined };
+  }
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       throw new Error('Your account needs notification read access. Sign out and sign in again to approve the updated permissions.');
