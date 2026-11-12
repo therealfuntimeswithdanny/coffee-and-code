@@ -209,6 +209,120 @@ api.get('/documents', async (c) => {
   }, 200, { 'Cache-Control': 'public, max-age=60' });
 });
 
+// AT Protocol records are public and immutable in normal use. Constellation
+// indexes backlinks across repositories, so this endpoint can produce a
+// current activity feed without maintaining a separate copy of the firehose.
+api.get('/notifications', async (c) => {
+  const rawLimit = c.req.query('limit');
+  const limit = rawLimit === undefined ? 40 : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return c.json({ error: 'limit must be an integer between 1 and 100.' }, 400);
+  }
+
+  type Backlink = { did: string; collection: string; rkey: string };
+  type Activity = {
+    uri: string;
+    type: 'comment' | 'comment.like';
+    actorDid: string;
+    subjectUri: string;
+    recordKey: string;
+    createdAt?: string;
+    text?: string;
+  };
+  const backlinkUrl = (subjectUri: string, source: string) => {
+    const url = new URL('https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks');
+    url.searchParams.set('subject', subjectUri);
+    url.searchParams.set('source', source);
+    url.searchParams.set('limit', '100');
+    return url;
+  };
+  const fetchBacklinks = async (subjectUri: string, source: string, collection: string) => {
+    const response = await fetch(backlinkUrl(subjectUri, source), {
+      headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc)' },
+    });
+    if (!response.ok) throw new Error(`Activity index returned ${response.status}`);
+    const data = await response.json() as { records?: Backlink[] };
+    return (data.records || []).filter((record) => record.collection === collection
+      && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(record.did)
+      && /^[a-zA-Z0-9._~:-]+$/.test(record.rkey));
+  };
+
+  try {
+    const { documents } = await loadDocuments(c);
+    const documentUris = [...new Set(documents.map((document) => document.uri).filter(Boolean))];
+    const commentsByDocument = await Promise.all(documentUris.map(async (uri) => ({
+      uri,
+      records: await fetchBacklinks(uri, 'cc.coffeencode.comment:subject.uri', 'cc.coffeencode.comment'),
+    })));
+    const commentEntries = commentsByDocument.flatMap(({ uri, records }) => records.map((record) => ({
+      ...record,
+      subjectUri: uri,
+      uri: `at://${record.did}/cc.coffeencode.comment/${record.rkey}`,
+    })));
+
+    const likesByComment = await Promise.all(commentEntries.map(async (comment) => ({
+      comment,
+      records: await fetchBacklinks(comment.uri, 'cc.coffeencode.comment.like:subject.uri', 'cc.coffeencode.comment.like'),
+    })));
+    const activities: Activity[] = [
+      ...commentEntries.map((comment) => ({
+        uri: comment.uri,
+        type: 'comment' as const,
+        actorDid: comment.did,
+        subjectUri: comment.subjectUri,
+        recordKey: comment.rkey,
+      })),
+      ...likesByComment.flatMap(({ comment, records }) => records.map((record) => ({
+        uri: `at://${record.did}/cc.coffeencode.comment.like/${record.rkey}`,
+        type: 'comment.like' as const,
+        actorDid: record.did,
+        subjectUri: comment.uri,
+        recordKey: record.rkey,
+      }))),
+    ];
+
+    // Fetch the small activity window's records for displayable text and time.
+    // TID record keys sort by creation time, providing a useful candidate
+    // window before we fetch records for their timestamps.
+    activities.sort((a, b) => b.recordKey.localeCompare(a.recordKey));
+    const records = await Promise.all(activities.slice(0, limit).map(async (activity) => {
+      try {
+        const collection = activity.type === 'comment'
+          ? 'cc.coffeencode.comment'
+          : 'cc.coffeencode.comment.like';
+        const rkey = activity.recordKey;
+        const pds = await getPdsEndpoint(activity.actorDid, c.env.OWNER_PDS);
+        const recordUrl = new URL(`${pds}/xrpc/com.atproto.repo.getRecord`);
+        recordUrl.searchParams.set('repo', activity.actorDid);
+        recordUrl.searchParams.set('collection', collection);
+        recordUrl.searchParams.set('rkey', rkey);
+        const response = await fetch(recordUrl, { headers: { Accept: 'application/json' } });
+        if (!response.ok) {
+          const { recordKey: _recordKey, ...notification } = activity;
+          return notification;
+        }
+        const data = await response.json() as { value?: { createdAt?: string; text?: string } };
+        return {
+          uri: activity.uri,
+          type: activity.type,
+          actorDid: activity.actorDid,
+          subjectUri: activity.subjectUri,
+          ...(typeof data.value?.createdAt === 'string' ? { createdAt: data.value.createdAt } : {}),
+          ...(activity.type === 'comment' && typeof data.value?.text === 'string' ? { text: data.value.text } : {}),
+        };
+      } catch {
+        const { recordKey: _recordKey, ...notification } = activity;
+        return notification;
+      }
+    }));
+    records.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || b.uri.localeCompare(a.uri));
+    return c.json({ notifications: records, limit }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    console.error('Failed to load notifications:', error);
+    return c.json({ error: 'Notifications are temporarily unavailable.' }, 502);
+  }
+});
+
 api.get('/documents/:rkey.md', async (c) => {
   const loaded = await loadDocumentsSafely(c);
   if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });

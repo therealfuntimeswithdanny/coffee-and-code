@@ -36,6 +36,17 @@
           "type": "permission",
           "resource": "repo",
           "collection": [
+            "cc.coffeencode.notifications.read"
+          ],
+          "action": [
+            "create",
+            "update"
+          ]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
             "cc.coffeencode.comment"
           ],
           "action": [

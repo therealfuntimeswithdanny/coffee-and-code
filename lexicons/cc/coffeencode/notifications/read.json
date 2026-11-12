@@ -1,0 +1,18 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.notifications.read",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "The last time this account read its Coffee & Code notifications.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["lastRead"],
+        "properties": {
+          "lastRead": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}
