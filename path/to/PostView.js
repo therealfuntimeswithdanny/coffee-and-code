@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 const PostView = ({ post }) => {
@@ -20,7 +20,7 @@ const PostView = ({ post }) => {
       <Text style={styles.content}>{post.content}</Text>
       <View style={styles.footer}>
         <Text style={styles.footerText}>Coffee & Code</Text>
-        <TouchableOpacity onPress={handleProfilePress} style={styles.profileButton}>
+        <TouchableOpacity onPress={handleProfilePress} style={styles.profileButton} testID="profileButton">
           <Text style={styles.profileButtonText}>View Profile</Text>
         </TouchableOpacity>
       </View>
@@ -31,51 +31,50 @@ const PostView = ({ post }) => {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginBottom: 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
   },
   profilePhoto: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    marginRight: 10,
+    marginRight: 16,
   },
   authorName: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginRight: 10,
   },
   bio: {
     fontSize: 14,
     color: '#666',
   },
   date: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 10,
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 8,
   },
   content: {
     fontSize: 16,
-    marginTop: 10,
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
   },
   footerText: {
     fontSize: 14,
-    color: '#666',
+    color: '#999',
+    marginRight: 8,
   },
   profileButton: {
     backgroundColor: '#007bff',
-    padding: 10,
-    borderRadius: 5,
+    padding: 8,
+    borderRadius: 4,
   },
   profileButtonText: {
     color: '#fff',
