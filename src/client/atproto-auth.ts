@@ -1400,7 +1400,7 @@ async function readNotificationsMarker() {
 
 type NotificationItem = {
   uri: string;
-  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like';
+  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view';
   actorDid: string;
   actorName?: string;
   actorHandle?: string;
@@ -1485,7 +1485,9 @@ function renderNotifications() {
       icon.className = `notification-item__icon${item.type.includes('like') ? ' notification-item__icon--like' : ''}`;
       icon.setAttribute('aria-hidden', 'true');
       const iconGlyph = document.createElement('i');
-      iconGlyph.className = item.type.includes('like') ? 'fa-solid fa-heart' : 'fa-regular fa-comment';
+      iconGlyph.className = item.type.includes('like')
+        ? 'fa-solid fa-heart'
+        : item.type === 'post.view' ? 'fa-regular fa-eye' : 'fa-regular fa-comment';
       icon.appendChild(iconGlyph);
       row.appendChild(icon);
 
@@ -1523,11 +1525,13 @@ function renderNotifications() {
         ? ' likes your reply'
         : item.type === 'post.like'
           ? ' likes your post'
+          : item.type === 'post.view'
+            ? ' viewed your story'
           : item.type === 'comment.reply'
             ? ' Replied to you'
             : ' Replied to ';
       summary.appendChild(document.createTextNode(action));
-      if (item.type === 'comment' || item.type === 'post.like') summary.appendChild(story);
+      if (item.type === 'comment' || item.type === 'post.like' || item.type === 'post.view') summary.appendChild(story);
       content.appendChild(summary);
       const quoteText = item.type === 'comment.like' ? item.targetText : item.text;
       if (quoteText) {

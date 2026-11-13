@@ -773,6 +773,7 @@ export default function App() {
   const renderNotificationItem = (item) => {
     const message = item.type === 'comment.like' ? 'liked your reply'
       : item.type === 'post.like' ? 'liked your story'
+        : item.type === 'post.view' ? 'viewed your story'
         : item.type === 'comment.reply' ? 'replied to your comment on'
           : 'commented on';
     const story = stories.find((candidate) => candidate.uri === item.documentUri)
@@ -787,7 +788,7 @@ export default function App() {
         {!!(item.text || item.targetText) && <Text numberOfLines={3} style={styles.notificationQuote}>“{item.type === 'comment.like' ? item.targetText : item.text}”</Text>}
         {!!time && <Text style={styles.notificationTime}>{time}</Text>}
       </View>
-      <SymbolView name={item.type.includes('like') ? 'heart.fill' : 'bubble.left'} size={15} tintColor={item.type.includes('like') ? C.error : C.muted} />
+      <SymbolView name={item.type.includes('like') ? 'heart.fill' : item.type === 'post.view' ? 'eye' : 'bubble.left'} size={15} tintColor={item.type.includes('like') ? C.error : C.muted} />
     </Pressable>;
   };
 

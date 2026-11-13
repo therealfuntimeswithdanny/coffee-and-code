@@ -233,7 +233,7 @@ api.get('/notifications', async (c) => {
   type Backlink = { did: string; collection: string; rkey: string };
   type Activity = {
     uri: string;
-    type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like';
+    type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view';
     actorDid: string;
     subjectUri: string;
     documentUri: string;
@@ -310,7 +310,7 @@ api.get('/notifications', async (c) => {
     })));
 
     const ownComments = documentComments.filter((comment) => comment.did.toLowerCase() === did.toLowerCase());
-    const [commentLikes, repliesToOwnComments, postLikes] = await Promise.all([
+    const [commentLikes, repliesToOwnComments, postLikes, postViews] = await Promise.all([
       Promise.all(ownComments.map(async (comment) => ({
         comment,
         records: await fetchBacklinks(comment.uri, 'cc.coffeencode.comment.like:subject.uri', 'cc.coffeencode.comment.like'),
@@ -322,6 +322,10 @@ api.get('/notifications', async (c) => {
       Promise.all(userDocuments.map(async (document) => ({
         document,
         records: await fetchBacklinks(document.uri, 'cc.coffeencode.interact.like:document', 'cc.coffeencode.interact.like'),
+      }))),
+      Promise.all(userDocuments.map(async (document) => ({
+        document,
+        records: await fetchBacklinks(document.uri, 'cc.coffeencode.interact.view:document', 'cc.coffeencode.interact.view'),
       }))),
     ]);
 
@@ -393,6 +397,22 @@ api.get('/notifications', async (c) => {
         });
       }
     }
+    for (const { document, records } of postViews) {
+      for (const record of records) {
+        if (record.did.toLowerCase() === did.toLowerCase()) continue;
+        const uri = `at://${record.did}/cc.coffeencode.interact.view/${record.rkey}`;
+        activitiesByUri.set(uri, {
+          uri,
+          type: 'post.view',
+          actorDid: record.did,
+          subjectUri: document.uri,
+          documentUri: document.uri,
+          documentTitle: document.title || 'Untitled story',
+          documentPath: document.path,
+          recordKey: record.rkey,
+        });
+      }
+    }
     const activities = [...activitiesByUri.values()];
 
     // Fetch the small activity window's records for displayable text and time.
@@ -406,6 +426,8 @@ api.get('/notifications', async (c) => {
           ? 'cc.coffeencode.comment.like'
           : activity.type === 'post.like'
             ? 'cc.coffeencode.interact.like'
+            : activity.type === 'post.view'
+              ? 'cc.coffeencode.interact.view'
             : 'cc.coffeencode.comment';
         const rkey = activity.recordKey;
         const pds = await getPdsEndpoint(activity.actorDid, c.env.OWNER_PDS);
