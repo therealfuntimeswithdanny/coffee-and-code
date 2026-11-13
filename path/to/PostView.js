@@ -32,13 +32,11 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     backgroundColor: '#fff',
-    borderRadius: 8,
-    marginBottom: 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   profilePhoto: {
     width: 50,
@@ -65,10 +63,11 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 16,
   },
   footerText: {
     fontSize: 14,
-    color: '#999',
+    color: '#666',
     marginRight: 8,
   },
   profileButton: {
