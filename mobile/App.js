@@ -86,6 +86,7 @@ export default function App() {
   const [archiveStories, setArchiveStories] = useState([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [savedLoaded, setSavedLoaded] = useState(false);
+  const [savedRefreshing, setSavedRefreshing] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
   const [notificationsReadAt, setNotificationsReadAt] = useState(undefined);
@@ -99,20 +100,32 @@ export default function App() {
   const [accountProfile, setAccountProfile] = useState(null);
   const [accountPds, setAccountPds] = useState(null);
   const refreshSaved = useCallback(async () => {
-    setIsRefreshingSaved(true);
+    setSavedRefreshing(true);
     try {
-      if (!account?.agent) return;
-      const records = await listRepoRecords(account.agent, account.session.did, SAVE_COLLECTION);
-      const syncedSaved = storiesFromRecords(records, postByUri, cachedSaved);
+      if (!account?.agent) {
+        const stored = await AsyncStorage.getItem(SAVED_KEY);
+        setSaved(stored ? JSON.parse(stored) : []);
+        return;
+      }
+      const did = account.session.did;
+      const [records, postsResponse] = await Promise.all([
+        listRepoRecords(account.agent, did, SAVE_COLLECTION),
+        fetch(`${API}/account/posts`, { cache: 'no-store' }).catch(() => null),
+      ]);
+      const publishedPosts = postsResponse?.ok ? await postsResponse.json().catch(() => []) : [];
+      const postByUri = new Map((Array.isArray(publishedPosts) ? publishedPosts : []).map((post) => [post.uri, post]));
+      const syncedSaved = storiesFromRecords(records, postByUri, saved);
       setSaved(syncedSaved);
-      await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(syncedSaved));
-      await AsyncStorage.setItem(SAVED_OWNER, account.session.did);
+      await Promise.all([
+        AsyncStorage.setItem(SAVED_KEY, JSON.stringify(syncedSaved)),
+        AsyncStorage.setItem(SAVED_OWNER_KEY, did),
+      ]);
     } catch (e) {
       console.error('Error refreshing saved stories:', e);
     } finally {
-      setIsRefreshingSaved(false);
+      setSavedRefreshing(false);
     }
-  }, [account]);
+  }, [account, saved]);
   const [viewedStories, setViewedStories] = useState([]);
   const [showAllViewed, setShowAllViewed] = useState(false);
   const [blockedAccounts, setBlockedAccounts] = useState([]);
@@ -812,7 +825,7 @@ export default function App() {
       : <Text style={styles.emptyText}>{query ? 'No stories match that search. Try another title, topic, or author.' : 'Stories will appear here as they are published.'}</Text>}
   </ScrollView>;
 
-  const renderSaved = () => <ScrollView contentContainerStyle={styles.content}>
+  const renderSaved = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={savedRefreshing} onRefresh={refreshSaved} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>Saved stories</Text>
     {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
