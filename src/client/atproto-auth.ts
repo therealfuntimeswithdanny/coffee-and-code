@@ -65,7 +65,6 @@ const notificationsPage = document.querySelector<HTMLElement>('[data-notificatio
 const notificationsInbox = notificationsPage?.querySelector<HTMLElement>('[data-notifications-inbox]');
 const notificationsStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-status]');
 const notificationsRefresh = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-refresh]');
-const notificationsMarkRead = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-mark-read]');
 const notificationLinks = document.querySelectorAll<HTMLElement>('[data-notifications-link]');
 const notificationBadges = document.querySelectorAll<HTMLElement>('[data-notifications-badge]');
 let signupInviteCode: string | undefined;
@@ -79,6 +78,7 @@ let blockedRecordsPromise: Promise<UserBlockRecord[]> | undefined;
 let activeBlockedDids = new Set<string>();
 let notificationBadgeDid: string | undefined;
 let notificationBadgeRequestDid: string | undefined;
+let notificationsAutoReadTimer: number | undefined;
 
 declare global {
   interface Window {
@@ -1417,6 +1417,18 @@ type NotificationItem = {
 let notificationItems: NotificationItem[] = [];
 let notificationLastRead: string | undefined;
 
+async function markPageNotificationsRead() {
+  const readStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-read-status]');
+  try {
+    const lastRead = await window.coffeeAndCodeAuth?.markNotificationsRead();
+    if (!lastRead) throw new Error('Could not save your notification read status.');
+    notificationLastRead = lastRead;
+    renderNotifications();
+  } catch (error) {
+    if (readStatus) readStatus.textContent = errorMessage(error);
+  }
+}
+
 function unreadNotificationCount(items: NotificationItem[], lastRead?: string) {
   const cutoff = lastRead ? Date.parse(lastRead) : Number.NEGATIVE_INFINITY;
   return items.filter((item) => {
@@ -1558,7 +1570,6 @@ function renderNotifications() {
   readCount.textContent = String(read.length);
   unreadEmpty.hidden = unread.length > 0;
   readEmpty.hidden = read.length > 0;
-  if (notificationsMarkRead) notificationsMarkRead.hidden = unread.length === 0;
   const readStatus = notificationsPage.querySelector<HTMLElement>('[data-notifications-read-status]');
   if (readStatus) readStatus.textContent = notificationLastRead
     ? `Last read ${new Date(notificationLastRead).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.`
@@ -1568,6 +1579,8 @@ function renderNotifications() {
 
 async function loadNotificationsPage(refresh = true) {
   if (!notificationsPage || !notificationsStatus || !notificationsInbox) return;
+  window.clearTimeout(notificationsAutoReadTimer);
+  notificationsAutoReadTimer = undefined;
   notificationsInbox.hidden = true;
   notificationsStatus.hidden = false;
   notificationsStatus.textContent = 'Loading notifications…';
@@ -1590,27 +1603,16 @@ async function loadNotificationsPage(refresh = true) {
     renderNotifications();
     notificationsStatus.hidden = true;
     notificationsInbox.hidden = false;
+    if (unreadNotificationCount(notificationItems, notificationLastRead) > 0) {
+      notificationsAutoReadTimer = window.setTimeout(() => {
+        notificationsAutoReadTimer = undefined;
+        if (session?.did === did) void markPageNotificationsRead();
+      }, 5000);
+    }
   } catch (error) {
     notificationsStatus.textContent = errorMessage(error);
   }
 }
-
-notificationsMarkRead?.addEventListener('click', async () => {
-  if (!notificationsMarkRead) return;
-  notificationsMarkRead.disabled = true;
-  const readStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-read-status]');
-  if (readStatus) readStatus.textContent = 'Saving your read status…';
-  try {
-    const lastRead = await window.coffeeAndCodeAuth?.markNotificationsRead();
-    if (!lastRead) throw new Error('Could not save your notification read status.');
-    notificationLastRead = lastRead;
-    renderNotifications();
-  } catch (error) {
-    if (readStatus) readStatus.textContent = errorMessage(error);
-  } finally {
-    notificationsMarkRead.disabled = false;
-  }
-});
 
 notificationsRefresh?.addEventListener('click', async () => {
   if (!notificationsRefresh) return;

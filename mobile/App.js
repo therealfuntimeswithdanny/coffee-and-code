@@ -824,9 +824,6 @@ export default function App() {
       {notificationsLoading
         ? <ActivityIndicator color={C.muted} style={{ marginVertical: 28 }} />
         : <>
-          {!!unread.length && <Pressable accessibilityRole="button" disabled={notificationsMarkingRead} onPress={markNotificationsRead} style={[styles.notificationMarkRead, notificationsMarkingRead && styles.disabledButton]}>
-            <Text style={styles.notificationMarkReadText}>{notificationsMarkingRead ? 'SAVING…' : 'MARK ALL AS READ'}</Text>
-          </Pressable>}
           {renderSection('Unread', unread, 'No unread notifications.')}
           {renderSection('Read', read, 'No read notifications yet.')}
         </>}

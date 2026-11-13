@@ -336,20 +336,6 @@ export const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 16,
   },
-  notificationMarkRead: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: C.divider,
-    marginBottom: 16,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-  },
-  notificationMarkReadText: {
-    color: C.ink,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.8,
-  },
   notificationRow: {
     minHeight: 76,
     borderBottomWidth: 1,
