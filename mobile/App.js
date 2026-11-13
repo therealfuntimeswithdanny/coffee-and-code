@@ -105,36 +105,6 @@ export default function App() {
       const syncedSaved = storiesFromRecords(records, postByUri, cachedSaved);
       setSaved(syncedSaved);
       await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(syncedSaved));
-      await AsyncStorage.setItem(SAVED_OWNER_KEY, account.session.did);
-    } catch (e) {
-      console.error('Error refreshing saved stories:', e);
-    } finally {
-      setIsRefreshingSaved(false);
-    }
-  }, [account]);
-  const refreshSaved = useCallback(async () => {
-    setIsRefreshingSaved(true);
-    try {
-      if (!account?.agent) return;
-      const records = await listRepoRecords(account.agent, account.session.did, SAVE_COLLECTION);
-      const syncedSaved = storiesFromRecords(records, postByUri, cachedSaved);
-      setSaved(syncedSaved);
-      await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(syncedSaved));
-      await AsyncStorage.setItem(SAVED_OWNER_KEY, account.session.did);
-    } catch (e) {
-      console.error('Error refreshing saved stories:', e);
-    } finally {
-      setIsRefreshingSaved(false);
-    }
-  }, [account]);
-  const refreshSaved = useCallback(async () => {
-    setIsRefreshingSaved(true);
-    try {
-      if (!account?.agent) return;
-      const records = await listRepoRecords(account.agent, account.session.did, SAVE_COLLECTION);
-      const syncedSaved = storiesFromRecords(records, postByUri, cachedSaved);
-      setSaved(syncedSaved);
-      await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(syncedSaved));
       await AsyncStorage.setItem(SAVED_OWNER, account.session.did);
     } catch (e) {
       console.error('Error refreshing saved stories:', e);
@@ -864,7 +834,7 @@ export default function App() {
     return <ScrollView contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={notificationsRefreshing} onRefresh={() => loadNotifications(true)} tintColor={C.muted} />}>
       <Text style={styles.pageTitle}>Notifications</Text>
-      <Text style={styles.pageSubtitle}>Notifications are in beta testing, expect a slow response and degraeded experince</Text>
+      <Text style={styles.pageSubtitle}>Comments on your stories and likes on those comments.</Text>
       {!!notificationsError && <View><Text accessibilityRole="alert" style={styles.error}>{notificationsError}</Text><Pressable accessibilityRole="button" onPress={() => loadNotifications()}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>}
       {notificationsLoading
         ? <ActivityIndicator color={C.muted} style={{ marginVertical: 28 }} />
