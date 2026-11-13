@@ -81,6 +81,7 @@ export default function App() {
   const [commentError, setCommentError] = useState('');
   const [replyTarget, setReplyTarget] = useState(null);
   const [engagement, setEngagement] = useState(null);
+  const [authorProfile, setAuthorProfile] = useState(null);
   const [activeTag, setActiveTag] = useState('');
   const [archiveStories, setArchiveStories] = useState([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
@@ -421,6 +422,29 @@ export default function App() {
     lastArticleScrollY.current = 0;
     void loadComments(story.uri);
     setEngagement(null);
+        setAuthorProfile(null);
+    const authorDid = story.author?.did;
+    if (authorDid) {
+      (async () => {
+        let bsky = null;
+        let coffee = null;
+        try {
+          const r = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(authorDid)}`);
+          if (r.ok) bsky = await r.json();
+        } catch {}
+        try {
+          const pds = await resolvePdsEndpoint(authorDid);
+          if (pds) {
+            const r = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?repo=${encodeURIComponent(authorDid)}&collection=cc.coffeencode.profile&rkey=self`);
+            if (r.ok) {
+              const { value } = await r.json();
+              coffee = { ...value, avatarUrl: profileBlobUrl(value?.avatar, authorDid, pds) };
+            }
+          }
+        } catch {}
+        setAuthorProfile((current) => current === null ? { did: authorDid, bsky, coffee, uri: story.uri } : current);
+      })();
+    }
     try {
       const storyResponse = await fetch(`${API}/documents?uri=${encodeURIComponent(story.uri)}`, { cache: 'no-store' });
       if (!storyResponse.ok) throw new Error(`Story request failed (${storyResponse.status}). Please try again.`);
@@ -710,6 +734,14 @@ export default function App() {
     finally { setAccountBusy(false); }
   };
 
+    const articleAuthor = selected?.author?.did ? {
+    did: selected.author.did,
+    handle: authorProfile?.bsky?.handle || selected.author.handle,
+    name: authorProfile?.coffee?.displayName || authorProfile?.bsky?.displayName || selected.author.displayName || selected.author.handle || storyAuthor(selected),
+    avatar: authorProfile?.coffee?.avatarUrl || authorProfile?.bsky?.avatar || selected.author.avatar,
+    bio: authorProfile?.coffee?.description || authorProfile?.bsky?.description || selected.author.description || '',
+  } : null;
+  const openAuthorProfile = () => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(articleAuthor.handle || articleAuthor.did)}`);
   const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setBody(''); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
   const tags = [...new Set(allArchiveStories.flatMap((story) => story.tags || []))].sort((a, b) => a.localeCompare(b));
@@ -989,7 +1021,12 @@ export default function App() {
         {!!selected.cover && <Image source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}
         <Text style={styles.articleTitle}>{selected.title}</Text>
         {!!selected.description && <Text style={styles.dek}>{selected.description}</Text>}
-        <Text style={styles.meta}>{storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+          {articleAuthor?.avatar
+            ? <Image source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 22, height: 22, borderRadius: 11, marginRight: 8, backgroundColor: C.panelLight }} />
+            : null}
+          <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>{articleAuthor?.name || storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
+        </View>
         <View style={styles.engagementRow}>
           <Text style={styles.engagementStat}>◉  {engagement?.views ?? '—'} reads</Text><Text style={styles.engagementStat}>▤  {commentTotal || engagement?.comments || comments.length || 0} comments</Text>
         </View>
@@ -1000,6 +1037,22 @@ export default function App() {
         </View>
         <View style={styles.rule} />
         {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody markdown={body} />}
+                {!!articleAuthor && !articleLoading && !error && <>
+          <SectionBar title="About the author" />
+          <View style={styles.accountCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {articleAuthor.avatar
+                ? <Image source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 56, height: 56, borderRadius: 28, marginRight: 12, backgroundColor: C.panelLight }} />
+                : <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}><Text style={styles.avatarInitial}>{(articleAuthor.name || 'C')[0].toUpperCase()}</Text></View>}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.authorName}>{articleAuthor.name}</Text>
+                {!!articleAuthor.handle && <Text style={styles.meta}>@{articleAuthor.handle}</Text>}
+              </View>
+            </View>
+            {!!articleAuthor.bio && <Text style={styles.accountDescription}>{articleAuthor.bio}</Text>}
+            <Pressable accessibilityRole="link" onPress={openAuthorProfile} style={styles.secondaryButton}><Text style={styles.action}>VIEW PROFILE  ↗</Text></Pressable>
+          </View>
+        </>}
         <SectionBar title="Conversation" detail={`${commentTotal || comments.length} COMMENTS`} />
         {commentLoading && !comments.length && <ActivityIndicator color={C.muted} style={{ marginVertical: 18 }} />}
         {!!commentError && <Text accessibilityRole="alert" style={styles.error}>{commentError}</Text>}

@@ -16,3 +16,4 @@ build/
 # The native iOS app and Expo config live under mobile/.
 /app.json
 /ios/
+.aider*
