@@ -10,8 +10,8 @@ const pages = new Hono<{ Bindings: Env }>();
 pages.get('/notifications', (c) => {
   const body = `
     <section class="notifications-page" data-notifications-page aria-labelledby="notifications-title">
-      <h1 id="notifications-title">Notifications</h1>
-      <p class="notifications-page__intro">Comments on your stories and likes on those comments, gathered from across AT Protocol.</p>
+        <h1 id="notifications-title">Notifications</h1>
+      <p class="notifications-page__intro">Notifications are in beta testing, expect a slow response and degraeded experince</p>
       <p class="notifications-page__status" data-notifications-status role="status" aria-live="polite">Loading notifications…</p>
       <div class="notifications-page__inbox" data-notifications-inbox hidden>
         <div class="notifications-page__actions"><p data-notifications-read-status></p><div class="notifications-page__action-buttons"><button type="button" class="auth-signout" data-notifications-refresh>Refresh</button></div></div>
