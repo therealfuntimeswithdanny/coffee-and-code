@@ -3,7 +3,6 @@ export type Env = {
   PUB_DESCRIPTION: string;
   OWNER_DID: string;
   OWNER_PDS: string;
-  NOTIFICATIONS_CACHE: KVNamespace;
 };
 
 export interface StandardDocument {

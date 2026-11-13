@@ -7,10 +7,6 @@ compatibility_flags = ["nodejs_compat"]
 directory = "media"
 binding = "ASSETS"
 
-[[kv_namespaces]]
-binding = "NOTIFICATIONS_CACHE"
-id = "e10097b868c348eb83250a66c370fd4e"
-
 [observability]
 enabled = true
 
