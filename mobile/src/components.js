@@ -4,18 +4,25 @@ import { SymbolView } from 'expo-symbols';
 import { WebView } from 'react-native-webview';
 import { C, styles } from './theme';
 import { formatDate, storyAuthor } from './utils';
+import { getCachedUri } from './imageCache';
 
 export function SkeletonImage({ source, style, ...props }) {
   const uri = source?.uri;
+  const [resolved, setResolved] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const pulse = useRef(new Animated.Value(0.4)).current;
   const fade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    let active = true;
+    setResolved(null);
     setLoaded(false);
     setFailed(false);
     fade.setValue(0);
+    if (!uri) return undefined;
+    getCachedUri(uri).then((local) => { if (active) setResolved(local || uri); });
+    return () => { active = false; };
   }, [uri, fade]);
 
   useEffect(() => {
@@ -30,15 +37,15 @@ export function SkeletonImage({ source, style, ...props }) {
 
   return <View style={[style, { overflow: 'hidden', backgroundColor: C.panelLight }]}>
     {!loaded && <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: C.panelLight, opacity: failed ? 0.6 : pulse }]} />}
-    {!failed && <Animated.Image
+    {!failed && !!resolved && <Animated.Image
       {...props}
-      source={source}
+      source={{ uri: resolved }}
       style={[StyleSheet.absoluteFill, { opacity: fade }]}
       onLoad={() => {
         setLoaded(true);
         Animated.timing(fade, { toValue: 1, duration: 200, useNativeDriver: true }).start();
       }}
-      onError={() => setFailed(true)}
+      onError={() => { if (resolved !== uri) setResolved(uri); else setFailed(true); }}
     />}
   </View>;
 }
