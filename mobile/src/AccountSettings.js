@@ -11,7 +11,10 @@ export const accountSettingsPages = [
   { id: 'ads', title: 'Ads and Marketing', subtitle: 'Manage your ads and marketing preferences', icon: 'bag' },
   { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
   { id: 'about', title: 'About', subtitle: 'App version and publication details', icon: 'info.circle' },
+  { id: 'storage', title: 'Storage', subtitle: 'Image cache usage and clearing', icon: 'internaldrive' },
 ];
+
+export const publicSettingsPageIds = ['ads', 'storage', 'legal', 'about'];
 
 export function SettingsRow({ icon, title, subtitle, onPress, destructive = false }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={styles.settingsRow}>
@@ -21,9 +24,15 @@ export function SettingsRow({ icon, title, subtitle, onPress, destructive = fals
   </Pressable>;
 }
 
-export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onSignOut }) {
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onSignOut, cacheBytes = 0, maxCacheBytes = 0, cacheClearing = false, onClearCache }) {
   const [page, setPage] = useState(initialPage);
-  const selected = accountSettingsPages.find((item) => item.id === page);
+  const pages = account ? accountSettingsPages : accountSettingsPages.filter((item) => publicSettingsPageIds.includes(item.id));
+  const selected = pages.find((item) => item.id === page);
   return <ScrollView contentContainerStyle={styles.content}>
     <Pressable accessibilityRole="button" onPress={selected ? initialPage ? onBack : () => setPage(null) : onBack} style={styles.backLink}>
       <Text style={styles.action}>‹  {selected ? initialPage ? 'Back to Settings' : 'Back to Settings' : 'Back to Settings'}</Text>
@@ -31,7 +40,7 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
     <Text style={[styles.pageTitle, { marginTop: 0 }]}>{selected?.title || 'Settings'}</Text>
     <Text style={styles.pageSubtitle}>{selected?.subtitle || 'Manage your account and app settings'}</Text>
     {selected ? <>
-      {page === 'account' && <View style={styles.accountCard}>
+      {page === 'account' && !!account && <View style={styles.accountCard}>
         <Text style={styles.accountProfileName}>Deactivate Account</Text>
         <Text style={styles.accountDescription}>Deactivate your repostory on the network, your account/identity will still exist and be visable to the network but records won't be, and will be hidden by most apps and appviews. All current OAuth seesions and App Passowords will be revoked. You can always reactivate your account at any time.</Text>
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://account.coffeencode.cc/accoount/u/${accountProfile.handle}/manage`)} style={styles.profileLink}><Text style={styles.action}>VISIT COFFEE & CODE  ↗</Text></Pressable>
@@ -59,6 +68,11 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
           <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => onUnblock(blocked.did)} style={styles.accountRemoveButton}><Text style={styles.action}>UNBLOCK</Text></Pressable>
         </View>) : <Text style={styles.emptyText}>You have not blocked any accounts</Text>}
       </View>}
+      {page === 'storage' && <View style={styles.settingsCard}>
+        <Text style={styles.accountDescription}>Images are kept on this device for 3 hours, up to 500 MB, so they load instantly. Clearing the cache only removes downloaded copies.</Text>
+        <Text style={styles.settingsMetric}>{formatBytes(cacheBytes)}<Text style={styles.meta}>  OF {formatBytes(maxCacheBytes)} USED</Text></Text>
+        <Pressable accessibilityRole="button" disabled={cacheClearing} onPress={onClearCache} style={styles.secondaryButton}><Text style={styles.action}>{cacheClearing ? 'CLEARING…' : 'CLEAR IMAGE CACHE'}</Text></Pressable>
+      </View>}
       {page === 'legal' && <View style={styles.settingsCard}>
         <Text style={styles.accountDescription}>Last updated: October 11, 2026</Text>
         <Text style={styles.accountDescription}>Please email <Text accessibilityRole="link" style={styles.inlineLink} onPress={() => Linking.openURL('mailto:legal@coffeencode.cc')}>legal@coffeencode.cc</Text> for legal inquiries.</Text>
@@ -72,17 +86,19 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.accountDescription}>The AT Protocol is a distributed network. Records removed from your repository may remain in copies held by other services, and Coffee & Code cannot control how independent services process or display them. Links to or integrations with third-party services are provided for convenience and are subject to those services’ own terms and policies.</Text>
         <Text style={styles.accountDescription}>To the extent permitted by applicable law, the services are provided without warranties of any kind. The Coffee & Code publication is not responsible for the acts or services of independent PDS providers or other network participants. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited.</Text>
         <Text style={styles.accountProfileName}>Privacy Policy</Text>
-
+        <Text style={styles.accountDescription}>Coffee & Code does and will never share, sell or rent your personal data.</Text>
       </View>}
       {page === 'about' && <View style={styles.settingsCard}>
         <Text style={styles.accountProfileName}>Coffee & Code</Text>
         <Text style={styles.accountDescription}>Independent technology journalism, built on the AT Protocol.</Text>
-        <Text style={styles.accountIdentityLabel}>SIGNED IN AS</Text><Text style={styles.accountIdentityValue}>@{accountProfile?.handle || 'Unknown'}</Text>
-        <Text style={styles.accountIdentityLabel}>PERSONAL DATA SERVER</Text><Text selectable style={styles.accountIdentityValue}>{accountPds || 'Unavailable'}</Text>
+        {!!account && <>
+          <Text style={styles.accountIdentityLabel}>SIGNED IN AS</Text><Text style={styles.accountIdentityValue}>@{accountProfile?.handle || 'Unknown'}</Text>
+          <Text style={styles.accountIdentityLabel}>PERSONAL DATA SERVER</Text><Text selectable style={styles.accountIdentityValue}>{accountPds || 'Unavailable'}</Text>
+        </>}
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://coffeencode.cc')} style={styles.profileLink}><Text style={styles.action}>VISIT COFFEE & CODE  ↗</Text></Pressable>
       </View>}
     </> : <View style={styles.settingsCard}>
-      {accountSettingsPages.map((item) => <SettingsRow key={item.id} {...item} onPress={() => setPage(item.id)} />)}
+      {pages.map((item) => <SettingsRow key={item.id} {...item} onPress={() => setPage(item.id)} />)}
     </View>}
   </ScrollView>;
 }

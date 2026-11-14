@@ -6,9 +6,10 @@ import { SymbolView } from 'expo-symbols';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
 import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
 import { formatDate, storyAuthor } from './src/utils';
-import { ArticleBody, SectionBar, StoryRow, TabButton } from './src/components';
+import { ArticleBody, SectionBar, SkeletonImage, StoryRow, TabButton } from './src/components';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
-import AccountSettings, { accountSettingsPages, SettingsRow } from './src/AccountSettings';
+import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
+import { clearImageCache, getImageCacheSize, MAX_CACHE_BYTES } from './src/imageCache';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
   StatusBar, Text, TextInput, View, RefreshControl,
@@ -133,6 +134,15 @@ export default function App() {
   const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
+    const [cacheBytes, setCacheBytes] = useState(0);
+  const [cacheClearing, setCacheClearing] = useState(false);
+  useEffect(() => {
+    if (tab === 'Account') getImageCacheSize().then(setCacheBytes).catch(() => {});
+  }, [tab, accountRefresh]);
+  const handleClearCache = async () => {
+    setCacheClearing(true);
+    try { await clearImageCache(); setCacheBytes(0); } finally { setCacheClearing(false); }
+  };
   const [settingsPage, setSettingsPage] = useState(null);
   const [loginHandle, setLoginHandle] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -930,7 +940,7 @@ export default function App() {
     </React.Fragment>;
   };
 
-  const renderAccount = () => settingsPage && account ? <AccountSettings
+  const renderAccount = () => settingsPage ? <AccountSettings
     key={settingsPage}
     account={account}
     accountProfile={accountProfile}
@@ -944,6 +954,10 @@ export default function App() {
     onBack={() => setSettingsPage(null)}
     onUnblock={unblockAccount}
     onSignOut={async () => { await signOut(account); setAccount(null); setSettingsPage(null); }}
+    cacheBytes={cacheBytes}
+    maxCacheBytes={MAX_CACHE_BYTES}
+    cacheClearing={cacheClearing}
+    onClearCache={handleClearCache}
   /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
     {account ? <>
@@ -1014,6 +1028,12 @@ export default function App() {
           </>}
       </View>
     </View>}
+    {!account && <>
+      <SectionBar title="Settings" />
+      <View style={styles.settingsCard}>
+        {accountSettingsPages.filter((page) => publicSettingsPageIds.includes(page.id)).map((page) => <SettingsRow key={page.id} {...page} onPress={() => setSettingsPage(page.id)} />)}
+      </View>
+    </>}
   </ScrollView>;
 
   return <SafeAreaView style={styles.safe}>
@@ -1031,12 +1051,12 @@ export default function App() {
         <Text style={styles.launchStatus}>Loading...</Text>
       </View>
       : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article} onScroll={onArticleScroll} scrollEventThrottle={16} onTouchStart={onArticleTouchStart} onTouchEnd={onArticleTouchEnd} onTouchCancel={() => { articleTouchStart.current = null; }}>
-        {!!selected.cover && <Image source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}
+        {!!selected.cover && <SkeletonImage source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}
         <Text style={styles.articleTitle}>{selected.title}</Text>
         {!!selected.description && <Text style={styles.dek}>{selected.description}</Text>}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
           {articleAuthor?.avatar
-            ? <Image source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 22, height: 22, borderRadius: 11, marginRight: 8, backgroundColor: C.panelLight }} />
+            ? <SkeletonImage source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 22, height: 22, borderRadius: 11, marginRight: 8 }} />
             : null}
           <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>{articleAuthor?.name || storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
         </View>
@@ -1055,7 +1075,7 @@ export default function App() {
           <View style={styles.accountCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {articleAuthor.avatar
-                ? <Image source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 56, height: 56, borderRadius: 28, marginRight: 12, backgroundColor: C.panelLight }} />
+                ? <SkeletonImage source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 56, height: 56, borderRadius: 28, marginRight: 12 }} />
                 : <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}><Text style={styles.avatarInitial}>{(articleAuthor.name || 'C')[0].toUpperCase()}</Text></View>}
               <View style={{ flex: 1 }}>
                 <Text style={styles.authorName}>{articleAuthor.name}</Text>

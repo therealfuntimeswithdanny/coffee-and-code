@@ -1,9 +1,47 @@
-import React from 'react';
-import { Animated, Image, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { WebView } from 'react-native-webview';
 import { C, styles } from './theme';
 import { formatDate, storyAuthor } from './utils';
+
+export function SkeletonImage({ source, style, ...props }) {
+  const uri = source?.uri;
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const pulse = useRef(new Animated.Value(0.4)).current;
+  const fade = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    setLoaded(false);
+    setFailed(false);
+    fade.setValue(0);
+  }, [uri, fade]);
+
+  useEffect(() => {
+    if (loaded || failed) return undefined;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [loaded, failed, pulse]);
+
+  return <View style={[style, { overflow: 'hidden', backgroundColor: C.panelLight }]}>
+    {!loaded && <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: C.panelLight, opacity: failed ? 0.6 : pulse }]} />}
+    {!failed && <Animated.Image
+      {...props}
+      source={source}
+      style={[StyleSheet.absoluteFill, { opacity: fade }]}
+      onLoad={() => {
+        setLoaded(true);
+        Animated.timing(fade, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+      }}
+      onError={() => setFailed(true)}
+    />}
+  </View>;
+}
 
 export function InlineText({ text, style }) {
   const parts = [];
@@ -98,7 +136,7 @@ export function ArticleBody({ markdown }) {
     }
     if (/^```/.test(block)) return <Text key={index} style={styles.code}>{block.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '')}</Text>;
     const image = block.match(/^!\[([^\]]*)\]\((https?:\/\/[^)]+)\)$/);
-    if (image) return <Image key={index} source={{ uri: image[2] }} accessibilityLabel={image[1]} style={styles.articleImage} resizeMode="cover" />;
+    if (image) return <SkeletonImage key={index} source={{ uri: image[2] }} accessibilityLabel={image[1]} style={styles.articleImage} resizeMode="cover" />;
     const tableRows = block.split('\n').filter((row) => /^\s*\|/.test(row));
     if (tableRows.length >= 2 && /^\s*\|?\s*:?-{3,}/.test(tableRows[1])) {
       const rows = tableRows.filter((row) => !/^\s*\|?\s*:?-{3,}/.test(row)).map((row) => row.replace(/^\s*\||\|\s*$/g, '').split('|').map((cell) => cell.trim()));
@@ -114,11 +152,11 @@ export function SectionBar({ title, detail }) {
 
 export function StoryRow({ story, featured, compact, onPress }) {
   if (compact) return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.compactStory}>
-    {story.cover ? <Image source={{ uri: story.cover }} style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
+    {story.cover ? <SkeletonImage source={{ uri: story.cover }} style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
     <View style={styles.compactCopy}><Text style={styles.compactTitle} numberOfLines={3}>{story.title}</Text><Text style={styles.compactSummary} numberOfLines={2}>{story.description || ''}</Text><Text style={styles.compactMeta} numberOfLines={1}>{formatDate(story.publishedAt)}  ·  {storyAuthor(story)}</Text></View>
   </Pressable>;
   return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.storyRow}>
-    {!!story.cover && <Image source={{ uri: story.cover }} style={featured ? styles.heroImage : styles.storyImage} resizeMode="cover" />}
+    {!!story.cover && <SkeletonImage source={{ uri: story.cover }} style={featured ? styles.heroImage : styles.storyImage} resizeMode="cover" />}
     <Text style={featured ? styles.heroTitle : styles.storyTitle}>{story.title}</Text>
     {!!story.description && <Text numberOfLines={featured ? 4 : 3} style={styles.summary}>{story.description}</Text>}
     <Text style={styles.meta}>{storyAuthor(story)}  ·  {formatDate(story.publishedAt)}</Text>

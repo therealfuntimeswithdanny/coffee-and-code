@@ -2033,7 +2033,7 @@ DEPENDENCIES:
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - "ExpoAtprotoOAuthClient (from `../node_modules/@atproto/oauth-client-expo/ios`)"
   - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/dom-webview/ios`)"
-  - ExpoFileSystem (from `../node_modules/expo/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
+  - ExpoFileSystem (from `../node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
   - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
   - "ExpoLogBox (from `../node_modules/expo/node_modules/@expo/log-box`)"
@@ -2167,7 +2167,7 @@ EXTERNAL SOURCES:
   ExpoDomWebView:
     :path: "../node_modules/expo/node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
-    :podspec: "../node_modules/expo/node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
+    :podspec: "../node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
   ExpoFont:
     :podspec: "../node_modules/expo-font/ios/ExpoFont.podspec"
   ExpoKeepAwake:
@@ -2384,7 +2384,7 @@ SPEC CHECKSUMS:
   ExpoFont: 77eaad26c6a7ef6be8d431963358def09d8e3a73
   ExpoKeepAwake: fd18a5d233329013c578030ad399d8e10b252b5f
   ExpoLogBox: 9bfba7bb99c806b678703e6c62323f3c4785e706
-  ExpoModulesCore: c39c327c8adf3923e5137615f91a7142dd066406
+  ExpoModulesCore: 0a4ae87560d8bc97af6521cef440ea90d846312a
   ExpoModulesJSI: 600554f1b699e994b78398d87a39d477b6cd4bed
   ExpoModulesWorklets: 25684e76e7b886dd31bf4538c3fd657bf07a694b
   ExpoStatusBar: 56aa9746e1bee4d8adbab12f4d7efc97000ac49f
