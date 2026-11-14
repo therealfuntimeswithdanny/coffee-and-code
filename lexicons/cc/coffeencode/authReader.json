@@ -1,0 +1,36 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.authReader",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code",
+      "detail": "Interact with Coffee & Code posts, mark posts as read, leave likes & save posts for later",
+      "permissions": [
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.interact.like",
+            "cc.coffeencode.interact.dislike",
+            "cc.coffeencode.save"
+          ]
+        },
+        {
+          "type": "permission",
+          "action": [
+            "create"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.interact.view"
+          ]
+        }
+      ]
+    }
+  }
+}

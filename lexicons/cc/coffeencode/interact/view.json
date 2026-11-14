@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A view of a Coffee & Code story.",
+      "description": "A view of a Coffee & Code story, created on page load.",
       "key": "tid",
       "record": {
         "type": "object",

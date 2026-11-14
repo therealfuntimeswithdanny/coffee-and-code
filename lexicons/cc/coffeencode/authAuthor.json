@@ -1,0 +1,33 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.authAuthor",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code Author Profile",
+      "detail": "Manage your author profile, post and reply in the forum, and publish forum moderation actions.",
+      "permissions": [
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.author.profile",
+            "cc.coffeencode.forum.moderation"
+          ]
+        },
+        {
+          "type": "permission",
+          "accept": [
+            "image/*"
+          ],
+          "resource": "blob"
+        }
+      ]
+    }
+  }
+}

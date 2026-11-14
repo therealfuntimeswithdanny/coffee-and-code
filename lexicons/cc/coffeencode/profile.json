@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.profile",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A reader's public Coffee & Code profile. Shown on their /user page in place of their Bluesky details.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["createdAt"],
+        "properties": {
+          "displayName": { "type": "string", "maxGraphemes": 64, "maxLength": 640 },
+          "pronouns": { "type": "string", "maxGraphemes": 40, "maxLength": 400 },
+          "description": { "type": "string", "description": "Free-form profile bio.", "maxGraphemes": 256, "maxLength": 2560 },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

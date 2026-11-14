@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
+import { renderSearchBar } from '../templates/searchBar';
 import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
 import { externalLinkUrl } from '../lib/externalLinks';
@@ -383,16 +384,43 @@ pages.get('/account', (c) => {
       <p class="eyebrow">Your profile</p>
       <h1 id="account-title">Your account</h1>
       <div class="auth-account" data-auth-account hidden>
-        <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 data-profile-name>Loading account…</h2><p data-profile-handle></p><p data-profile-bio></p></div></div>
-        <section class="account-page__viewed" aria-labelledby="viewed-posts-title"><h2 id="viewed-posts-title">Posts you’ve viewed</h2><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
-        <section class="account-page__viewed" aria-labelledby="saved-posts-title"><h2 id="saved-posts-title">Reading list</h2><p class="account-page__viewed-status" data-saved-status>Loading your saved posts…</p><ul data-saved-posts></ul></section>
-        <section class="account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
-          <h2 id="blocked-accounts-title">Blocked accounts</h2>
-          <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
-          <ul data-blocks-list></ul>
-          <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s forum posts and replies for you. Stories and comments remain visible. Bluesky blocks are managed separately in Bluesky settings.</p>
-        </section>
-        <section class="account-author-settings" data-author-settings hidden aria-labelledby="author-settings-title">
+        <div class="account-layout">
+        <aside class="account-layout__column account-layout__sidebar" aria-label="Your profile">
+          <section class="account-card" aria-labelledby="profile-card-title">
+            <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 id="profile-card-title" data-profile-name>Loading account…</h2><p data-profile-handle></p><p class="account-page__profile-meta" data-profile-pronouns hidden></p><p data-profile-bio></p></div></div>
+            <form class="account-profile-form" data-user-profile-form hidden aria-labelledby="profile-form-title">
+              <h3 id="profile-form-title" class="visually-hidden">Edit your Coffee &amp; Code profile</h3>
+              <label>Display name<input name="displayName" maxlength="64" autocomplete="nickname"></label>
+              <label>Pronouns<input name="pronouns" maxlength="40" placeholder="Optional"></label>
+              <label>Bio<textarea name="description" maxlength="256" rows="4"></textarea></label>
+              <div class="account-profile-form__actions"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-user-profile>Cancel</button></div>
+            </form>
+            <p class="account-profile-form__status" data-user-profile-status role="status" aria-live="polite"></p>
+            <div class="account-page__actions">
+              <button type="button" class="auth-signout" data-edit-user-profile disabled>Edit profile</button>
+              <button type="button" class="auth-signout" data-auth-signout>Log out</button>
+            </div>
+            <nav class="account-page__section-nav" aria-label="Account sections">
+              <a href="#saved-posts-title">Reading list</a>
+              <a href="#viewed-posts-title">Recently viewed</a>
+              <a href="#blocked-accounts-title">Blocked accounts</a>
+              <a href="#author-settings-title" data-author-settings-link hidden>Author profile</a>
+            </nav>
+          </section>
+        </aside>
+        <div class="account-layout__column account-layout__main">
+          <section class="account-card account-page__viewed" aria-labelledby="saved-posts-title"><div class="account-card__header"><h2 id="saved-posts-title">Reading list</h2><span class="account-card__count" data-saved-count></span></div><p class="account-page__viewed-status" data-saved-status role="status" aria-live="polite">Loading your saved posts…</p><ul data-saved-posts></ul></section>
+          <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title">Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
+        </div>
+        <div class="account-layout__column account-layout__secondary">
+          <section class="account-card account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
+            <h2 id="blocked-accounts-title">Blocked accounts</h2>
+            <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
+            <ul data-blocks-list></ul>
+            <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s forum posts and replies for you. Stories and comments remain visible. Bluesky blocks are managed separately in Bluesky settings.</p>
+          </section>
+        </div>
+        <section class="account-card account-author-settings account-page__wide" data-author-settings hidden aria-labelledby="author-settings-title">
           <h2 id="author-settings-title">Author profile</h2>
           <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
           <button type="button" class="auth-signout" data-edit-author-profile hidden>Edit author profile</button>
@@ -427,7 +455,7 @@ pages.get('/account', (c) => {
             </div>
           </form>
         </section>
-        <button type="button" class="auth-signout" data-auth-signout>Log out</button>
+        </div>
       </div>
       <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth" data-login-link>Log in</a></div>
     </section>
@@ -734,28 +762,35 @@ pages.get('/archive', async (c) => {
   })), pds, archiveBaseUrl);
   const hasMore = Object.values(nextCursors).some((cursor) => typeof cursor === 'string' && cursor.length > 0);
 
-  const searchForm = `
-    <div class="archive-search">
-      <form class="search-form" action="/archive" method="get">
-        <label class="archive-search__query">Search stories
-          <input type="search" name="q" placeholder="Title, author, or keywords" value="${escapeHtml(query)}" class="search-input" autocomplete="off">
-        </label>
-        <div class="archive-search__filters">
-          <label>Author
-            <select name="author"><option value="">All authors</option>${authorOptions.map(({ did, label }) => `<option value="${escapeHtml(did)}"${authorFilter === did ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>
-          </label>
-          <label>Year
-            <select name="year"><option value="">Any year</option>${yearOptions.map((year) => `<option value="${year}"${yearFilter === String(year) ? ' selected' : ''}>${year}</option>`).join('')}</select>
-          </label>
-          <label>Order
-            <select name="sort"><option value="newest"${sort === 'newest' ? ' selected' : ''}>Newest first</option><option value="oldest"${sort === 'oldest' ? ' selected' : ''}>Oldest first</option></select>
-          </label>
-          <label class="archive-search__image-filter"><input type="checkbox" name="image" value="1"${imageOnly ? ' checked' : ''}> With images</label>
-        </div>
-        <div class="archive-search__actions"><button type="submit" class="search-button">Apply filters</button><a href="/archive" class="read-link">Clear</a></div>
-      </form>
-    </div>
-  `;
+  const searchForm = renderSearchBar({
+    action: '/archive',
+    label: 'Search stories',
+    placeholder: 'Search stories by title, author, or keyword',
+    query,
+    className: 'archive-search-bar',
+    selects: [
+      {
+        name: 'author',
+        label: 'Author',
+        value: authorFilter,
+        options: [{ value: '', label: 'All' }, ...authorOptions.map(({ did, label }) => ({ value: did, label }))],
+      },
+      {
+        name: 'year',
+        label: 'Year',
+        value: yearFilter,
+        options: [{ value: '', label: 'Any' }, ...yearOptions.map((year) => ({ value: String(year), label: String(year) }))],
+      },
+      {
+        name: 'sort',
+        label: 'Order',
+        value: sort,
+        defaultValue: 'newest',
+        options: [{ value: 'newest', label: 'Newest' }, { value: 'oldest', label: 'Oldest' }],
+      },
+    ],
+    toggles: [{ name: 'image', label: 'With images', value: '1', checked: imageOnly }],
+  });
 
   const emptyMessage = allPosts.length ? 'No stories match these search filters.' : 'No stories have been published yet.';
   const gridOrEmpty = `<div class="archive-grid" data-archive-grid>${archiveItems}</div><p class="empty-state"${archiveItems ? ' hidden' : ''} data-archive-empty>${emptyMessage}</p>`;

@@ -1,0 +1,72 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.authPublic",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code",
+      "detail": "Manage your Coffee & Code public profile. leave likes, comments, create and update your public profile, save posts for later, mark posts as read, follow authors and tags, block users, authors & tags, manage notifications, create and edit lists.",
+      "permissions": [
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.comment",
+            "cc.coffeencode.profile",
+            "cc.coffeencode.list",
+            "cc.coffeencode.author.profile"
+          ]
+        },
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.comment.like",
+            "cc.coffeencode.comment.dislike",
+            "cc.coffeencode.tag.follow",
+            "cc.coffeencode.profile.follow",
+            "cc.coffeencode.author.follow",
+            "cc.coffeencode.tag.block",
+            "cc.coffeencode.author.block",
+            "cc.coffeencode.profile.block",
+            "cc.coffeencode.interact.like",
+            "cc.coffeencode.interact.dislike",
+            "cc.coffeencode.save",
+            "cc.coffeencode.user.block"
+          ]
+        },
+        {
+          "type": "permission",
+          "action": [
+            "create"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.interact.view"
+          ]
+        },
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "update"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.notifications.read",
+            "cc.coffeencode.notifications.settings"
+          ]
+        }
+      ]
+    }
+  }
+}

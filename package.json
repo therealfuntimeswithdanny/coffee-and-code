@@ -9,7 +9,8 @@
     "mobile:install": "npm --prefix mobile install",
     "start": "npm --prefix mobile run start:dev-client",
     "start:expo-go": "npm --prefix mobile start",
-    "ios": "npm --prefix mobile run ios"
+    "ios": "npm --prefix mobile run ios",
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@atproto/oauth-client-browser": "^0.5.10",
