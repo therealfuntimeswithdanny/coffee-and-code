@@ -9,7 +9,7 @@ export const accountSettingsPages = [
   { id: 'reading', title: 'Public activity', subtitle: 'View and delete public records. Likes, views, saves, etc.', icon: 'book' },
   { id: 'blocked', title: 'Moderation', subtitle: 'Manage your blocked accounts and moderation preferences', icon: 'hand.raised' },
   { id: 'ads', title: 'Ads and Marketing', subtitle: 'Manage your ads and marketing preferences', icon: 'bag' },
-  { id: 'legal', title: 'Legal', subtitle: 'Terms of service and privacy policy', icon: 'hand.raised.slash' },
+  { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
   { id: 'about', title: 'About', subtitle: 'App version and publication details', icon: 'info.circle' },
 ];
 
@@ -32,7 +32,7 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
     <Text style={styles.pageSubtitle}>{selected?.subtitle || 'Manage your account and app settings'}</Text>
     {selected ? <>
       {page === 'account' && <View style={styles.accountCard}>
-        <Text style={styles.accountProfileName}>Deativate Account</Text>
+        <Text style={styles.accountProfileName}>Deactivate Account</Text>
         <Text style={styles.accountDescription}>Deactivate your repostory on the network, your account/identity will still exist and be visable to the network but records won't be, and will be hidden by most apps and appviews. All current OAuth seesions and App Passowords will be revoked. You can always reactivate your account at any time.</Text>
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://account.coffeencode.cc/accoount/u/${accountProfile.handle}/manage`)} style={styles.profileLink}><Text style={styles.action}>VISIT COFFEE & CODE  ↗</Text></Pressable>
 
