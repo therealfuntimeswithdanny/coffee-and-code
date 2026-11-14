@@ -134,16 +134,16 @@ export default function App() {
   const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
-    const [cacheBytes, setCacheBytes] = useState(0);
+   const [cacheBytes, setCacheBytes] = useState(0);
   const [cacheClearing, setCacheClearing] = useState(false);
-  useEffect(() => {
-    if (tab === 'Account') getImageCacheSize().then(setCacheBytes).catch(() => {});
-  }, [tab, accountRefresh]);
   const handleClearCache = async () => {
     setCacheClearing(true);
     try { await clearImageCache(); setCacheBytes(0); } finally { setCacheClearing(false); }
   };
   const [settingsPage, setSettingsPage] = useState(null);
+    useEffect(() => {
+    if (tab === 'Account') getImageCacheSize().then(setCacheBytes).catch(() => {});
+  }, [tab, accountRefresh, settingsPage]);
   const [loginHandle, setLoginHandle] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);

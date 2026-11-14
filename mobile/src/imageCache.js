@@ -96,7 +96,7 @@ export async function getCachedUri(uri) {
     if (!inflight.has(key)) inflight.set(key, download(uri, key).finally(() => inflight.delete(key)));
     return await inflight.get(key);
   } catch {
-    return uri;
+    return uriget;
   }
 }
 
@@ -106,8 +106,21 @@ export async function getImageCacheSize() {
   for (const [key, entry] of Object.entries(index)) {
     if (now - entry.cachedAt >= CACHE_TTL_MS) await removeEntry(key);
   }
+  let names = [];
+  try { names = await FileSystem.readDirectoryAsync(DIR); } catch {}
+  const known = new Set(Object.values(index).map((entry) => entry.name));
+  for (const name of names) {
+    if (!known.has(name)) await FileSystem.deleteAsync(`${DIR}${name}`, { idempotent: true }).catch(() => {});
+  }
+  let total = 0;
+  for (const [key, entry] of Object.entries(index)) {
+    const info = await FileSystem.getInfoAsync(`${DIR}${entry.name}`);
+    if (!info.exists) { delete index[key]; continue; }
+    entry.size = info.size || entry.size || 0;
+    total += entry.size;
+  }
   saveSoon();
-  return Object.values(index).reduce((sum, entry) => sum + (entry.size || 0), 0);
+  return total;
 }
 
 export async function clearImageCache() {
