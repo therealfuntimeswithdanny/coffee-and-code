@@ -72,6 +72,7 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.accountDescription}>The AT Protocol is a distributed network. Records removed from your repository may remain in copies held by other services, and Coffee & Code cannot control how independent services process or display them. Links to or integrations with third-party services are provided for convenience and are subject to those services’ own terms and policies.</Text>
         <Text style={styles.accountDescription}>To the extent permitted by applicable law, the services are provided without warranties of any kind. The Coffee & Code publication is not responsible for the acts or services of independent PDS providers or other network participants. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited.</Text>
         <Text style={styles.accountProfileName}>Privacy Policy</Text>
+        <Text style={styles.accountDescription}>Coffee & Code does not sell or rent your personal information. We do not use tracking cookies or other tracking technologies to collect information about you (iOS App only). We do not share your personal information with advertisers or other third parties for marketing purposes.</Text>
 
       </View>}
       {page === 'about' && <View style={styles.settingsCard}>
