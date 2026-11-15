@@ -966,7 +966,9 @@ pages.get('/feed', (c) => {
           more.disabled = true;
           status.textContent = append ? 'Loading more posts…' : 'Loading posts…';
           try {
-            const auth = window.coffeeAndCodeAuth;
+            const auth = window.coffeeAndCodeAuth || await new Promise((resolve) => {
+              window.addEventListener('coffee-and-code-auth-ready', () => resolve(window.coffeeAndCodeAuth), { once: true });
+            });
             const viewerDid = await auth?.getDid();
             let response;
             let data;

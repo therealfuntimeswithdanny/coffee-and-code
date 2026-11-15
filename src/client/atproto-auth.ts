@@ -1368,6 +1368,7 @@ window.coffeeAndCodeAuth = {
     });
   },
 };
+window.dispatchEvent(new Event('coffee-and-code-auth-ready'));
 
 const blockDialog = document.querySelector<HTMLDialogElement>('[data-block-dialog]');
 const blockDialogTitle = blockDialog?.querySelector<HTMLElement>('[data-block-dialog-title]');

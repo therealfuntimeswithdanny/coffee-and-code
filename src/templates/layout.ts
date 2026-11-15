@@ -769,7 +769,10 @@ export function renderLayout(
     });
 
     afterLoadAndIdle(() => {
-      loadModule('/components/atproto-auth.js').catch((error) => console.error(error));
+      loadModule('/components/atproto-auth.js').catch((error) => {
+        console.error(error);
+        window.dispatchEvent(new Event('coffee-and-code-auth-ready'));
+      });
       const analytics = document.createElement('script');
       analytics.src = 'https://cloud.umami.is/script.js';
       analytics.async = true;
