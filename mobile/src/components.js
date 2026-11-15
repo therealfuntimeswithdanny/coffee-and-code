@@ -6,6 +6,7 @@ import { C, styles } from './theme';
 import { formatDate, storyAuthor } from './utils';
 import { getCachedUri } from './imageCache';
 import { imageUrlForPreset, cdnBlobImageUrl } from './imageUrls';
+import { registerImageUrl } from './developer';
 
 export function SkeletonImage({ source, imagePreset, style, ...props }) {
   const uri = source?.uri;
@@ -236,7 +237,10 @@ export function ArticleBody({ record, uri }) {
       return <Text style={styles.error}>This story contains invalid structured content.</Text>;
     }
   }
-  if (typeof content === 'string') return <Text style={styles.paragraph}>{content}</Text>;
+  if (typeof content === 'string') {
+    for (const match of content.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)) registerImageUrl(match[1]);
+    return <Text style={styles.paragraph}>{content}</Text>;
+  }
   const structured = content && typeof content === 'object'
     && (content.$type === 'pub.leaflet.content' || Array.isArray(content.pages) || Array.isArray(content.blocks) || Array.isArray(content.items));
   if (structured) {
@@ -251,6 +255,7 @@ export function SectionBar({ title, detail }) {
 }
 
 export function StoryRow({ story, featured, compact, onPress }) {
+  if (story.cover) registerImageUrl(story.cover);
   if (compact) return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.compactStory}>
     {story.cover ? <SkeletonImage source={{ uri: story.cover }} imagePreset="feed_thumb" style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
     <View style={styles.compactCopy}><Text style={styles.compactTitle} numberOfLines={3}>{story.title}</Text><Text style={styles.compactSummary} numberOfLines={2}>{story.description || ''}</Text><Text style={styles.compactMeta} numberOfLines={1}>{formatDate(story.publishedAt)}  ·  {storyAuthor(story)}</Text></View>

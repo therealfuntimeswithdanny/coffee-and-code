@@ -11,6 +11,7 @@ import { cdnBlobImageUrl, imageUrlForPreset } from './src/imageUrls';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
 import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
 import { clearImageCache, getImageCacheSize, MAX_CACHE_BYTES } from './src/imageCache';
+import { cachePost, getCachedPost, log, registerImageUrl } from './src/developer';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
   StatusBar, Text, TextInput, View, RefreshControl,
@@ -260,7 +261,12 @@ export default function App() {
       .catch(() => {})
       .finally(() => setSavedLoaded(true));
   }, []);
-  useEffect(() => { restoreSession().then(setAccount).catch(() => {}); }, []);
+  useEffect(() => {
+    log.info('App launched');
+    restoreSession()
+      .then((session) => { log.info('Session restore', session ? 'restored' : 'no session'); setAccount(session); })
+      .catch((error) => { log.warn('Session restore failed', error?.message); });
+  }, []);
 
   const stories = useMemo(() => {
     if (!feed) return [];
@@ -445,6 +451,7 @@ export default function App() {
     navCompactProgress.setValue(0);
     lastArticleScrollY.current = 0;
     void loadComments(story.uri);
+    if (story.cover) registerImageUrl(story.cover);
     setEngagement(null);
         setAuthorProfile(null);
     const authorDid = story.author?.did;
@@ -472,7 +479,9 @@ export default function App() {
     try {
       const storyResponse = await fetch(`${API}/documents?uri=${encodeURIComponent(story.uri)}`, { cache: 'no-store' });
       if (!storyResponse.ok) throw new Error(`Story request failed (${storyResponse.status}). Please try again.`);
-      const json = await storyResponse.json();
+      const responseText = await storyResponse.text();
+      const json = JSON.parse(responseText);
+      cachePost(story.uri, json && typeof json === 'object' ? { ...json, story } : { content: responseText, story });
       if (json.error) throw new Error(json.error);
       const recordValue = json.record?.value;
       if (!recordValue || typeof recordValue !== 'object') {
@@ -496,7 +505,17 @@ export default function App() {
           .catch(() => {});
       }
     } catch (e) {
-      setError(e.message || 'This story could not be opened.');
+      const cached = getCachedPost(story.uri);
+      if (cached?.record?.value) {
+        log.warn('Story loaded from cache after fetch failed', `${story.uri}: ${e?.message}`);
+        setArticleRecord(cached.record.value);
+      } else if (cached && typeof cached.content === 'string') {
+        log.warn('Story loaded from cache after fetch failed', `${story.uri}: ${e?.message}`);
+        setArticleRecord({ content: cached.content });
+      } else {
+        log.error('Story open failed', `${story.uri}: ${e?.message}`);
+        setError(e.message || 'This story could not be opened.');
+      }
     } finally {
       setArticleLoading(false);
     }
@@ -510,7 +529,7 @@ export default function App() {
       const data = await response.json();
       setArchiveStories(data.documents || []);
       setArchiveLoaded(true);
-    } catch (e) { setError(e.message || 'Could not load the archive.'); }
+    } catch (e) { log.error('Archive load failed', e?.message); setError(e.message || 'Could not load the archive.'); }
     finally { setLoading(false); }
   }, []);
 
@@ -570,8 +589,9 @@ export default function App() {
       const response = await fetch(`${API}/authors/check?handle=${encodeURIComponent(loginHandle.trim())}`);
       const data = response.ok ? await response.json() : {};
       setAccount(await signIn(loginHandle.trim(), Boolean(data.isAuthor)));
+      log.info('Signed in', loginHandle.trim());
       setLoginHandle('');
-    } catch (e) { setError(e.message || 'Sign-in could not be completed.'); }
+    } catch (e) { log.warn('Sign-in failed', e?.message); setError(e.message || 'Sign-in could not be completed.'); }
     finally { setAccountBusy(false); }
   };
 
@@ -598,7 +618,9 @@ export default function App() {
     setError('');
     try {
       setAccount(await createAccount());
+      log.info('Account created');
     } catch (e) {
+      log.warn('Account creation failed', e?.message);
       setError(e.message || 'Account creation could not be started.');
     } finally {
       setAccountBusy(false);
@@ -952,7 +974,7 @@ export default function App() {
     initialPage={settingsPage}
     onBack={() => setSettingsPage(null)}
     onUnblock={unblockAccount}
-    onSignOut={async () => { await signOut(account); setAccount(null); setSettingsPage(null); }}
+    onSignOut={async () => { await signOut(account); log.info('Signed out'); setAccount(null); setSettingsPage(null); }}
     cacheBytes={cacheBytes}
     maxCacheBytes={MAX_CACHE_BYTES}
     cacheClearing={cacheClearing}
@@ -972,7 +994,7 @@ export default function App() {
         </View>
         {!!coffeeProfile?.description && <Text style={styles.accountDescription}>{coffeeProfile.description}</Text>}
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(accountProfile?.handle || account.session.did)}`)} style={styles.profileLink}><Text style={styles.action}>VIEW PROFILE  ↗</Text></Pressable>
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); setAccount(null); setSettingsPage(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); log.info('Signed out'); setAccount(null); setSettingsPage(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
       </View>
       <SectionBar title="Settings" />
       <View style={styles.settingsCard}>

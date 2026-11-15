@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
-import { Image, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Image, Linking, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { C, styles } from './theme';
 import { formatDate } from './utils';
+import {
+  clearImageCacheRegistry, clearLogs, clearPostCache, formatBytes as devFormatBytes,
+  getLogEntries, getLogStats, getLogText, imageCacheStats, postCacheStats, refreshImageCache,
+} from './developer';
 
 export const accountSettingsPages = [
   { id: 'account', title: 'Manage Identity', subtitle: 'Manage your identity and perform destructive actions', icon: 'person.crop.circle' },
@@ -12,6 +16,7 @@ export const accountSettingsPages = [
   { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
   { id: 'about', title: 'About', subtitle: 'App version and publication details', icon: 'info.circle' },
   { id: 'storage', title: 'Storage', subtitle: 'Image cache usage and clearing', icon: 'internaldrive' },
+  { id: 'developer', title: 'Developer', subtitle: 'On-device logs and caches for debugging', icon: 'hammer' },
 ];
 
 export const publicSettingsPageIds = ['ads', 'storage', 'legal', 'about'];
@@ -27,6 +32,75 @@ export function SettingsRow({ icon, title, subtitle, onPress, destructive = fals
 function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const developerSections = [
+  { id: 'logs', title: 'App Logs', subtitle: 'On-device event log', icon: 'doc.text' },
+  { id: 'images', title: 'Image Cache', subtitle: 'Displayed image URL registry', icon: 'photo' },
+  { id: 'posts', title: 'Post Cache', subtitle: 'Offline copies of opened stories', icon: 'tray.full' },
+];
+
+function DeveloperSettings() {
+  const [section, setSection] = useState(null);
+  const [logStats, setLogStats] = useState({ bytes: 0, count: 0, maxBytes: 0 });
+  const [logEntries, setLogEntries] = useState([]);
+  const [imageStats, setImageStats] = useState({ tracked: 0, disk: 0, memory: 0 });
+  const [postStats, setPostStats] = useState({ bytes: 0, count: 0, maxBytes: 0 });
+  const [refreshingImages, setRefreshingImages] = useState(false);
+
+  const reload = useCallback(async () => {
+    setLogStats(getLogStats());
+    setLogEntries(getLogEntries(200));
+    setPostStats(postCacheStats());
+    setImageStats(await imageCacheStats());
+  }, []);
+  useEffect(() => { reload(); }, [reload, section]);
+
+  const shareLogs = async () => {
+    try { await Share.share({ message: getLogText() || 'No log entries.' }); } catch {}
+  };
+  const refreshImages = async () => {
+    setRefreshingImages(true);
+    try { await refreshImageCache(); } finally { setRefreshingImages(false); await reload(); }
+  };
+  const clearAndReload = (action) => { action(); reload(); };
+
+  const selected = developerSections.find((item) => item.id === section);
+  if (!selected) {
+    return <View style={styles.settingsCard}>
+      {developerSections.map((item) => <SettingsRow key={item.id} {...item} onPress={() => setSection(item.id)} />)}
+    </View>;
+  }
+  return <View style={styles.settingsCard}>
+    <Pressable accessibilityRole="button" onPress={() => setSection(null)} style={styles.backLink}>
+      <Text style={styles.action}>‹  Developer</Text>
+    </Pressable>
+    {section === 'logs' && <>
+      <Text style={styles.accountDescription}>App events recorded on this device. Nothing is sent anywhere.</Text>
+      <Text style={styles.settingsMetric}>{devFormatBytes(logStats.bytes)}<Text style={styles.meta}>  OF {devFormatBytes(logStats.maxBytes)} USED</Text></Text>
+      <Text style={styles.meta}>{logStats.count} ENTRIES</Text>
+      <Pressable accessibilityRole="button" onPress={shareLogs} style={styles.secondaryButton}><Text style={styles.action}>SHARE</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => clearAndReload(clearLogs)} style={styles.secondaryButton}><Text style={styles.action}>CLEAR</Text></Pressable>
+      <ScrollView style={{ maxHeight: 320, marginTop: 12 }}>
+        {logEntries.length ? logEntries.map((entry, index) => <Text key={index} selectable style={{ fontFamily: 'Menlo', fontSize: 12, color: C.muted, marginBottom: 6 }}>
+          [{entry.level}] {entry.ts} {entry.message}{entry.detail ? `\n${entry.detail}` : ''}
+        </Text>) : <Text style={styles.emptyText}>No log entries yet.</Text>}
+      </ScrollView>
+    </>}
+    {section === 'images' && <>
+      <Text style={styles.accountDescription}>URLs of images the app has displayed. iOS manages the actual image bytes; this registry only tracks what was shown.</Text>
+      <Text style={styles.settingsMetric}>{imageStats.tracked}<Text style={styles.meta}>  TRACKED URLS</Text></Text>
+      <Text style={styles.meta}>{imageStats.disk} ON DISK  ·  {imageStats.memory} IN MEMORY</Text>
+      <Pressable accessibilityRole="button" disabled={refreshingImages} onPress={refreshImages} style={styles.secondaryButton}><Text style={styles.action}>{refreshingImages ? 'REFRESHING…' : 'REFRESH'}</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => clearAndReload(clearImageCacheRegistry)} style={styles.secondaryButton}><Text style={styles.action}>CLEAR</Text></Pressable>
+    </>}
+    {section === 'posts' && <>
+      <Text style={styles.accountDescription}>Stories you open are kept on this device so they stay readable offline.</Text>
+      <Text style={styles.settingsMetric}>{devFormatBytes(postStats.bytes)}<Text style={styles.meta}>  OF {devFormatBytes(postStats.maxBytes)} USED</Text></Text>
+      <Text style={styles.meta}>{postStats.count} CACHED POSTS</Text>
+      <Pressable accessibilityRole="button" onPress={() => clearAndReload(clearPostCache)} style={styles.secondaryButton}><Text style={styles.action}>CLEAR POST CACHE</Text></Pressable>
+    </>}
+  </View>;
 }
 
 export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onSignOut, cacheBytes = 0, maxCacheBytes = 0, cacheClearing = false, onClearCache }) {
@@ -76,6 +150,7 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.settingsMetric}>{formatBytes(cacheBytes)}<Text style={styles.meta}>  OF {formatBytes(maxCacheBytes)} USED</Text></Text>
         <Pressable accessibilityRole="button" disabled={cacheClearing} onPress={onClearCache} style={styles.secondaryButton}><Text style={styles.action}>{cacheClearing ? 'CLEARING…' : 'CLEAR IMAGE CACHE'}</Text></Pressable>
       </View>}
+      {page === 'developer' && <DeveloperSettings />}
       {page === 'legal' && <View style={styles.settingsCard}>
         <Text style={styles.accountDescription}>Last updated: October 11, 2026</Text>
         <Text style={styles.accountDescription}>Please email <Text accessibilityRole="link" style={styles.inlineLink} onPress={() => Linking.openURL('mailto:legal@coffeencode.cc')}>legal@coffeencode.cc</Text> for legal inquiries.</Text>
