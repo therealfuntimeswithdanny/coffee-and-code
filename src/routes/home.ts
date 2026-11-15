@@ -67,7 +67,7 @@ home.get('/', async (c) => {
     .filter((post): post is StandardDocument => Boolean(post));
   const homeBaseUrl = new URL(c.req.url).origin;
 
-  const proxiedCover = (source?: string, preset = 'feed_medium') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);
+  const proxiedCover = (source?: string, preset = 'feed_small') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);
 
   const emptyMessage = pdsAvailable
     ? 'No stories have been published yet. Please check back soon.'
@@ -93,7 +93,7 @@ home.get('/', async (c) => {
     <div class="home-pinned__grid">${pinnedForHome.map((post) => `
       <article class="home-pinned__card">
         <a class="home-pinned__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-          ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
+          ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_small') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
         <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${authorByline(post)}</div>
       </article>`).join('')}</div>

@@ -136,7 +136,7 @@ function renderArchiveStories(posts: ArchiveStory[], pds: string, origin: string
   return posts.map((post) => `
     <article class="archive-story">
       <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds || origin, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds || origin, 'feed_small'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
       <div>
         <p class="eyebrow">${escapeHtml(formatDate(post.publishedAt))}</p>
@@ -587,7 +587,7 @@ pages.get('/tags', async (c) => {
   const postItems = matchingPosts.map((post) => `
     <article class="archive-story">
       <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_small'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
       <div>
         <p class="eyebrow">${escapeHtml(formatDate(post.publishedAt))}</p>
@@ -646,7 +646,7 @@ pages.get('/author/:handle', async (c) => {
     .map((post) => `
       <article class="archive-story">
         <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
-          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds, 'feed_medium')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds, 'feed_small')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
         </a>
         <div>
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
@@ -663,7 +663,7 @@ pages.get('/author/:handle', async (c) => {
     .map((post) => `
       <article class="author-pinned-card">
         <a class="author-pinned-card__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-          ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_medium'))}" alt="" width="800" height="450" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
+          ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_small'))}" alt="" width="800" height="450" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
         <div class="author-pinned-card__content">
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>

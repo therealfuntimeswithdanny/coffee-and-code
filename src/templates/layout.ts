@@ -46,12 +46,18 @@ export function renderLayout(
   ${scripts.forum ? '<script type="module" src="/components/forum.js"></script>' : ''}
   <script type="module" src="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js"></script>
   <script defer src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-brands-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"></noscript>
   <style>
+    @font-face { font-family: "Font Awesome 6 Free"; font-style: normal; font-weight: 900; font-display: swap; src: url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-solid-900.woff2") format("woff2"); }
+    @font-face { font-family: "Font Awesome 6 Brands"; font-style: normal; font-weight: 400; font-display: swap; src: url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-brands-400.woff2") format("woff2"); }
     .prose .prose-image-gallery { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; }
     .prose .prose-image-gallery figure { flex: 0 0 min(100%, 360px); margin: 0; scroll-snap-align: start; }
     :root { --ink: #ffffff; --paper: #281914; --paper-deep: #3b2a1d; --accent: #b2ac88; --muted: #b2ac88; --line: rgba(178, 172, 136, .42); --line-strong: #b2ac88; --page-width: 1100px; }
