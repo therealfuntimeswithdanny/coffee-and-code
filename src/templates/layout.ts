@@ -395,6 +395,13 @@ export function renderLayout(
     .block-dialog__option input { accent-color: var(--accent); margin-top: 5px; }
     .block-dialog__actions { display: flex; flex-wrap: wrap; gap: 10px; }
     .block-dialog__status { color: #f2a18d !important; min-height: 1.5em; }
+    .feed-client-dialog { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--ink); margin: auto; max-width: min(440px, calc(100% - 32px)); padding: 24px; width: 100%; }
+    .feed-client-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+    .feed-client-dialog h2 { font-family: Lora, Georgia, serif; margin: 0 0 8px; }
+    .feed-client-dialog p { color: #d2cbb9; margin: 0 0 18px; }
+    .feed-client-dialog__options { display: grid; gap: 8px; }
+    .feed-client-dialog__options a { border: 1px solid var(--line-strong); color: var(--ink); display: block; font-weight: 700; padding: 12px 14px; text-decoration: none; }
+    .feed-client-dialog__options a:hover, .feed-client-dialog__options a:focus-visible { background: var(--paper); border-color: var(--accent); }
     .account-page__saved-item { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
     .account-page__saved-item a { min-width: 0; }
     .account-page__remove-save { background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; flex: 0 0 auto; font: 600 12px 'Source Sans 3', sans-serif; padding: 6px 10px; }
@@ -734,7 +741,7 @@ export function renderLayout(
   </style>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/feed">Feed</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><div class="header-icon-actions"><button type="button" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></button><a href="/notifications" class="search-button-icon header-notifications-icon" data-notifications-link aria-label="Notifications" title="Notifications" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i><span class="notification-badge" data-notifications-badge hidden></span></a><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a></div><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><a href="/feed">Feed</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/notifications" data-notifications-link hidden>Notifications <span class="notification-badge" data-notifications-badge hidden></span></a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
+  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><div class="header-icon-actions"><button type="button" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></button><a href="/notifications" class="search-button-icon header-notifications-icon" data-notifications-link aria-label="Notifications" title="Notifications" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i><span class="notification-badge" data-notifications-badge hidden></span></a><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a></div><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/account" class="header-account" data-account-link aria-label="Your account" title="Your account" hidden><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></a></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a><button type="button" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</button><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/notifications" data-notifications-link hidden>Notifications <span class="notification-badge" data-notifications-badge hidden></span></a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
   <dialog class="block-dialog" data-block-dialog aria-labelledby="block-dialog-title" aria-describedby="block-dialog-description">
     <h2 id="block-dialog-title" data-block-dialog-title>Block this account?</h2>
@@ -742,6 +749,17 @@ export function renderLayout(
     <label class="block-dialog__option"><input type="checkbox" data-block-on-bluesky><span>Also block this account on Bluesky</span></label>
     <p class="block-dialog__status" data-block-dialog-status role="status" aria-live="polite"></p>
     <div class="block-dialog__actions"><button type="button" class="author-follow__button" data-confirm-block>Confirm block</button><button type="button" class="auth-signout" data-cancel-block>Cancel</button></div>
+  </dialog>
+  <dialog class="feed-client-dialog" data-feed-client-dialog aria-labelledby="feed-client-title" aria-describedby="feed-client-description">
+    <h2 id="feed-client-title">Choose your Bluesky app</h2>
+    <p id="feed-client-description">Open the Coffee &amp; Code following feed in your preferred client.</p>
+    <div class="feed-client-dialog__options">
+      <a href="https://bsky.app/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Bluesky (bsky.app)</a>
+      <a href="https://mu.social/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">μ (mu.social)</a>
+      <a href="https://anisota.net/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Anisota</a>
+      <a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Coffee &amp; Code</a>
+      <a href="https://witchsky.app/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Witchsky</a>
+    </div>
   </dialog>
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
@@ -906,6 +924,17 @@ export function renderLayout(
     // Hamburger menu
     const hamburgerBtn = document.getElementById('hamburgerBtn');
     const mobileNav = document.getElementById('mobileNav');
+    const feedClientDialog = document.querySelector('[data-feed-client-dialog]');
+    document.querySelectorAll('[data-feed-client-picker]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        if (!(feedClientDialog instanceof HTMLDialogElement) || typeof feedClientDialog.showModal !== 'function') return;
+        event.preventDefault();
+        feedClientDialog.showModal();
+      });
+    });
+    feedClientDialog?.addEventListener('click', (event) => {
+      if (event.target === feedClientDialog) feedClientDialog.close();
+    });
     let searchModule;
     document.querySelectorAll('[data-open-search]').forEach((button) => {
       button.addEventListener('click', async () => {
