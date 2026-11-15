@@ -16,6 +16,13 @@ test('converts Coffee & Code CDN image types to the requested preset', () => {
   );
 });
 
+test('routes AT Protocol profile images through the Coffee & Code CDN', () => {
+  assert.equal(
+    imageUrlForPreset('https://images.example/img/avatar/plain/did:plc:example/cid@jpeg', 'avatar_thumb'),
+    'https://cdn.coffeencode.cc/img/avatar_thumb/plain/did:plc:example/cid@jpeg',
+  );
+});
+
 test('builds CDN blob URLs for app-owned profile images', () => {
   assert.equal(
     cdnBlobImageUrl('did:plc:example', 'blob-cid', 'avatar_small'),
