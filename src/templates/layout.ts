@@ -41,11 +41,8 @@ export function renderLayout(
   <link rel="apple-touch-icon" href="/favicon.png">
   ${metaTags}
   <link rel="alternate" type="application/rss+xml" title="${escapeHtml(pubName)} RSS Feed" href="/rss.xml">
-  <script type="module" src="/components/atproto-auth.js"></script>
   ${scripts.comments ? '<script type="module" src="/components/sequoia-comments.js"></script>' : ''}
   ${scripts.forum ? '<script type="module" src="/components/forum.js"></script>' : ''}
-  <script type="module" src="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js"></script>
-  <script defer src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-brands-400.woff2" as="font" type="font/woff2" crossorigin>
@@ -747,6 +744,36 @@ export function renderLayout(
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
   <footer class="site-footer"><div class="footer-inner"><div class="footer-brand-block"><p class="footer-brand">${pubName}</p><p class="footer-tagline">${pubDescription}</p><div class="footer-social"><a href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/rss.xml" aria-label="RSS feed" title="RSS feed"><i class="fas fa-rss" aria-hidden="true"></i></a><a href="/sitemap.xml" aria-label="Sitemap" title="Sitemap"><i class="fas fa-sitemap" aria-hidden="true"></i></a></div><nav class="footer-legal" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav></div><p class="footer-meta">© ${new Date().getFullYear()} ${pubName} an MBD Company</p></div></footer>
   <script>
+    const idle = (callback, timeout = 2000) => {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(callback, { timeout });
+      } else {
+        window.setTimeout(callback, timeout);
+      }
+    };
+    const afterLoadAndIdle = (callback, timeout) => {
+      const schedule = () => idle(callback, timeout);
+      if (document.readyState === 'complete') schedule();
+      else window.addEventListener('load', schedule, { once: true });
+    };
+    const loadModule = (src) => new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load module: ' + src));
+      document.head.append(script);
+    });
+
+    afterLoadAndIdle(() => {
+      loadModule('/components/atproto-auth.js').catch((error) => console.error(error));
+      const analytics = document.createElement('script');
+      analytics.src = 'https://cloud.umami.is/script.js';
+      analytics.async = true;
+      analytics.dataset.websiteId = 'ce9dca73-97c8-4831-8951-90b7fe8525b6';
+      document.head.append(analytics);
+    }, 2500);
+
     // Search bar drop-downs apply as soon as they change.
     document.querySelectorAll('form.search-bar [data-search-auto-submit]').forEach((control) => {
       control.addEventListener('change', () => {
@@ -873,9 +900,22 @@ export function renderLayout(
     // Hamburger menu
     const hamburgerBtn = document.getElementById('hamburgerBtn');
     const mobileNav = document.getElementById('mobileNav');
-    const searchModal = document.querySelector('search-modal-snippet');
+    let searchModule;
     document.querySelectorAll('[data-open-search]').forEach((button) => {
-      button.addEventListener('click', () => searchModal?.open());
+      button.addEventListener('click', async () => {
+        try {
+          searchModule ||= loadModule('https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js')
+            .catch((error) => {
+              searchModule = undefined;
+              throw error;
+            });
+          await searchModule;
+          await customElements.whenDefined('search-modal-snippet');
+          document.querySelector('search-modal-snippet')?.open();
+        } catch (error) {
+          console.error(error);
+        }
+      });
     });
     const closeMobileNav = (restoreFocus = false) => {
       mobileNav.classList.remove('active');
