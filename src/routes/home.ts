@@ -77,7 +77,7 @@ home.get('/', async (c) => {
       <div class="lead-column">
         <article class="lead-story">
           <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
-            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
+            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')} 800w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
           </a>
           <div class="lead-story__content">
             <h2><a href="${escapeHtml(heroPost.path)}">${escapeHtml(heroPost.title || 'Untitled')}</a></h2>
@@ -93,7 +93,7 @@ home.get('/', async (c) => {
     <div class="home-pinned__grid">${pinnedForHome.map((post) => `
       <article class="home-pinned__card">
         <a class="home-pinned__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-          ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_small') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
+          ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_card') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
         <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${authorByline(post)}</div>
       </article>`).join('')}</div>

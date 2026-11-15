@@ -41,6 +41,7 @@ const PRESETS = {
 
   // Feed/post image presets (4:3, 16:9, etc.)
   feed_thumb:     { width: 200,  height: 150,  fit: "cover" },
+  feed_card:      { width: 360,  height: 240,  fit: "cover" },
   feed_small:     { width: 400,  height: 300,  fit: "cover" },
   feed_medium:    { width: 800,  height: 600,  fit: "cover" },
   feed_large:     { width: 1200, height: 900,  fit: "cover" },
@@ -49,6 +50,7 @@ const PRESETS = {
   // 16:9 widescreen
   wide_thumb:  { width: 320,  height: 180,  fit: "cover" },
   wide_small:  { width: 640,  height: 360,  fit: "cover" },
+  wide_card:   { width: 800,  height: 450,  fit: "cover" },
   wide_medium: { width: 1280, height: 720,  fit: "cover" },
   wide_large:  { width: 1920, height: 1080, fit: "cover" },
 };
@@ -73,6 +75,7 @@ const IMG_TYPES = {
 
   feed_thumbnail:   { width: 200,  height: 200,  fit: "cover"  },
   feed_thumb:       { width: 400,  height: 400,  fit: "cover"  },
+  feed_card:        { width: 360,  height: 240,  fit: "cover"  },
   feed_small:       { width: 600,  height: 600,  fit: "cover"  },
   feed_medium:      { width: 800,  height: 800,  fit: "cover"  },
   feed_large:       { width: 1200, height: 1200, fit: "cover"  },
@@ -86,6 +89,7 @@ const IMG_TYPES = {
 
   wide_thumb:  { width: 320,  height: 180,  fit: "cover" },
   wide_small:  { width: 640,  height: 360,  fit: "cover" },
+  wide_card:   { width: 800,  height: 450,  fit: "cover" },
   wide_medium: { width: 1280, height: 720, fit: "cover" },
   wide_large:  { width: 1920, height: 1080, fit: "cover" },
 };
