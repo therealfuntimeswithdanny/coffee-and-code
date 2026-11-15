@@ -12,7 +12,7 @@ pages.get('/notifications', (c) => {
   const body = `
     <section class="notifications-page" data-notifications-page aria-labelledby="notifications-title">
         <h1 id="notifications-title">Notifications</h1>
-      <p class="notifications-page__intro">Notifications are in beta testing, expect a slow response and degraeded experince</p>
+      <p class="notifications-page__intro">Keep up with new posts from authors and tags you follow, along with activity on your stories.</p>
       <p class="notifications-page__status" data-notifications-status role="status" aria-live="polite">Loading notifications…</p>
       <div class="notifications-page__inbox" data-notifications-inbox hidden>
         <div class="notifications-page__actions"><p data-notifications-read-status></p><div class="notifications-page__action-buttons"><button type="button" class="auth-signout" data-notifications-refresh>Refresh</button></div></div>
@@ -608,7 +608,7 @@ pages.get('/tags', async (c) => {
         <button type="submit" class="search-button">Search tags</button>
       </form>
       ${tagLinks ? `<nav class="tag-directory" aria-label="Available tags">${tagLinks}</nav>` : '<p class="empty-state">No tags match your search.</p>'}
-      ${selectedTag ? `<section class="tag-results" aria-labelledby="tag-results-title"><div class="section-heading"><span id="tag-results-title">Posts tagged “${escapeHtml(selectedTag)}”</span><span>${matchingPosts.length}</span></div>${postItems ? `<div class="archive-grid">${postItems}</div>` : '<p class="empty-state">No posts use this tag.</p>'}</section>` : ''}
+      ${selectedTag ? `<section class="tag-results" aria-labelledby="tag-results-title"><div class="section-heading"><span id="tag-results-title">Posts tagged “${escapeHtml(selectedTag)}”</span><span>${matchingPosts.length}</span></div><div class="tag-follow" data-tag-follow data-tag="${escapeHtml(selectedTagKey)}"><button type="button" class="author-follow__button" data-tag-follow-button>Follow tag</button><span class="author-follow__status" data-tag-follow-status role="status" aria-live="polite"></span></div>${postItems ? `<div class="archive-grid">${postItems}</div>` : '<p class="empty-state">No posts use this tag.</p>'}</section>` : ''}
     </section>
   `;
   return c.html(renderLayout(c, 'Browse by Tag', body, '', 'Browse by Tag | Coffee & Code'));

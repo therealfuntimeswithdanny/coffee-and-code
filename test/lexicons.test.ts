@@ -33,7 +33,7 @@ test('local references point at lexicons in this repo', () => {
 });
 
 test('the collections the website writes have lexicons', () => {
-  for (const id of ['cc.coffeencode.profile', 'cc.coffeencode.save', 'cc.coffeencode.user.block', 'cc.coffeencode.authPublic']) {
+  for (const id of ['cc.coffeencode.profile', 'cc.coffeencode.save', 'cc.coffeencode.user.block', 'cc.coffeencode.tag.follow', 'cc.coffeencode.authPublic']) {
     assert.ok(ids.has(id), id);
   }
 });
@@ -54,4 +54,14 @@ test('the profile collection is granted by a permission set the website requests
     .flatMap((lexicon) => lexicon.defs.main.permissions)
     .filter((permission) => permission.resource === 'repo' && permission.collection.includes('cc.coffeencode.profile'));
   assert.ok(grants.some((permission) => permission.action.includes('create') && permission.action.includes('update')));
+});
+
+test('tag follows are granted by a permission set the website requests', () => {
+  const metadata = JSON.parse(readFileSync(new URL('../media/oauth-client-metadata.json', import.meta.url), 'utf8'));
+  const included = new Set(metadata.scope.split(' ').filter((scope: string) => scope.startsWith('include:')).map((scope: string) => scope.slice(8)));
+  const grants = [...lexicons.values()]
+    .filter((lexicon) => included.has(lexicon.id) && lexicon.defs.main.type === 'permission-set')
+    .flatMap((lexicon) => lexicon.defs.main.permissions)
+    .filter((permission) => permission.resource === 'repo' && permission.collection.includes('cc.coffeencode.tag.follow'));
+  assert.ok(grants.some((permission) => permission.action.includes('create') && permission.action.includes('delete')));
 });

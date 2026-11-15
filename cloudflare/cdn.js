@@ -5,6 +5,7 @@ const SERVICE_NAME = "atCDN for Bluesky & the AT Protocol by the BlueAT Network"
 const PLC_DIRECTORIES = ["https://plc.eurosky.network", "https://plc.directory"];
 const DID_TTL_MS = 86_400_000; // 24 hours
 const NEGATIVE_TTL_S = 60;     // remember missing blobs briefly
+const IMG_CACHE_VERSION = "quality-92";
 const PDS_TIMEOUT_MS = 10_000;
 const PLC_TIMEOUT_MS = 5_000;
 
@@ -375,7 +376,9 @@ export default {
     const cache = caches.default;
     const cacheHeaders = new Headers();
     if (route.transform) cacheHeaders.set("Accept", request.headers.get("Accept") || "");
-    const cacheKey = new Request(request.url, { method: "GET", headers: cacheHeaders });
+    const cacheUrl = new URL(request.url);
+    if (route.format === "img") cacheUrl.searchParams.set("__cache", IMG_CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl, { method: "GET", headers: cacheHeaders });
     const cached = await cache.match(cacheKey);
     if (cached) {
       const age = Date.now() - Date.parse(cached.headers.get("X-Cached-At") || 0);
@@ -494,9 +497,12 @@ async function currentProfileCid(pds, did, field) {
 }
 
 function buildResponse(source, { format, transform }) {
+  const cacheControl = format === "img"
+    ? "public, max-age=86400"
+    : "public, max-age=31536000, immutable";
   const headers = new Headers({
     "Content-Type": source.headers.get("content-type") || "application/octet-stream",
-    "Cache-Control": "public, max-age=31536000, immutable",
+    "Cache-Control": cacheControl,
     "Content-Disposition": "inline",
     "Content-Security-Policy": "default-src 'none'; sandbox", // blobs are user-controlled
     "X-Content-Type-Options": "nosniff",
@@ -567,12 +573,15 @@ function extractPds(doc) {
 function parseRoute(url) {
   const img = url.pathname.match(IMG_PATH_RE);
   if (img) {
+    const transform = parseTransformParams(url.searchParams) || IMG_TYPES[img[1]] || null;
     return {
       format: "img",
       type: img[1],
       did: decodeDid(img[2]),
       cid: img[3],
-      transform: parseTransformParams(url.searchParams) || IMG_TYPES[img[1]] || null,
+      transform: transform
+        ? { ...transform, quality: transform.quality || 92 }
+        : null,
     };
   }
 

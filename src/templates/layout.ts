@@ -198,6 +198,8 @@ export function renderLayout(
     .tag-directory__item { align-items: center; border: 1px solid var(--line); color: var(--ink); display: inline-flex; gap: 12px; padding: 10px 14px; text-decoration: none; }
     .tag-directory__item span + span { color: var(--muted); font-size: 12px; }
     .tag-results { margin-top: 54px; }
+    .tag-follow { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+    .tag-follow .author-follow__status { flex-basis: auto; }
     .tag-results .archive-grid { margin-top: 22px; }
     .prose { max-width: 100%; }
     .prose p, .prose li, .prose-paragraph { color: var(--muted); font-size: 19px; line-height: 1.82; }

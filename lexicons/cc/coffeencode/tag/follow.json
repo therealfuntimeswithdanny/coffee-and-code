@@ -1,0 +1,25 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.tag.follow",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A tag a Coffee & Code user follows for new post notifications.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["tag", "createdAt"],
+        "properties": {
+          "tag": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

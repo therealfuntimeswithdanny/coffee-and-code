@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
+import { findFollowedPostMatches } from '../lib/followedPosts';
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -178,13 +179,14 @@ api.get('/notifications', async (c) => {
   type Backlink = { did: string; collection: string; rkey: string };
   type Activity = {
     uri: string;
-    type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view';
+    type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view' | 'followed.post';
     actorDid: string;
     subjectUri: string;
     documentUri: string;
     documentTitle: string;
     documentPath: string;
     targetUri?: string;
+    matchedTags?: string[];
     recordKey: string;
     createdAt?: string;
     text?: string;
@@ -224,9 +226,62 @@ api.get('/notifications', async (c) => {
       && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(record.did)
       && /^[a-zA-Z0-9._~:-]+$/.test(record.rkey));
   };
+  const fetchRepoRecords = async (pds: string, collection: string) => {
+    const records: Array<{ value: Record<string, unknown> }> = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const url = new URL(`${pds}/xrpc/com.atproto.repo.listRecords`);
+      url.searchParams.set('repo', did);
+      url.searchParams.set('collection', collection);
+      url.searchParams.set('limit', '100');
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`Could not load ${collection} records (${response.status})`);
+      const data = await response.json() as {
+        records?: Array<{ value?: unknown }>;
+        cursor?: unknown;
+      };
+      for (const record of data.records || []) {
+        if (typeof record.value === 'object' && record.value !== null && !Array.isArray(record.value)) {
+          records.push({ value: record.value as Record<string, unknown> });
+        }
+      }
+      if (records.length > 10_000) throw new Error(`The ${collection} record list is too large to load.`);
+      if (typeof data.cursor !== 'string' || !data.cursor) break;
+      if (seenCursors.has(data.cursor)) throw new Error(`The account provider returned a repeated ${collection} cursor.`);
+      seenCursors.add(data.cursor);
+      cursor = data.cursor;
+    } while (cursor);
+    return records;
+  };
 
   try {
     const { documents } = await loadDocuments(c);
+    const ownPds = await getPdsEndpoint(did, c.env.OWNER_PDS);
+    const [authorFollowRecords, tagFollowRecords, blueskyFollowRecords] = await Promise.all([
+      fetchRepoRecords(ownPds, 'cc.coffeencode.author.follow'),
+      fetchRepoRecords(ownPds, 'cc.coffeencode.tag.follow'),
+      fetchRepoRecords(ownPds, 'app.bsky.graph.follow'),
+    ]);
+    const authorFollowedAt = new Map<string, number>();
+    const tagFollowedAt = new Map<string, number>();
+    const addFollow = (map: Map<string, number>, key: string, createdAt: unknown) => {
+      const normalizedKey = key.toLocaleLowerCase();
+      const timestamp = typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt))
+        ? Date.parse(createdAt)
+        : Number.NEGATIVE_INFINITY;
+      map.set(normalizedKey, Math.min(map.get(normalizedKey) ?? Number.POSITIVE_INFINITY, timestamp));
+    };
+    for (const { value } of [...authorFollowRecords, ...blueskyFollowRecords]) {
+      if (typeof value.subject === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(value.subject)) {
+        addFollow(authorFollowedAt, value.subject, value.createdAt);
+      }
+    }
+    for (const { value } of tagFollowRecords) {
+      const tag = typeof value.tag === 'string' ? value.tag : value.subject;
+      if (typeof tag === 'string' && tag.trim()) addFollow(tagFollowedAt, tag.trim(), value.createdAt);
+    }
     const documentUris = [...new Set(documents.map((document) => document.uri).filter(Boolean))];
     const documentByUri = new Map(documents.map((document) => [document.uri, document]));
     const userDocuments = documents.filter((document) =>
@@ -348,6 +403,25 @@ api.get('/notifications', async (c) => {
         });
       }
     }
+    for (const { document, actorDid, matchedTags } of findFollowedPostMatches(
+      documents,
+      authorFollowedAt,
+      tagFollowedAt,
+      did,
+    )) {
+      activitiesByUri.set(document.uri, {
+        uri: document.uri,
+        type: 'followed.post',
+        actorDid,
+        subjectUri: document.uri,
+        documentUri: document.uri,
+        documentTitle: document.title || 'Untitled story',
+        documentPath: document.path,
+        ...(matchedTags.length ? { matchedTags } : {}),
+        recordKey: document.rkey,
+        createdAt: document.publishedAt,
+      });
+    }
     const activities = [...activitiesByUri.values()];
 
     // Fetch the small activity window's records for displayable text and time.
@@ -356,6 +430,10 @@ api.get('/notifications', async (c) => {
     activities.sort((a, b) => b.recordKey.localeCompare(a.recordKey));
     const selectedActivities = activities.slice(0, 100);
     const records = await Promise.all(selectedActivities.map(async (activity) => {
+      if (activity.type === 'followed.post') {
+        const { recordKey: _recordKey, ...notification } = activity;
+        return notification;
+      }
       try {
         const collection = activity.type === 'comment.like'
           ? 'cc.coffeencode.comment.like'
@@ -398,7 +476,6 @@ api.get('/notifications', async (c) => {
       .filter((activity) => activity.type === 'comment.like' && activity.targetUri)
       .map((activity) => activity.targetUri!))];
     const commentTextByUri = new Map<string, string>();
-    const ownPds = await getPdsEndpoint(did, c.env.OWNER_PDS);
     await Promise.all(targetCommentUris.map(async (uri) => {
       const match = uri.match(/^at:\/\/(did:[^/]+)\/cc\.coffeencode\.comment\/([a-zA-Z0-9._~:-]+)$/);
       if (!match || match[1].toLowerCase() !== did.toLowerCase()) return;

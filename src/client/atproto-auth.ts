@@ -1534,7 +1534,7 @@ async function readNotificationsMarker() {
 
 type NotificationItem = {
   uri: string;
-  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view';
+  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view' | 'followed.post';
   actorDid: string;
   actorName?: string;
   actorHandle?: string;
@@ -1546,6 +1546,7 @@ type NotificationItem = {
   createdAt?: string;
   text?: string;
   targetText?: string;
+  matchedTags?: string[];
 };
 
 let notificationItems: NotificationItem[] = [];
@@ -1633,7 +1634,9 @@ function renderNotifications() {
       const iconGlyph = document.createElement('i');
       iconGlyph.className = item.type.includes('like')
         ? 'fa-solid fa-heart'
-        : item.type === 'post.view' ? 'fa-regular fa-eye' : 'fa-regular fa-comment';
+        : item.type === 'post.view'
+          ? 'fa-regular fa-eye'
+          : item.type === 'followed.post' ? 'fa-regular fa-newspaper' : 'fa-regular fa-comment';
       icon.appendChild(iconGlyph);
       row.appendChild(icon);
 
@@ -1673,11 +1676,16 @@ function renderNotifications() {
           ? ' likes your post'
           : item.type === 'post.view'
             ? ' viewed your story'
-          : item.type === 'comment.reply'
-            ? ' Replied to you'
-            : ' Replied to ';
+            : item.type === 'followed.post'
+              ? ' published a new post: '
+            : item.type === 'comment.reply'
+              ? ' Replied to you'
+              : ' Replied to ';
       summary.appendChild(document.createTextNode(action));
-      if (item.type === 'comment' || item.type === 'post.like' || item.type === 'post.view') summary.appendChild(story);
+      if (item.type === 'comment' || item.type === 'post.like' || item.type === 'post.view' || item.type === 'followed.post') summary.appendChild(story);
+      if (item.type === 'followed.post' && item.matchedTags?.length) {
+          summary.appendChild(document.createTextNode(` tagged ${item.matchedTags.map((tag) => `#${tag}`).join(', ')}`));
+      }
       content.appendChild(summary);
       const quoteText = item.type === 'comment.like' ? item.targetText : item.text;
       if (quoteText) {
@@ -1900,6 +1908,71 @@ async function createFollowRecord(collection: string, record: Record<string, unk
 async function deleteFollowRecord(collection: string, uri: string, did: string) {
   await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection, rkey: recordKeyFromUri(uri) });
 }
+
+document.querySelectorAll<HTMLElement>('[data-tag-follow]').forEach((container) => {
+  const button = container.querySelector<HTMLButtonElement>('[data-tag-follow-button]');
+  const status = container.querySelector<HTMLElement>('[data-tag-follow-status]');
+  const tag = container.dataset.tag?.trim().toLocaleLowerCase();
+  const collection = 'cc.coffeencode.tag.follow';
+  if (!button || !tag) return;
+
+  let followRecord: OwnRepoRecord | undefined;
+  button.disabled = true;
+  const renderFollowState = () => {
+    const followed = Boolean(followRecord);
+    button.textContent = followed ? 'Following tag' : 'Follow tag';
+    button.setAttribute('aria-pressed', String(followed));
+  };
+  const loadFollowState = async () => {
+    await oauthReady;
+    if (!session) {
+      if (status) status.textContent = 'Sign in to follow this tag.';
+      return;
+    }
+    const activeDid = session.did;
+    const nextFollow = await findOwnRepoRecord(collection, 'tag', tag, activeDid);
+    if (session?.did !== activeDid) return;
+    followRecord = nextFollow;
+    renderFollowState();
+    if (status) status.textContent = '';
+  };
+
+  void loadFollowState().catch((error) => {
+    console.error('Could not load tag follow state:', error);
+    if (status) status.textContent = error instanceof Error ? error.message : 'Could not load follow status.';
+  }).finally(() => {
+    button.disabled = false;
+  });
+
+  button.addEventListener('click', async () => {
+    await oauthReady;
+    if (!session) {
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
+      return;
+    }
+    const activeDid = session.did;
+    button.disabled = true;
+    if (status) status.textContent = 'Updating your follows…';
+    try {
+      if (followRecord) {
+        await deleteFollowRecord(collection, followRecord.uri, activeDid);
+      } else {
+        await createFollowRecord(collection, {
+          $type: collection,
+          tag,
+          createdAt: new Date().toISOString(),
+        }, activeDid);
+      }
+      await loadFollowState();
+      if (status) status.textContent = followRecord ? 'Following this tag.' : 'Unfollowed this tag.';
+    } catch (error) {
+      if (status) status.textContent = errorMessage(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+});
 
 document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((container) => {
   const button = container.querySelector<HTMLButtonElement>('[data-author-follow-button]');
