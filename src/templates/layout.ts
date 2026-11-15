@@ -7,7 +7,15 @@ export function browserRenderOgImage(c: Context<{ Bindings: Env }>) {
   return new URL('/og.png', c.req.url).toString();
 }
 
-export function renderLayout(c: Context<{ Bindings: Env }>, title: string, content: string, metaTags = '', documentTitle?: string, browserRun = false) {
+export function renderLayout(
+  c: Context<{ Bindings: Env }>,
+  title: string,
+  content: string,
+  metaTags = '',
+  documentTitle?: string,
+  browserRun = false,
+  scripts: { comments?: boolean; forum?: boolean } = {},
+) {
   const pubName = c.env.PUB_NAME || 'Coffee and Code';
   const pubDescription = c.env.PUB_DESCRIPTION || 'A small tech news publication built on the AT Protocol by Daniel Morrisey';
   const did = c.env.OWNER_DID || '';
@@ -34,8 +42,8 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   ${metaTags}
   <link rel="alternate" type="application/rss+xml" title="${escapeHtml(pubName)} RSS Feed" href="/rss.xml">
   <script type="module" src="/components/atproto-auth.js"></script>
-  <script type="module" src="/components/sequoia-comments.js"></script>
-  <script type="module" src="/components/forum.js"></script>
+  ${scripts.comments ? '<script type="module" src="/components/sequoia-comments.js"></script>' : ''}
+  ${scripts.forum ? '<script type="module" src="/components/forum.js"></script>' : ''}
   <script type="module" src="https://4f82ebeb-ab5a-498a-a186-aad0c0dd760a.search.ai.cloudflare.com/assets/v0.0.40/search-snippet.es.js"></script>
   <script defer src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -226,7 +234,7 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
     /* Finishing pass: keep the coffee palette, sharpen the publication hierarchy. */
     body { background: var(--paper); }
-    .site-header { border-top: 3px solid var(--accent); box-shadow: 0 1px 0 rgba(255,255,255,.025); }
+    .site-header { box-shadow: 0 1px 0 rgba(255,255,255,.025); }
     .header-inner { min-height: 96px; }
     .site-brand { align-items: center; display: flex; flex-direction: column; font-size: clamp(1.8rem, 3vw, 2.45rem); line-height: 1; }
     .site-brand::after { content: none; }
@@ -418,7 +426,6 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .account-author-form__actions { display: flex; flex-wrap: wrap; gap: 10px; }
     .account-author-form__cancel { background: transparent; border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; padding: 9px 14px; }
     .account-author-preview { background: var(--paper-deep); border: 1px solid var(--line); min-width: 0; padding: 16px; position: sticky; top: 92px; }
-    .account-author-preview > .eyebrow { margin: 0 0 10px; }
     .account-author-preview__banner { align-items: center; aspect-ratio: 3 / 1; background: linear-gradient(130deg, var(--paper), var(--accent)); color: var(--paper); display: flex; justify-content: center; overflow: hidden; position: relative; }
     .account-author-preview__banner img { height: 100%; object-fit: cover; position: absolute; width: 100%; }
     .account-author-preview__banner span { font: 600 15px 'Lora', Georgia, serif; }

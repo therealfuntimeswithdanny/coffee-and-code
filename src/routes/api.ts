@@ -1,36 +1,10 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
-import { detectFormat, renderContent, renderHtmlAsMarkdown, renderLeaflet, renderMarkdownEmbeds } from '../lib/contentRenderer';
 
 const api = new Hono<{ Bindings: Env }>();
 
-function leafletFallbackMarkdown(document: StandardDocument, content: any): string {
-  const did = document.repoDid || document.uri.match(/^at:\/\/(did:[^/]+)\//)?.[1];
-  const pages = Array.isArray(content?.pages) ? content.pages : [];
-  return pages.flatMap((page: any) => Array.isArray(page.blocks) ? page.blocks : []).map((wrapper: any) => {
-    const block = wrapper?.block || wrapper;
-    if (block?.$type === 'pub.leaflet.blocks.text') return typeof block.plaintext === 'string' ? block.plaintext.trim() : '';
-    if (block?.$type === 'pub.leaflet.blocks.blockquote') return `> ${(block.plaintext || block.text || '').trim()}`;
-    if (block?.$type === 'pub.leaflet.blocks.horizontalRule') return '---';
-    if (block?.$type === 'pub.leaflet.blocks.image' || block?.$type === 'pub.leaflet.blocks.imageGallery') {
-      const images = block.$type === 'pub.leaflet.blocks.image' ? [block] : (block.images || []);
-      return images.map((item: any) => {
-        const cid = item.image?.ref?.$link;
-        if (!cid || !did) return '';
-        const imageUrl = `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${encodeURIComponent(cid)}/feed_fullsize`;
-        return `![${item.alt || 'Article image'}](${imageUrl})`;
-      }).filter(Boolean).join('\n\n');
-    }
-    if (block?.$type === 'pub.leaflet.blocks.iframe' || block?.$type === 'pub.leaflet.blocks.html') {
-      const html = renderLeaflet({ $type: 'pub.leaflet.content', pages: [{ blocks: [wrapper] }] });
-      return renderHtmlAsMarkdown(html);
-    }
-    return '';
-  }).filter(Boolean).join('\n\n');
-}
-
-function documentSummary(post: StandardDocument, origin: string, pds: string) {
+function documentSummary(post: StandardDocument, pds: string) {
   return {
     uri: post.uri,
     title: post.title,
@@ -47,7 +21,6 @@ function documentSummary(post: StandardDocument, origin: string, pds: string) {
           avatar: post.author.avatar ? proxyAvatarUrl(post.author.avatar) : undefined,
         }
       : undefined,
-    markdownUrl: `${origin}/api/documents?uri=${encodeURIComponent(post.uri)}`,
   };
 }
 
@@ -87,30 +60,6 @@ async function findDocumentForRequest(documents: StandardDocument[], rkey: strin
   }
 }
 
-async function markdownDocument(document: StandardDocument) {
-  const content = document.content || '';
-  const format = detectFormat(content, document.mimeType);
-  let parsed: any;
-  if (document.format === 'leaflet' || format === 'richtext') {
-    try { parsed = JSON.parse(content); } catch { parsed = undefined; }
-  }
-  const isLeaflet = parsed?.$type === 'pub.leaflet.content';
-  const renderedLeaflet = isLeaflet ? renderHtmlAsMarkdown(renderLeaflet(parsed)).trim() : '';
-  const markdown = isLeaflet
-    ? renderedLeaflet || leafletFallbackMarkdown(document, parsed)
-    : document.format === 'markdown' || format === 'markdown'
-      ? renderMarkdownEmbeds(content)
-      : format === 'plaintext'
-        ? content
-        : renderHtmlAsMarkdown(await renderContent(content, document.format, document.mimeType));
-
-  return [
-    `# ${document.title}`,
-    document.description?.trim(),
-    markdown.trim(),
-  ].filter(Boolean).join('\n\n');
-}
-
 api.get('/home', async (c) => {
   const loaded = await loadDocumentsSafely(c);
   if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
@@ -145,7 +94,7 @@ api.get('/home', async (c) => {
   });
   const origin = new URL(c.req.url).origin;
   const summary = (document: StandardDocument | undefined) =>
-    document ? documentSummary(document, origin, pds) : null;
+    document ? documentSummary(document, pds) : null;
 
   return c.json({
     publication: {
@@ -160,9 +109,9 @@ api.get('/home', async (c) => {
     },
     totalAvailable: documents.length,
     hero: summary(hero),
-    latest: latest.map((document) => documentSummary(document, origin, pds)),
-    pinned: pinnedStories.map((document) => documentSummary(document, origin, pds)),
-    more: more.map((document) => documentSummary(document, origin, pds)),
+    latest: latest.map((document) => documentSummary(document, pds)),
+    pinned: pinnedStories.map((document) => documentSummary(document, pds)),
+    more: more.map((document) => documentSummary(document, pds)),
     authors: [...authors.values()],
   }, 200, { 'Cache-Control': 'public, max-age=60' });
 });
@@ -178,9 +127,8 @@ api.get('/documents', async (c) => {
       const document = await fetchArticleByUri(uri, pds, c.env.OWNER_DID);
       if (!document) return c.json({ error: 'Document not found.' }, 404, { 'Cache-Control': 'no-store' });
       return c.json({
-        ...documentSummary(document, new URL(c.req.url).origin, pds),
-        content: await markdownDocument(document),
-        format: 'markdown',
+        ...documentSummary(document, pds),
+        record: { uri: document.uri, cid: document.cid, value: document.record },
       }, 200, { 'Cache-Control': 'no-store' });
     } catch (error) {
       console.error('Could not load the requested Coffee & Code post:', error);
@@ -200,10 +148,8 @@ api.get('/documents', async (c) => {
   if (!documents.length && !await isPdsAvailable(pds)) {
     return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
   }
-  const origin = new URL(c.req.url).origin;
-
   return c.json({
-    documents: documents.slice(0, limit).map((document) => documentSummary(document, origin, pds)),
+    documents: documents.slice(0, limit).map((document) => documentSummary(document, pds)),
     totalAvailable: documents.length,
     limit,
   }, 200, { 'Cache-Control': 'public, max-age=60' });
@@ -497,28 +443,6 @@ api.get('/notifications', async (c) => {
   }
 });
 
-api.get('/documents/:rkey.md', async (c) => {
-  const loaded = await loadDocumentsSafely(c);
-  if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
-  const { pds, documents } = loaded;
-  if (!documents.length && !await isPdsAvailable(pds)) {
-    return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
-  }
-  const { document, ambiguous } = await findDocumentForRequest(documents, c.req.param('rkey'), c.req.query('uri'), pds, c.env.OWNER_DID);
-  if (!document) {
-    return c.json({
-      error: ambiguous
-        ? 'Multiple documents use this record key. Specify the document uri query parameter.'
-        : 'Document not found.',
-    }, ambiguous ? 409 : 404, { 'Cache-Control': 'no-store' });
-  }
-
-  return c.body(await markdownDocument(document), 200, {
-    'Content-Type': 'text/markdown; charset=utf-8',
-    'Cache-Control': 'no-store',
-  });
-});
-
 api.get('/documents/:rkey', async (c) => {
   const loaded = await loadDocumentsSafely(c);
   if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });
@@ -536,9 +460,8 @@ api.get('/documents/:rkey', async (c) => {
   }
 
   return c.json({
-    ...documentSummary(document, new URL(c.req.url).origin, pds),
-    content: await markdownDocument(document),
-    format: 'markdown',
+    ...documentSummary(document, pds),
+    record: { uri: document.uri, cid: document.cid, value: document.record },
   }, 200, { 'Cache-Control': 'no-store' });
 });
 

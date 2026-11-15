@@ -20,6 +20,7 @@ export interface StandardDocument {
   cover?: string;
   format?: string; // Content format: 'markdown', 'html', 'plaintext', 'richtext'
   mimeType?: string; // MIME type of the content
+  record?: Record<string, unknown>;
   repoDid?: string;
   pdsUrl?: string;
   publicationUri?: string;

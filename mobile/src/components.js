@@ -51,35 +51,17 @@ export function SkeletonImage({ source, style, ...props }) {
 }
 
 export function InlineText({ text, style }) {
-  const parts = [];
-  const pattern = /(\[[^\]]+\]\(https?:\/\/[^)]+\)|https?:\/\/[^\s)]+|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
-  let cursor = 0;
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > cursor) parts.push({ text: text.slice(cursor, match.index) });
-    const token = match[0];
-    const markdownLink = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
-    if (markdownLink) parts.push({ text: markdownLink[1], url: markdownLink[2] });
-    else if (/^https?:\/\//.test(token)) parts.push({ text: token, url: token });
-    else if (/^\*\*/.test(token) || /^__/.test(token)) parts.push({ text: token.slice(2, -2), format: 'strong' });
-    else if (/^~~/.test(token)) parts.push({ text: token.slice(2, -2), format: 'strike' });
-    else if (/^`/.test(token)) parts.push({ text: token.slice(1, -1), format: 'code' });
-    else parts.push({ text: token.slice(1, -1), format: 'em' });
-    cursor = pattern.lastIndex;
-  }
-  if (cursor < text.length) parts.push({ text: text.slice(cursor) });
-  return <Text style={style}>{parts.map((part, i) => part.url
-    ? <Text key={i} style={styles.inlineLink} onPress={() => Linking.openURL(part.url)}>{part.text}</Text>
-    : <Text key={i} style={part.format === 'strong' ? styles.markdownStrong : part.format === 'em' ? styles.markdownEm : part.format === 'strike' ? styles.markdownStrike : part.format === 'code' ? styles.markdownInlineCode : undefined}>{part.text}</Text>)}</Text>;
+  return <Text style={style}>{text}</Text>;
 }
 
 function ArticleEmbed({ data }) {
   let embed;
   try {
-    embed = JSON.parse(decodeURIComponent(data));
+    embed = typeof data === 'string' ? JSON.parse(decodeURIComponent(data)) : data;
   } catch {
     return null;
   }
+  if (!embed || typeof embed !== 'object') return null;
   const title = typeof embed.title === 'string' && embed.title.trim() ? embed.title.trim() : 'Embedded content';
   const height = Number.isInteger(embed.height) ? Math.max(180, Math.min(900, embed.height)) : 250;
   const safeSrc = typeof embed.src === 'string' && /^https:\/\//i.test(embed.src) ? embed.src : '';
@@ -91,66 +73,171 @@ function ArticleEmbed({ data }) {
   return <View style={styles.embedFrame}><WebView source={{ html, baseUrl: 'https://coffeencode.cc' }} style={{ height, backgroundColor: 'transparent' }} javaScriptEnabled domStorageEnabled={false} originWhitelist={['https://*']} mixedContentMode="never" allowFileAccess={false} allowUniversalAccessFromFileURLs={false} setSupportMultipleWindows={false} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction /></View>;
 }
 
-export function ArticleBody({ markdown }) {
-  const normalized = markdown.replace(/^---[\s\S]*?---\s*/, '').replace(/^# .+\n+/, '');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  for (let index = 0; index < lines.length;) {
-    if (!lines[index].trim()) { index += 1; continue; }
-    if (/^\s*:::cc-embed\s+/.test(lines[index])) { blocks.push(lines[index++].trim()); continue; }
-    if (/^\s*```/.test(lines[index])) {
-      const code = [lines[index++]];
-      while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++]);
-      if (index < lines.length) code.push(lines[index++]);
-      blocks.push(code.join('\n'));
-      continue;
-    }
-    if (/^\s*>/.test(lines[index])) {
-      const quote = [];
-      while (index < lines.length && /^\s*>/.test(lines[index])) quote.push(lines[index++]);
-      blocks.push(quote.join('\n'));
-      continue;
-    }
-    if (/^\s*(?:[-*+]\s|\d+[.)]\s)/.test(lines[index])) {
-      const list = [];
-      while (index < lines.length && (/^\s*(?:[-*+]\s|\d+[.)]\s)/.test(lines[index]) || /^\s{2,}\S/.test(lines[index]))) list.push(lines[index++]);
-      blocks.push(list.join('\n'));
-      continue;
-    }
-    if (/^\s*#{1,6}\s|^\s*([-*_])\1\1+\s*$|^\s*!\[[^\]]*\]\(https?:\/\/[^)]+\)\s*$/.test(lines[index])) {
-      blocks.push(lines[index++].trim());
-      continue;
-    }
-    const paragraph = [];
-    while (index < lines.length && lines[index].trim() && !/^\s*(?:```|>|#{1,6}\s|[-*+]\s|\d+[.)]\s|([-*_])\1\1+\s*$|!\[[^\]]*\]\(https?:\/\/[^)]+\)\s*$)/.test(lines[index])) paragraph.push(lines[index++]);
-    if (paragraph.length) blocks.push(paragraph.join('\n').trim());
+function FacetedText({ text, facets = [], style }) {
+  const characters = Array.from(text);
+  const byteOffsets = [0];
+  characters.forEach((character) => {
+    const codePoint = character.codePointAt(0);
+    byteOffsets.push(byteOffsets[byteOffsets.length - 1] + (codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4));
+  });
+  const ranges = facets.flatMap((facet) => {
+    const start = facet?.index?.byteStart;
+    const end = facet?.index?.byteEnd;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start) return [];
+    const features = Array.isArray(facet.features) ? facet.features : [];
+    return [{ start, end, features }];
+  });
+  if (!ranges.length) return <Text style={style}>{text}</Text>;
+
+  const boundaries = [...new Set([0, byteOffsets[byteOffsets.length - 1], ...ranges.flatMap(({ start, end }) => [start, end])])]
+    .filter((offset) => offset >= 0 && offset <= byteOffsets[byteOffsets.length - 1])
+    .sort((a, b) => a - b);
+  const segments = [];
+  for (let index = 0; index < boundaries.length - 1; index += 1) {
+    const start = boundaries[index];
+    const end = boundaries[index + 1];
+    const startIndex = byteOffsets.indexOf(start);
+    const endIndex = byteOffsets.indexOf(end);
+    if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) continue;
+    const active = ranges.filter((range) => range.start <= start && range.end >= end);
+    const features = active.flatMap((range) => range.features);
+    const link = features.find((feature) => typeof feature?.uri === 'string' && /^https?:\/\//i.test(feature.uri));
+    const types = features.map((feature) => feature?.$type || '');
+    segments.push({
+      text: characters.slice(startIndex, endIndex).join(''),
+      link: link?.uri,
+      strong: types.some((type) => type.endsWith('#strong') || type.endsWith('#bold')),
+      em: types.some((type) => type.endsWith('#em') || type.endsWith('#italic')),
+    });
   }
-  return <View style={styles.prose}>{blocks.map((block, index) => {
-    const embed = block.match(/^:::cc-embed\s+(.+)$/);
-    if (embed) return <ArticleEmbed key={index} data={embed[1]} />;
-    if (/^\s*([-*_])\1\1+\s*$/.test(block)) return <View key={index} style={styles.rule} />;
-    const heading = block.match(/^(#{1,6})\s+(.+)$/s);
-    if (heading) return <InlineText key={index} text={heading[2]} style={[styles.articleHeading, heading[1].length > 2 && styles.articleSubheading]} />;
-    if (/^>\s?/.test(block)) return <InlineText key={index} text={block.replace(/^\s*>\s?/gm, '').replace(/\n/g, ' ')} style={styles.quote} />;
-    if (/^\s*(?:[-*+]\s|\d+[.)]\s)/m.test(block)) {
-      const items = block.split('\n').filter(Boolean);
-      return <View key={index} style={styles.listBlock}>{items.map((item, itemIndex) => {
-        const content = item.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');
-        const marker = item.match(/^\s*(\d+)[.)]\s+/);
-        const nested = /^\s{2,}/.test(item);
-        return <View key={itemIndex} style={[styles.listItem, nested && styles.nestedListItem]}><Text style={styles.bullet}>{marker?.[1] || '•'}</Text><InlineText text={content} style={styles.paragraph} /></View>;
-      })}</View>;
+  return <Text style={style}>{segments.map((segment, index) => <Text
+    key={index}
+    style={[segment.link && styles.inlineLink, segment.strong && styles.markdownStrong, segment.em && styles.markdownEm]}
+    onPress={segment.link ? () => Linking.openURL(segment.link) : undefined}
+  >{segment.text}</Text>)}</Text>;
+}
+
+function documentImageUrl(image, fallbackDid) {
+  const ref = image?.ref || image;
+  const did = ref?.did || image?.did || fallbackDid;
+  const cid = ref?.$link;
+  if (typeof did === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did)
+    && typeof cid === 'string' && cid.length > 0) {
+    return `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${encodeURIComponent(cid)}/feed_fullsize`;
+  }
+  const url = typeof image?.url === 'string' ? image.url : '';
+  return /^https:\/\//i.test(url) ? url : undefined;
+}
+
+function StructuredImage({ image, did, index }) {
+  const uri = documentImageUrl(image?.image || image, did);
+  if (!uri) return null;
+  const ratio = image?.aspectRatio;
+  const width = Number.isFinite(ratio?.width) && ratio.width > 0 ? ratio.width : 16;
+  const height = Number.isFinite(ratio?.height) && ratio.height > 0 ? ratio.height : 9;
+  const alt = typeof image?.alt === 'string' ? image.alt.trim() : typeof image?.title === 'string' ? image.title.trim() : '';
+  return <View key={index}>
+    <SkeletonImage source={{ uri }} accessibilityLabel={alt || 'Article image'} style={[styles.articleImage, { aspectRatio: width / height, height: undefined, marginBottom: 0 }]} resizeMode="cover" />
+    {!!alt && <Text style={styles.imageAlt}>{alt}</Text>}
+    {!!image?.caption && <Text style={styles.paragraph}>{image.caption}</Text>}
+  </View>;
+}
+
+function ImageCarousel({ images, did }) {
+  const [width, setWidth] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const scrollRef = useRef(null);
+  const validImages = images.filter((image) => documentImageUrl(image?.image || image, did));
+  if (!validImages.length) return null;
+
+  const selectImage = (index) => {
+    setActiveIndex(index);
+    scrollRef.current?.scrollTo({ x: width * index, animated: true });
+  };
+  return <View style={styles.imageCarousel} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      pagingEnabled
+      showsHorizontalScrollIndicator={false}
+      onMomentumScrollEnd={(event) => {
+        if (width > 0) setActiveIndex(Math.min(validImages.length - 1, Math.round(event.nativeEvent.contentOffset.x / width)));
+      }}
+      accessibilityLabel="Image gallery"
+    >
+      {validImages.map((image, index) => <View key={index} style={{ width }}>
+        <StructuredImage image={image} did={did} index={index} />
+      </View>)}
+    </ScrollView>
+    <View style={styles.imageCarouselFooter}>
+      <View style={styles.imageCarouselDots}>
+        {validImages.map((image, index) => <Pressable
+          key={index}
+          accessibilityRole="button"
+          accessibilityLabel={`Show image ${index + 1} of ${validImages.length}${image.alt ? `: ${image.alt}` : ''}`}
+          accessibilityState={{ selected: activeIndex === index }}
+          onPress={() => selectImage(index)}
+          style={styles.imageCarouselDotButton}
+        ><View style={[styles.imageCarouselDot, activeIndex === index && styles.imageCarouselDotActive]} /></Pressable>)}
+      </View>
+      <Text style={styles.imageCarouselCount}>{activeIndex + 1} / {validImages.length}</Text>
+    </View>
+  </View>;
+}
+
+function StructuredArticleBody({ content, did }) {
+  const contentItems = Array.isArray(content?.items)
+    ? content.items.map((item) => ({
+      block: typeof item === 'string'
+        ? { $type: 'pub.leaflet.blocks.text', plaintext: item }
+        : { ...item, $type: item?.$type || 'pub.leaflet.blocks.text' },
+    }))
+    : [];
+  const pages = Array.isArray(content?.pages)
+    ? content.pages
+    : [{ blocks: Array.isArray(content?.blocks) ? content.blocks : contentItems }];
+  const blocks = pages.flatMap((page) => Array.isArray(page?.blocks) ? page.blocks : []);
+  return <View style={styles.prose}>{blocks.map((wrapper, index) => {
+    const block = wrapper?.block || wrapper;
+    const type = block?.$type || '';
+    const text = typeof block?.plaintext === 'string' ? block.plaintext : typeof block?.text === 'string' ? block.text : typeof block?.title === 'string' ? block.title : '';
+    if (type.endsWith('.heading') || type.endsWith('.title')) {
+      return <InlineText key={index} text={text} style={block.level > 2 ? styles.articleSubheading : styles.articleHeading} />;
     }
-    if (/^```/.test(block)) return <Text key={index} style={styles.code}>{block.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '')}</Text>;
-    const image = block.match(/^!\[([^\]]*)\]\((https?:\/\/[^)]+)\)$/);
-    if (image) return <SkeletonImage key={index} source={{ uri: image[2] }} accessibilityLabel={image[1]} style={styles.articleImage} resizeMode="cover" />;
-    const tableRows = block.split('\n').filter((row) => /^\s*\|/.test(row));
-    if (tableRows.length >= 2 && /^\s*\|?\s*:?-{3,}/.test(tableRows[1])) {
-      const rows = tableRows.filter((row) => !/^\s*\|?\s*:?-{3,}/.test(row)).map((row) => row.replace(/^\s*\||\|\s*$/g, '').split('|').map((cell) => cell.trim()));
-      return <ScrollView key={index} horizontal showsHorizontalScrollIndicator style={styles.tableScroll}><View>{rows.map((row, rowIndex) => <View key={rowIndex} style={[styles.tableRow, rowIndex === 0 && styles.tableHeaderRow]}>{row.map((cell, cellIndex) => <View key={cellIndex} style={styles.tableCell}><InlineText text={cell} style={[styles.tableCellText, rowIndex === 0 && styles.tableHeaderText]} /></View>)}</View>)}</View></ScrollView>;
+    if (type.endsWith('.text')) return <FacetedText key={index} text={text} facets={block.facets} style={styles.paragraph} />;
+    if (type.endsWith('.blockquote')) return <FacetedText key={index} text={text} facets={block.facets} style={styles.quote} />;
+    if (type.endsWith('.image')) return <StructuredImage key={index} image={block} did={did} index={index} />;
+    if (type.endsWith('.imageGallery')) {
+      const images = Array.isArray(block.images) ? block.images : [];
+      return <ImageCarousel key={index} images={images} did={did} />;
     }
-    return <InlineText key={index} text={block.replace(/\n/g, ' ')} style={styles.paragraph} />;
+    if (type.endsWith('.horizontalRule')) return <View key={index} style={styles.rule} />;
+    if (type.endsWith('.iframe') || type.endsWith('.html')) return <ArticleEmbed key={index} data={{ src: block.url, srcdoc: block.html, title: block.title || block.alt, height: block.height }} />;
+    if (text) return <InlineText key={index} text={text} style={styles.paragraph} />;
+    return null;
   })}</View>;
+}
+
+export function ArticleBody({ record, uri }) {
+  let content = record?.content || record?.textContent || record?.content?.textContent
+    || (Array.isArray(record?.blocks) ? { blocks: record.blocks } : null);
+  if (typeof content === 'string' && (record.contentFormat === 'leaflet' || record.format === 'leaflet')) {
+    try {
+      const parsed = JSON.parse(content);
+      if (!parsed || typeof parsed !== 'object') throw new Error('Leaflet content must be a JSON object.');
+      content = parsed;
+    } catch {
+      return <Text style={styles.error}>This story contains invalid structured content.</Text>;
+    }
+  }
+  if (typeof content === 'string') return <Text style={styles.paragraph}>{content}</Text>;
+  const structured = content && typeof content === 'object'
+    && (content.$type === 'pub.leaflet.content' || Array.isArray(content.pages) || Array.isArray(content.blocks) || Array.isArray(content.items));
+  if (structured) {
+    const did = uri?.match(/^at:\/\/(did:[^/]+)\//)?.[1];
+    return <StructuredArticleBody content={content} did={did} />;
+  }
+  return <Text style={styles.error}>This story uses a content format the app cannot display.</Text>;
 }
 
 export function SectionBar({ title, detail }) {

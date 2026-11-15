@@ -422,7 +422,7 @@ function formatDate(value: string) {
 
 function errorPage(c: Parameters<typeof renderLayout>[0], title: string, message: string, status: 404 | 502 | 503) {
   return c.html(renderLayout(c, title, `
-    <section class="not-found"><p class="eyebrow">${status}</p><h1>${escapeHtml(title)}</h1>
+    <section class="not-found"><h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(message)}</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
   `), status);
 }
@@ -504,7 +504,7 @@ forum.get('/', async (c) => {
   const body = `
     <section class="forum-page">
       <header class="forum-header">
-        <p class="eyebrow">Coffee &amp; Code community</p><h1>${escapeHtml(config.name)}</h1>
+        <h1>${escapeHtml(config.name)}</h1>
         ${config.description ? `<div class="prose forum-description">${renderMarkdown(config.description)}</div>` : ''}
       </header>
       ${config.rules.length ? `<aside class="forum-rules"><h2>Community rules</h2><ol>${config.rules.map((rule) => `<li><strong>${escapeHtml(rule.title)}</strong>${rule.description ? `<p>${escapeHtml(rule.description)}</p>` : ''}</li>`).join('')}</ol></aside>` : ''}
@@ -539,7 +539,7 @@ forum.get('/', async (c) => {
   const ogImage = new URL('/og/forum/og.png', c.req.url).toString();
   const description = config.description || `Community discussions at ${config.name}.`;
   const metaTags = `<meta name="description" content="${escapeHtml(description)}"><meta property="og:title" content="${escapeHtml(config.name)} — Forum"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(pageUrl)}"><meta property="og:image" content="${escapeHtml(ogImage)}"><meta property="og:image:type" content="image/png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(config.name)} — Forum"><meta name="twitter:description" content="${escapeHtml(description)}"><meta name="twitter:image" content="${escapeHtml(ogImage)}"><link rel="canonical" href="${escapeHtml(pageUrl)}">`;
-  return c.html(renderLayout(c, `${escapeHtml(config.name)} Forum`, body, metaTags));
+  return c.html(renderLayout(c, `${escapeHtml(config.name)} Forum`, body, metaTags, undefined, false, { forum: true }));
 });
 
 forum.get('/create', async (c) => {
@@ -551,7 +551,6 @@ forum.get('/create', async (c) => {
     <section class="forum-page forum-create-page" aria-labelledby="forum-create-title">
       <a class="read-link forum-back-link" href="/forum"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back to forum</a>
       <header class="forum-header">
-        <p class="eyebrow">${escapeHtml(config.name)}</p>
         <h1 id="forum-create-title">Start a discussion</h1>
         <p class="forum-create-intro">Share a project, ask a question, or start a conversation with the community.</p>
       </header>
@@ -581,7 +580,7 @@ forum.get('/create', async (c) => {
       </form>
     </section>`;
   const metaTags = `<meta name="description" content="Start a discussion in ${escapeHtml(config.name)}."><meta property="og:title" content="Start a discussion — ${escapeHtml(config.name)}"><meta property="og:type" content="website">`;
-  return c.html(renderLayout(c, 'Start a Discussion', body, metaTags));
+  return c.html(renderLayout(c, 'Start a Discussion', body, metaTags, undefined, false, { forum: true }));
 });
 
 forum.get('/:handle/:rkey', async (c) => {
@@ -652,7 +651,7 @@ forum.get('/:handle/:rkey', async (c) => {
   const postPds = await getPdsEndpoint(post.authorDid, c.env.OWNER_PDS);
   const postContent = `<article class="forum-thread" data-forum-thread data-block-author-did="${escapeHtml(post.authorDid)}" data-forum-uri="${escapeHtml(config.uri)}" data-root-uri="${escapeHtml(post.uri)}" data-root-cid="${escapeHtml(post.cid)}" data-locked="${rootState.locked}">
     <a class="read-link" href="/forum"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All discussions</a>
-    <p class="eyebrow">${rootState.pinned ? 'Pinned discussion' : 'Community discussion'}</p>
+    ${rootState.pinned ? '<p class="eyebrow">Pinned discussion</p>' : ''}
     <h1>${escapeHtml(post.title)}</h1>
     <div class="forum-post-card__byline">${post.avatar ? `<img src="${escapeHtml(post.avatar)}" alt="" width="40" height="40">` : ''}
       <a href="/user/${encodeURIComponent(post.handle)}">${escapeHtml(post.name)}</a><time datetime="${escapeHtml(post.createdAt)}">${escapeHtml(formatDate(post.createdAt))}</time></div>
@@ -674,7 +673,7 @@ forum.get('/:handle/:rkey', async (c) => {
   </article>`;
   const pageUrl = new URL(c.req.url).toString();
   const metaTags = `<meta name="description" content="${escapeHtml(post.content.slice(0, 160))}"><meta property="og:title" content="${escapeHtml(post.title)}"><meta property="og:type" content="article"><meta property="og:url" content="${escapeHtml(pageUrl)}"><link rel="canonical" href="${escapeHtml(pageUrl)}">`;
-  return c.html(renderLayout(c, escapeHtml(post.title), postContent, metaTags));
+  return c.html(renderLayout(c, escapeHtml(post.title), postContent, metaTags, undefined, false, { forum: true }));
 });
 
 export async function fetchAuthorForumPosts(

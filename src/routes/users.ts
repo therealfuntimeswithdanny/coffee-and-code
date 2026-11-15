@@ -106,13 +106,13 @@ users.get('/:identifier', async (c) => {
   } catch (error) {
     console.error('Could not resolve user profile identifier:', error);
     return c.html(renderLayout(c, 'Profile Unavailable', `
-      <section class="not-found"><p class="eyebrow">Profile unavailable</p><h1>Could not find this profile</h1>
+      <section class="not-found"><h1>Could not find this profile</h1>
       <p>The account provider could not be reached. Please try again later.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
     `), 502);
   }
   if (!did) {
     return c.html(renderLayout(c, 'Profile Not Found', `
-      <section class="not-found"><p class="eyebrow">404</p><h1>Profile not found</h1>
+      <section class="not-found"><h1>Profile not found</h1>
       <p>That handle could not be resolved to an account.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
     `), 404);
   }
@@ -123,7 +123,7 @@ users.get('/:identifier', async (c) => {
   ]);
   if (!profile) {
     return c.html(renderLayout(c, 'Profile Not Found', `
-      <section class="not-found"><p class="eyebrow">404</p><h1>Profile not found</h1>
+      <section class="not-found"><h1>Profile not found</h1>
       <p>This account does not have a readable Coffee &amp; Code or Bluesky profile.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
     `), 404);
   }
@@ -140,7 +140,7 @@ users.get('/:identifier', async (c) => {
   } catch (error) {
     console.error(`Could not load comments for ${did}:`, error);
     return c.html(renderLayout(c, 'Profile Unavailable', `
-      <section class="not-found"><p class="eyebrow">Profile unavailable</p><h1>Could not load this profile</h1>
+      <section class="not-found"><h1>Could not load this profile</h1>
       <p>The account’s repository could not be reached. Please try again later.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
     `), 502);
   }

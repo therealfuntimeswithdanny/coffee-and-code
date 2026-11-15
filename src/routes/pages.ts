@@ -30,7 +30,6 @@ pages.get('/notifications', (c) => {
     </section>
     <style>
       .notifications-page { margin: 0 auto; max-width: 860px; }
-      .notifications-page > .eyebrow { margin: 0 0 12px; }
       .notifications-page h1 { font-family: Lora, serif; font-size: clamp(2.8rem, 7vw, 5rem); letter-spacing: -.04em; line-height: 1.04; margin: 0; }
       .notifications-page__intro { color: var(--muted); font-size: 19px; line-height: 1.55; margin: 20px 0 34px; max-width: 680px; }
       .notifications-page__status, .notifications-page__empty { color: var(--muted); }
@@ -72,7 +71,6 @@ pages.get('/feed', (c) => {
   const pageUrl = new URL(c.req.url).toString();
   const body = `
     <section class="feed-page" aria-labelledby="feed-title">
-      <p class="eyebrow">Coffee &amp; Code on Bluesky</p>
       <h1 id="feed-title">A feed shaped by the authors you choose.</h1>
       <p class="feed-page__intro">Keep up with Coffee &amp; Code writers on Bluesky. Follow authors here, then see their latest posts together in one dedicated feed.</p>
       <div class="feed-page__actions">
@@ -89,7 +87,6 @@ pages.get('/feed', (c) => {
     </section>
     <style>
       .feed-page { margin: 0 auto; max-width: 940px; }
-      .feed-page > .eyebrow { margin: 0 0 13px; }
       .feed-page h1 { font-family: Lora, serif; font-size: clamp(2.8rem, 7vw, 5.5rem); letter-spacing: -.04em; line-height: 1.03; margin: 0; max-width: 850px; }
       .feed-page__intro { color: var(--muted); font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.65; margin: 22px 0 25px; max-width: 700px; }
       .feed-page__actions { align-items: center; display: flex; flex-wrap: wrap; gap: 22px; }
@@ -349,7 +346,6 @@ pages.get('/api/forum/moderators/check', async (c) => {
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
-      <p class="eyebrow">Welcome back</p>
       <h1 id="auth-title">Log in to Coffee &amp; Code</h1>
       <p class="auth-page__intro">Sign in with your AT Protocol handle.</p>
       <div class="auth-options" data-auth-options>
@@ -381,7 +377,6 @@ pages.get('/auth', (c) => {
 pages.get('/account', (c) => {
   const body = `
     <section class="auth-page account-page" aria-labelledby="account-title" data-account-page>
-      <p class="eyebrow">Your profile</p>
       <h1 id="account-title">Your account</h1>
       <div class="auth-account" data-auth-account hidden>
         <div class="account-layout">
@@ -441,7 +436,6 @@ pages.get('/account', (c) => {
                 <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
               </div>
               <aside class="account-author-preview" aria-label="Author profile preview">
-                <p class="eyebrow">Preview</p>
                 <div class="account-author-preview__banner"><img data-author-preview-banner alt="" hidden><span data-author-preview-banner-placeholder>Author profile</span></div>
                 <div class="account-author-preview__identity">
                   <img class="account-author-preview__avatar" data-author-preview-avatar alt="" hidden>
@@ -467,7 +461,6 @@ pages.get('/account', (c) => {
 pages.get('/become-an-author', (c) => {
   const body = `
     <section class="author-invitation" aria-labelledby="author-invitation-title">
-      <p class="eyebrow">Write for Coffee &amp; Code</p>
       <h1 id="author-invitation-title">Become an author</h1>
       <p class="author-invitation__intro">Have something you’d like to publish? DM me on <a href="${externalLinkUrl('https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay')}" target="_blank" rel="noopener noreferrer">Bluesky</a> with your document and a link to the publication. I’ll review it, and if it’s a good fit for Coffee &amp; Code, I’ll link to your publication.</p>
       <ol class="author-invitation__steps">
@@ -548,7 +541,6 @@ pages.get('/authors', async (c) => {
   const body = `
     <section class="authors-page" aria-labelledby="authors-title">
       <header class="authors-page__header">
-        <p class="eyebrow">Contributors</p>
         <h1 id="authors-title">Authors</h1>
       </header>
       ${authorItems ? `<div class="author-grid">${authorItems}</div>` : '<p class="empty-state">No authors have published stories yet.</p>'}
@@ -607,7 +599,6 @@ pages.get('/tags', async (c) => {
     </article>`).join('');
   const body = `
     <section class="tags-page" aria-labelledby="tags-title">
-      <p class="eyebrow">Explore topics</p>
       <h1 id="tags-title">Browse by tag</h1>
       <p class="tags-page__intro">Find stories by the topics they cover.</p>
       <form class="tags-search" action="/tags" method="get">
@@ -633,7 +624,7 @@ pages.get('/author/:handle', async (c) => {
   const publicationUri = authorPosts.find((post) => post.publicationUri)?.publicationUri;
 
   if (!author) {
-    return c.html(renderLayout(c, 'Author Not Found', '<section class="not-found"><p class="eyebrow">404</p><h1>Author not found</h1><p>This author has not published in this publication.</p><a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
+    return c.html(renderLayout(c, 'Author Not Found', '<section class="not-found"><h1>Author not found</h1><p>This author has not published in this publication.</p><a href="/archive" class="read-link">Browse archive <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
   }
 
   const authorCanonicalPath = `/author/${encodeURIComponent(author.handle)}`;
@@ -686,7 +677,7 @@ pages.get('/author/:handle', async (c) => {
       ${authorBanner ? `<img src="${escapeHtml(authorBanner)}" alt="" class="author-page__banner" width="1200" height="400" decoding="async">` : ''}
       <header class="author-page__header">
         ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar" width="88" height="88" decoding="async">` : ''}
-        <div><p class="eyebrow">Author</p><h1 id="author-title" data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
+        <div><h1 id="author-title" data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
       </header>
       <div class="author-follow" ${publicationUri ? `data-author-follow data-author-did="${escapeHtml(author.did)}" data-publication-uri="${escapeHtml(publicationUri)}"` : ''}>
         <a class="author-page__profile-link" href="/user/${encodeURIComponent(author.handle)}">View user profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
@@ -914,7 +905,6 @@ pages.get('/feed', (c) => {
   const body = `
     <section class="feed-page" aria-labelledby="feed-title">
       <header class="feed-page__header">
-        <p class="eyebrow">Coffee &amp; Code on Bluesky</p>
         <h1 id="feed-title">A feed shaped by you.</h1>
         <p class="feed-page__intro">Keep up with the writers and people you choose. The Coffee &amp; Code feed brings their Bluesky posts together in one place, with controls for what appears in your timeline.</p>
         <div class="feed-page__actions">
@@ -926,7 +916,7 @@ pages.get('/feed', (c) => {
       <p class="feed-page__status" data-feed-status role="status" aria-live="polite">Loading posts…</p>
       <div class="feed-page__posts" data-feed-posts></div>
       <button class="feed-page__more" type="button" data-feed-more hidden>Load more posts</button>
-      <aside class="feed-page__note"><p class="eyebrow">Your choices, your repo</p><p>Your author list is stored in your AT Protocol account. Coffee &amp; Code reads it to build the feed you see.</p></aside>
+      <aside class="feed-page__note"><p>Your author list is stored in your AT Protocol account. Coffee &amp; Code reads it to build the feed you see.</p></aside>
     </section>
     <style>
       .feed-page { margin: 0 auto; max-width: 920px; }
@@ -952,7 +942,6 @@ pages.get('/feed', (c) => {
       .feed-page__more:hover { background: var(--paper-deep); }
       .feed-page__note p:last-child { color: var(--muted); font-size: 17px; line-height: 1.65; margin: 0; max-width: 700px; }
       .feed-page__note { background: var(--paper-deep); margin-top: 34px; padding: 22px 26px; }
-      .feed-page__note .eyebrow { margin: 0 0 8px; }
       @media (max-width: 520px) { .feed-page__intro { font-size: 18px; }.feed-page__post-text, .feed-page__images { margin-left: 0; }.feed-page__note { padding: 18px; } }
     </style>
     <script type="module">
@@ -1061,7 +1050,6 @@ pages.get('/feed', (c) => {
 pages.get('/privacy', (c) => {
   const body = `
     <article class="privacy-page" aria-labelledby="privacy-title">
-      <p class="eyebrow">Your information</p>
       <h1 id="privacy-title">Privacy policy</h1>
       <p class="privacy-page__updated">Last updated October 23, 2026</p>
       <p>Coffee &amp; Code is a publication operated by MBD Company. This policy describes information handled when you visit <a href="https://coffeencode.cc">coffeencode.cc</a>, sign in, or interact with stories.</p>
@@ -1118,7 +1106,6 @@ pages.get('/privacy', (c) => {
 pages.get('/terms', (c) => {
   const body = `
     <article class="privacy-page" aria-labelledby="terms-title">
-      <p class="eyebrow">Using our services</p>
       <h1 id="terms-title">Terms of service</h1>
       <p class="privacy-page__updated">Last updated October 25, 2026</p>
       <p>These terms apply when you use Coffee &amp; Code at <a href="https://coffeencode.cc">coffeencode.cc</a> and, where applicable, an account hosted by the Coffee &amp; Code Personal Data Server (PDS). The services are operated by MBD Company. By using them, you agree to these terms. If you do not agree, do not use the services.</p>

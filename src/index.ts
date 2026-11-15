@@ -49,7 +49,6 @@ app.all('*', (c) => {
 
   const body = `
     <section class="not-found">
-      <p class="eyebrow">404</p>
       <h1>Page not found</h1>
       <p>The page you're looking for doesn't exist. It may have moved or been removed.</p>
       <div class="not-found__actions">

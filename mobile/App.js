@@ -70,7 +70,7 @@ function relativeNotificationTime(value) {
 export default function App() {
   const [feed, setFeed] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [body, setBody] = useState('');
+  const [articleRecord, setArticleRecord] = useState(null);
   const [tab, setTab] = useState('Latest');
   const [query, setQuery] = useState('');
   const [activeAuthor, setActiveAuthor] = useState(null);
@@ -324,7 +324,7 @@ export default function App() {
             const uri = record.value.document;
             const post = postByUri.get(uri) || {};
             const key = storyRecordKey(uri);
-            return { ...post, uri, title: post.title || 'Viewed story', publishedAt: post.publishedAt, viewedAt: record.value.createdAt, markdownUrl: `${API}/documents?uri=${encodeURIComponent(uri)}` };
+            return { ...post, uri, title: post.title || 'Viewed story', publishedAt: post.publishedAt, viewedAt: record.value.createdAt };
           });
         setViewedStories(viewed);
         setBlockedAccounts(blockRecords
@@ -432,7 +432,7 @@ export default function App() {
 
   const openStory = useCallback(async (story) => {
     setSelected(story);
-    setBody('');
+    setArticleRecord(null);
     setError('');
     setArticleLoading(true);
     setComments([]);
@@ -471,22 +471,20 @@ export default function App() {
     try {
       const storyResponse = await fetch(`${API}/documents?uri=${encodeURIComponent(story.uri)}`, { cache: 'no-store' });
       if (!storyResponse.ok) throw new Error(`Story request failed (${storyResponse.status}). Please try again.`);
-      const responseText = await storyResponse.text();
-      if (!responseText.trim()) throw new Error('This story has no readable content.');
-      try {
-        const json = JSON.parse(responseText);
-        if (json.error) throw new Error(json.error);
-        if (Array.isArray(json.documents) && typeof json.content !== 'string') {
-          throw new Error('The article API returned the story list without its content. Deploy the latest Coffee & Code API Worker, then reopen this post.');
-        }
-        if (typeof json.content !== 'string' || !json.content.trim()) {
-          throw new Error('The post metadata loaded, but the API returned no article text. Please try again after the API is updated.');
-        }
-        setBody(json.content);
-      } catch (parseError) {
-        if (parseError instanceof SyntaxError) setBody(responseText);
-        else throw parseError;
+      const json = await storyResponse.json();
+      if (json.error) throw new Error(json.error);
+      const recordValue = json.record?.value;
+      if (!recordValue || typeof recordValue !== 'object') {
+        throw new Error('The document API did not return the source record. Update the API before opening this story.');
       }
+      const content = recordValue.content || recordValue.textContent || recordValue.content?.textContent;
+      const hasContent = (typeof content === 'string' && content.trim())
+        || (content && typeof content === 'object' && (
+          Array.isArray(content.pages) || Array.isArray(content.blocks) || Array.isArray(content.items)
+        ))
+        || Array.isArray(recordValue.blocks);
+      if (!hasContent) throw new Error('This story has no readable structured content.');
+      setArticleRecord(recordValue);
       const [engagementResponse] = await Promise.all([
         fetch(`${API}/reactions?subject=${encodeURIComponent(story.uri)}${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
       ]);
@@ -765,7 +763,7 @@ export default function App() {
     bio: authorProfile?.coffee?.description || authorProfile?.bsky?.description || selected.author.description || '',
   } : null;
   const openAuthorProfile = () => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(articleAuthor.handle || articleAuthor.did)}`);
-  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setBody(''); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
+  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setArticleRecord(null); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
   const tags = [...new Set(allArchiveStories.flatMap((story) => story.tags || []))].sort((a, b) => a.localeCompare(b));
   const visibleStories = allArchiveStories.filter((story) => {
@@ -1069,7 +1067,7 @@ export default function App() {
           <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.disliked) }} accessibilityLabel={`Dislike, ${engagement?.dislikes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('dislike')} style={[styles.reactionButton, engagement?.disliked && styles.reactionSelected]}><SymbolView name="hand.thumbsdown" size={14} tintColor={engagement?.disliked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.disliked ? 'DISLIKED' : 'DISLIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.dislikes ?? 0}</Text></Pressable>
         </View>
         <View style={styles.rule} />
-        {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody markdown={body} />}
+        {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody record={articleRecord} uri={selected.uri} />}
                 {!!articleAuthor && !articleLoading && !error && <>
           <SectionBar title="About the author" />
           <View style={styles.accountCard}>

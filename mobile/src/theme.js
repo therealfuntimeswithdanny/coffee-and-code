@@ -287,6 +287,46 @@ export const styles = StyleSheet.create({
     marginBottom: 22,
     backgroundColor: C.panel,
   },
+  imageAlt: {
+    color: C.muted,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 7,
+  },
+  imageCarousel: {
+    marginBottom: 18,
+  },
+  imageCarouselFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
+  imageCarouselDots: {
+    alignItems: "center",
+    flexDirection: "row",
+    marginLeft: -8,
+  },
+  imageCarouselDotButton: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  imageCarouselDot: {
+    backgroundColor: C.line,
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  imageCarouselDotActive: {
+    backgroundColor: C.ink,
+  },
+  imageCarouselCount: {
+    color: C.muted,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+  },
   inlineLink: { color: C.muted, textDecorationLine: "underline" },
   markdownStrong: { fontWeight: "800" },
   markdownEm: { fontStyle: "italic" },

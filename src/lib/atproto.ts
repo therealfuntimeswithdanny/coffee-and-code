@@ -359,6 +359,16 @@ export async function fetchArticles(
   fallbackDid: string,
   pagination?: ArticlePagination,
 ): Promise<StandardDocument[]> {
+  if (pagination) return fetchArticlesUncached(fallbackPds, fallbackDid, pagination);
+  return getEdgeCachedValue('articles', `${fallbackPds}\n${fallbackDid}`, 120, () =>
+    fetchArticlesUncached(fallbackPds, fallbackDid));
+}
+
+async function fetchArticlesUncached(
+  fallbackPds: string,
+  fallbackDid: string,
+  pagination?: ArticlePagination,
+): Promise<StandardDocument[]> {
   const articles: StandardDocument[] = [];
   const did = fallbackDid;
   const pdsUrl = fallbackPds;
@@ -422,6 +432,7 @@ export async function fetchArticles(
               cover: documentCoverUrl(rec.value, content, did, pdsUrl),
               format,
               mimeType,
+              record: rec.value,
               repoDid: did,
               pdsUrl,
               publicationUri,
@@ -508,6 +519,7 @@ export async function fetchArticles(
             cover: documentCoverUrl(rec.value, content, did, pdsUrl),
             format,
             mimeType,
+            record: rec.value,
             repoDid: did,
             pdsUrl,
             publicationUri: typeof rec.value.site === 'string' ? rec.value.site : undefined,
@@ -579,6 +591,11 @@ export async function fetchArticles(
 }
 
 export async function fetchArticleByUri(uri: string, fallbackPds: string, fallbackDid: string): Promise<StandardDocument | undefined> {
+  return getEdgeCachedValue('article', `${fallbackPds}\n${fallbackDid}\n${uri}`, 300, () =>
+    fetchArticleByUriUncached(uri, fallbackPds, fallbackDid));
+}
+
+async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallbackDid: string): Promise<StandardDocument | undefined> {
   const match = uri.match(/^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/);
   if (!match) return undefined;
   const [, repoDid, rkey] = match;
@@ -625,11 +642,47 @@ export async function fetchArticleByUri(uri: string, fallbackPds: string, fallba
     cover: documentCoverUrl(record.value, content, repoDid, pdsUrl),
     format,
     mimeType,
+    record: record.value,
     repoDid,
     pdsUrl,
     publicationUri,
     author,
   };
+}
+
+async function getEdgeCachedValue<T>(namespace: string, key: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
+  if (typeof caches === 'undefined') return load();
+
+  let cacheKey: Request;
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+    const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    cacheKey = new Request(`https://coffeencode.cc/__worker_cache/${namespace}/${hash}`);
+  } catch (error) {
+    console.error(`Could not create the ${namespace} edge cache key:`, error);
+    return load();
+  }
+
+  try {
+    const cached = await caches.default.match(cacheKey);
+    if (cached) return await cached.json() as T;
+  } catch (error) {
+    console.error(`Could not read the ${namespace} edge cache:`, error);
+  }
+
+  const value = await load();
+  if (value === undefined) return value;
+  try {
+    await caches.default.put(cacheKey, new Response(JSON.stringify(value), {
+      headers: {
+        'Cache-Control': `public, max-age=${ttlSeconds}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    }));
+  } catch (error) {
+    console.error(`Could not write the ${namespace} edge cache:`, error);
+  }
+  return value;
 }
 
 export function searchArticles(articles: StandardDocument[], query: string): StandardDocument[] {

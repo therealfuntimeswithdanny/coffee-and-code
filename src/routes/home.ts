@@ -95,7 +95,7 @@ home.get('/', async (c) => {
         <a class="home-pinned__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
           ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
         </a>
-        <div class="home-pinned__content"><p class="eyebrow">Pinned</p><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${authorByline(post)}</div>
+        <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${authorByline(post)}</div>
       </article>`).join('')}</div>
   </section>` : '';
 
@@ -180,7 +180,6 @@ home.get('/', async (c) => {
 
     <section class="writers-callout" aria-labelledby="writers-callout-title">
       <div>
-        <p class="eyebrow">Contribute</p>
         <h2 id="writers-callout-title">We're looking for writers</h2>
         <p>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</p>
       </div>

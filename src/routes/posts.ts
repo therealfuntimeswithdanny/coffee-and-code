@@ -40,7 +40,6 @@ async function renderPost(
   if (!post) {
     return c.html(renderLayout(c, 'Article Not Found', `
       <section class="not-found">
-        <p class="eyebrow">404</p>
         <h1>Article not found</h1>
         <p>The requested story could not be located. It may have moved or no longer be published.</p>
         <div class="not-found__actions">
@@ -135,7 +134,7 @@ async function renderPost(
       <a class="recommendation-card__image${item.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(item.path)}" aria-label="Read ${escapeHtml(item.title || 'Untitled')}">
         ${item.cover ? `<img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_medium'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
-      <div class="recommendation-card__body"><p class="eyebrow">More to read</p><h3><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></h3>
+      <div class="recommendation-card__body"><h3><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></h3>
         ${item.description ? `<p>${escapeHtml(item.description.length > 125 ? `${item.description.slice(0, 122).trimEnd()}…` : item.description)}</p>` : ''}
         <span class="recommendation-card__date">${formatDate(item.publishedAt)}</span>
       </div>
@@ -231,7 +230,7 @@ async function renderPost(
     ${recommendations.length ? `<section class="recommendations" aria-labelledby="recommendations-title"><div class="section-heading"><span id="recommendations-title">Continue reading</span><a href="/archive">All stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div><div class="recommendations__grid">${recommendationHtml}</div></section>` : ''}
   `;
 
-  return c.html(renderLayout(c, post.title, body, articleMetaTags, undefined, browserRun));
+  return c.html(renderLayout(c, post.title, body, articleMetaTags, undefined, browserRun, { comments: true }));
 }
 
 posts.get('/', (c) => c.redirect('/'));
