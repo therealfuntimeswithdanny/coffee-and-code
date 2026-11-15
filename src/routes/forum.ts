@@ -4,6 +4,7 @@ import sanitizeHtml from 'sanitize-html';
 import { Env } from '../types';
 import { fetchAuthorProfile, getPdsEndpoint, proxyImageUrl, resolveAtprotoIdentifier } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
+import { renderSearchBar } from '../templates/searchBar';
 
 const forum = new Hono<{ Bindings: Env }>();
 const forumCollection = 'cc.coffeencode.forum.config';
@@ -508,23 +509,28 @@ forum.get('/', async (c) => {
       </header>
       ${config.rules.length ? `<aside class="forum-rules"><h2>Community rules</h2><ol>${config.rules.map((rule) => `<li><strong>${escapeHtml(rule.title)}</strong>${rule.description ? `<p>${escapeHtml(rule.description)}</p>` : ''}</li>`).join('')}</ol></aside>` : ''}
       <div class="forum-index-actions"><a class="login-button" href="/forum/create">Start a discussion</a></div>
-      <div class="archive-search forum-search">
-        <form class="search-form" method="get" action="/forum">
-          <label class="archive-search__query">Search discussions
-            <input type="search" name="q" value="${escapeHtml(query)}" placeholder="Title, post text, or topic" class="search-input" autocomplete="off">
-          </label>
-          <div class="archive-search__filters forum-search__filters">
-            <label>Topic
-              <input type="search" name="tag" value="${escapeHtml(queryTag)}" list="forum-filter-tags" maxlength="32" placeholder="All topics">
-              <datalist id="forum-filter-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
-            </label>
-            <label>Order
-              <select name="sort"><option value="new"${sort === 'new' ? ' selected' : ''}>Newest first</option><option value="top"${sort === 'top' ? ' selected' : ''}>Top</option></select>
-            </label>
-          </div>
-          <div class="archive-search__actions"><button type="submit" class="search-button">Apply filters</button><a href="/forum" class="read-link">Clear</a></div>
-        </form>
-      </div>
+      ${renderSearchBar({
+        action: '/forum',
+        label: 'Search discussions',
+        placeholder: 'Search discussions by title, text, or topic',
+        query,
+        className: 'forum-search-bar',
+        selects: [
+          {
+            name: 'tag',
+            label: 'Topic',
+            value: queryTag,
+            options: [{ value: '', label: 'All' }, ...config.tags.map((tag) => ({ value: tag, label: tag }))],
+          },
+          {
+            name: 'sort',
+            label: 'Order',
+            value: sort,
+            defaultValue: 'new',
+            options: [{ value: 'new', label: 'Newest' }, { value: 'top', label: 'Top' }],
+          },
+        ],
+      })}
       <div class="section-heading"><span>Discussions</span><span>${posts.length}</span></div>
       ${postCards ? `<div class="forum-post-list">${postCards}</div>` : '<p class="empty-state">No discussions yet. Be the first to post.</p>'}
       ${posts.length > page * pageLimit ? `<a class="read-link forum-next-page" href="${escapeHtml(`${requestUrl.pathname}?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(queryTag ? { tag: queryTag } : {}), sort, page: String(page + 1) })}`)}">Older discussions <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}

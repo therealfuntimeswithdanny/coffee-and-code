@@ -1,0 +1,41 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.authFeed",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Coffee & Code Feed",
+      "detail": "Manage your Coffee & Code Bluesky feed",
+      "permissions": [
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.comment",
+            "cc.coffeencode.profile",
+            "cc.coffeencode.list"
+          ]
+        },
+        {
+          "type": "permission",
+          "action": [
+            "create",
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.tag.follow",
+            "cc.coffeencode.author.follow",
+            "cc.coffeencode.tag.block",
+            "cc.coffeencode.author.block"
+          ]
+        }
+      ]
+    }
+  }
+}

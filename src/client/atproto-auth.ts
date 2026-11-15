@@ -5,6 +5,15 @@ import {
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
 import rawClientMetadata from '../../media/oauth-client-metadata.json';
+import {
+  USER_PROFILE_COLLECTION,
+  USER_PROFILE_RKEY,
+  buildUserProfileRecord,
+  isMissingRecordResponse,
+  readUserProfileFields,
+  validateUserProfileFields,
+  type UserProfileFields,
+} from '../lib/userProfile';
 
 type ForumImageInput = { file: File; alt: string };
 type ForumStrongRef = { uri: string; cid: string };
@@ -70,6 +79,8 @@ const notificationBadges = document.querySelectorAll<HTMLElement>('[data-notific
 let signupInviteCode: string | undefined;
 let accountAuthorRecord: Record<string, unknown> | undefined;
 let accountAuthorDid: string | undefined;
+let accountUserProfileRecord: Record<string, unknown> | undefined;
+let accountUserProfileDid: string | undefined;
 const blockCollection = 'cc.coffeencode.user.block';
 type UserBlockRecord = { uri: string; rkey: string; subject: string; createdAt: string };
 let blockedRecords: UserBlockRecord[] = [];
@@ -194,27 +205,8 @@ function renderAccount() {
   if (accountPage) {
     if (signedOutAccount) signedOutAccount.hidden = Boolean(session);
     if (session) {
-    const did = session.did;
-    const profileName = accountPage.querySelector<HTMLElement>('[data-profile-name]');
-    const profileHandle = accountPage.querySelector<HTMLElement>('[data-profile-handle]');
-    const profileBio = accountPage.querySelector<HTMLElement>('[data-profile-bio]');
-    const profileAvatar = accountPage.querySelector<HTMLImageElement>('[data-profile-avatar]');
-    const profilePlaceholder = accountPage.querySelector<HTMLElement>('[data-profile-placeholder]');
-    fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
-      .then((profile: { avatar?: string; displayName?: string; handle?: string; description?: string }) => {
-        if (session?.did !== did) return;
-        if (profileName) profileName.textContent = profile.displayName || profile.handle || 'Your account';
-        if (profileHandle) profileHandle.textContent = profile.handle ? `@${profile.handle}` : '';
-        if (profileBio) profileBio.textContent = profile.description || '';
-        if (profileAvatar && profile.avatar) {
-          profileAvatar.src = profile.avatar;
-          profileAvatar.alt = `${profile.displayName || profile.handle || 'Account'} profile picture`;
-          profileAvatar.hidden = false;
-          if (profilePlaceholder) profilePlaceholder.hidden = true;
-        }
-      })
-      .catch(() => { if (profileName) profileName.textContent = 'Your account'; });
+      const did = session.did;
+      void loadAccountProfile(did);
       void loadAccountViewedPosts(did);
       void loadAccountSavedPosts(did);
       void loadAuthorProfileEditor(did);
@@ -373,6 +365,136 @@ async function renderBlockManager(did: string) {
   }
 }
 
+type BlueskyProfileSummary = { avatar?: string; displayName?: string; handle?: string; description?: string };
+
+function renderAccountProfileCard(bluesky: BlueskyProfileSummary, custom: UserProfileFields) {
+  if (!accountPage) return;
+  const profileName = accountPage.querySelector<HTMLElement>('[data-profile-name]');
+  const profileHandle = accountPage.querySelector<HTMLElement>('[data-profile-handle]');
+  const profilePronouns = accountPage.querySelector<HTMLElement>('[data-profile-pronouns]');
+  const profileBio = accountPage.querySelector<HTMLElement>('[data-profile-bio]');
+  const profileAvatar = accountPage.querySelector<HTMLImageElement>('[data-profile-avatar]');
+  const profilePlaceholder = accountPage.querySelector<HTMLElement>('[data-profile-placeholder]');
+  const name = custom.displayName || bluesky.displayName || bluesky.handle || 'Your account';
+  if (profileName) profileName.textContent = name;
+  if (profileHandle) profileHandle.textContent = bluesky.handle ? `@${bluesky.handle}` : '';
+  if (profilePronouns) {
+    profilePronouns.textContent = custom.pronouns || '';
+    profilePronouns.hidden = !custom.pronouns;
+  }
+  if (profileBio) profileBio.textContent = custom.description || bluesky.description || '';
+  if (profileAvatar && bluesky.avatar) {
+    profileAvatar.src = bluesky.avatar;
+    profileAvatar.alt = `${name} profile picture`;
+    profileAvatar.hidden = false;
+    if (profilePlaceholder) profilePlaceholder.hidden = true;
+  }
+}
+
+async function fetchUserProfileRecord(did: string): Promise<Record<string, unknown> | undefined> {
+  const activeSession = requireSession();
+  const query = new URLSearchParams({ repo: did, collection: USER_PROFILE_COLLECTION, rkey: USER_PROFILE_RKEY });
+  const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+  if (response.ok) {
+    const result = await response.json() as { value?: Record<string, unknown> };
+    if (result.value && result.value.$type !== USER_PROFILE_COLLECTION) {
+      throw new Error('Your Coffee & Code profile record has an unexpected record type.');
+    }
+    return result.value;
+  }
+  const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+  if (isMissingRecordResponse(response.status, payload)) return undefined;
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('Your account needs updated profile permissions. Sign out, then sign in again and approve the requested permissions.');
+  }
+  throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Could not load your profile (${response.status}).`);
+}
+
+async function loadAccountProfile(did: string) {
+  if (!accountPage) return;
+  const form = accountPage.querySelector<HTMLFormElement>('[data-user-profile-form]');
+  const editButton = accountPage.querySelector<HTMLButtonElement>('[data-edit-user-profile]');
+  const cancelButton = accountPage.querySelector<HTMLButtonElement>('[data-cancel-user-profile]');
+  const status = accountPage.querySelector<HTMLElement>('[data-user-profile-status]');
+  const bluesky: BlueskyProfileSummary = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
+    .then((response): Promise<BlueskyProfileSummary> | BlueskyProfileSummary => response.ok ? response.json() : {})
+    .catch(() => ({} as BlueskyProfileSummary));
+  if (session?.did !== did) return;
+  renderAccountProfileCard(bluesky, {});
+
+  let record: Record<string, unknown> | undefined;
+  try {
+    record = await fetchUserProfileRecord(did);
+  } catch (error) {
+    if (session?.did !== did) return;
+    if (status) status.textContent = errorMessage(error);
+    return;
+  }
+  if (session?.did !== did) return;
+  accountUserProfileRecord = record;
+  accountUserProfileDid = did;
+  renderAccountProfileCard(bluesky, readUserProfileFields(record));
+  if (!form || !editButton) return;
+
+  const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement;
+  const closeEditor = () => {
+    form.hidden = true;
+    editButton.hidden = false;
+    editButton.focus();
+  };
+  editButton.disabled = false;
+  editButton.onclick = () => {
+    if (accountUserProfileDid !== session?.did) return;
+    const current = readUserProfileFields(accountUserProfileRecord);
+    field('displayName').value = current.displayName || bluesky.displayName || '';
+    field('pronouns').value = current.pronouns || '';
+    field('description').value = current.description || bluesky.description || '';
+    if (status) status.textContent = '';
+    form.hidden = false;
+    editButton.hidden = true;
+    field('displayName').focus();
+  };
+  if (cancelButton) cancelButton.onclick = () => {
+    if (status) status.textContent = '';
+    closeEditor();
+  };
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (accountUserProfileDid !== session?.did) return;
+    const fields: UserProfileFields = {
+      displayName: field('displayName').value,
+      pronouns: field('pronouns').value,
+      description: field('description').value,
+    };
+    const invalid = validateUserProfileFields(fields);
+    if (invalid) {
+      if (status) status.textContent = invalid;
+      return;
+    }
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    if (status) status.textContent = 'Saving your profile…';
+    try {
+      const next = buildUserProfileRecord(accountUserProfileRecord, fields);
+      await repoRequest('com.atproto.repo.putRecord', {
+        repo: did,
+        collection: USER_PROFILE_COLLECTION,
+        rkey: USER_PROFILE_RKEY,
+        record: next,
+      });
+      if (session?.did !== did) return;
+      accountUserProfileRecord = next;
+      renderAccountProfileCard(bluesky, readUserProfileFields(next));
+      if (status) status.textContent = 'Profile saved.';
+      closeEditor();
+    } catch (error) {
+      if (status) status.textContent = errorMessage(error);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  };
+}
+
 async function loadAuthorProfileEditor(did: string) {
   if (!accountPage) return;
   const section = accountPage.querySelector<HTMLElement>('[data-author-settings]');
@@ -488,6 +610,8 @@ async function loadAuthorProfileEditor(did: string) {
       .catch(() => ({}));
     previewHandle.textContent = publicProfile.handle ? `@${publicProfile.handle}` : `@${did}`;
     section.hidden = false;
+    const authorSettingsLink = accountPage.querySelector<HTMLElement>('[data-author-settings-link]');
+    if (authorSettingsLink) authorSettingsLink.hidden = false;
     editButton.hidden = false;
     editButton.onclick = () => {
       if (!accountAuthorRecord || accountAuthorDid !== session?.did) return;
@@ -777,7 +901,11 @@ async function loadAccountSavedPosts(did: string) {
   if (!accountPage) return;
   const list = accountPage.querySelector<HTMLUListElement>('[data-saved-posts]');
   const status = accountPage.querySelector<HTMLElement>('[data-saved-status]');
+  const count = accountPage.querySelector<HTMLElement>('[data-saved-count]');
   if (!list || !status) return;
+  const renderCount = () => {
+    if (count) count.textContent = list.children.length ? `${list.children.length} saved` : '';
+  };
   try {
     const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.save', limit: '100' });
     const [recordsResponse, postsResponse] = await Promise.all([
@@ -825,18 +953,23 @@ async function loadAccountSavedPosts(did: string) {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'account-page__remove-save';
-      remove.textContent = 'Remove';
-      remove.setAttribute('aria-label', `Remove ${link.textContent} from your reading list`);
+      const removeIcon = document.createElement('i');
+      removeIcon.className = 'fa-solid fa-trash-can';
+      removeIcon.setAttribute('aria-hidden', 'true');
+      remove.append(removeIcon, document.createTextNode(' Remove'));
+      const savedTitle = post?.title || 'Saved story';
+      remove.setAttribute('aria-label', `Remove ${savedTitle} from your reading list`);
       remove.addEventListener('click', async () => {
         if (session?.did !== did) return;
         remove.disabled = true;
         try {
           await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: 'cc.coffeencode.save', rkey });
           item.remove();
-          if (!list.children.length) {
-            status.hidden = false;
-            status.textContent = 'Stories you save will appear here.';
-          }
+          renderCount();
+          status.hidden = false;
+          status.textContent = list.children.length
+            ? `Removed “${savedTitle}” from your reading list.`
+            : 'Stories you save will appear here.';
         } catch (error) {
           status.hidden = false;
           status.textContent = errorMessage(error);
@@ -847,6 +980,7 @@ async function loadAccountSavedPosts(did: string) {
       fragment.append(item);
     });
     list.replaceChildren(fragment);
+    renderCount();
     status.hidden = true;
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : 'Could not load your reading list.';

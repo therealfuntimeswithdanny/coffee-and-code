@@ -1,4 +1,5 @@
 import { AuthorProfile, StandardDocument } from '../types';
+import { USER_PROFILE_COLLECTION, USER_PROFILE_RKEY, readUserProfileFields, type UserProfileFields } from './userProfile';
 
 const imageCdnUrl = 'https://cdn.coffeencode.cc';
 
@@ -300,6 +301,14 @@ export async function fetchAuthorProfile(did: string, fallbackPds: string): Prom
     console.error('Error fetching author profile:', error);
     return undefined;
   }
+}
+
+/** Reads the reader profile (cc.coffeencode.profile/self) fields, if the account has one. */
+export async function fetchUserProfileFields(did: string, pdsUrl: string): Promise<UserProfileFields> {
+  const record = await fetchRecord(pdsUrl, did, USER_PROFILE_COLLECTION, USER_PROFILE_RKEY);
+  return isRecord(record?.value) && record.value.$type === USER_PROFILE_COLLECTION
+    ? readUserProfileFields(record.value)
+    : {};
 }
 
 export async function resolveAtprotoIdentifier(identifier: string): Promise<string | undefined> {

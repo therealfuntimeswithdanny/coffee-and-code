@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A block relationship against another Coffee & Code account.",
+      "description": "Record declaring a 'block' relationship against another account.",
       "key": "tid",
       "record": {
         "type": "object",

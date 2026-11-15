@@ -35,7 +35,7 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
   const selected = pages.find((item) => item.id === page);
   return <ScrollView contentContainerStyle={styles.content}>
     <Pressable accessibilityRole="button" onPress={selected ? initialPage ? onBack : () => setPage(null) : onBack} style={styles.backLink}>
-      <Text style={styles.action}>‹  {selected ? initialPage ? 'Back to Settings' : 'Back to Settings' : 'Back to Settings'}</Text>
+      <Text style={styles.action}>‹  Back to Settings</Text>
     </Pressable>
     <Text style={[styles.pageTitle, { marginTop: 0 }]}>{selected?.title || 'Settings'}</Text>
     <Text style={styles.pageSubtitle}>{selected?.subtitle || 'Manage your account and app settings'}</Text>
@@ -68,6 +68,9 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
           <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => onUnblock(blocked.did)} style={styles.accountRemoveButton}><Text style={styles.action}>UNBLOCK</Text></Pressable>
         </View>) : <Text style={styles.emptyText}>You have not blocked any accounts</Text>}
       </View>}
+      {page === 'ads' && <View style={styles.settingsCard}>
+        <Text style={styles.accountDescription}>Ads and marketing preferences will appear here.</Text>
+      </View>}
       {page === 'storage' && <View style={styles.settingsCard}>
         <Text style={styles.accountDescription}>Images are kept on this device for 3 hours, up to 500 MB, so they load instantly. Clearing the cache only removes downloaded copies.</Text>
         <Text style={styles.settingsMetric}>{formatBytes(cacheBytes)}<Text style={styles.meta}>  OF {formatBytes(maxCacheBytes)} USED</Text></Text>
@@ -80,13 +83,13 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.accountDescription}>These terms apply when you use Coffee & Code, website or iOS app, or an account hosted by the Coffee & Code Personal Data Server (PDS).  By this, you agree to these terms. If you do not agree, please do not use the service and if you created an account on our PDS please delete it.</Text>
         <Text style={styles.accountDescription}>You may read the publication without an account. Sign-in uses an AT Protocol account and the PDS that hosts it. If you create or use an account hosted by Coffee & Code, you are responsible for keeping your sign-in credentials secure and for activity performed through your account. Do not share credentials or attempt to access another person’s account.</Text>
         <Text style={styles.accountDescription}>When you sign in with an account hosted by another provider, that provider’s terms and policies also apply. Coffee & Code does not control external PDS providers, Bluesky, or other independent AT Protocol services.</Text>
-        <Text style={styles.accountDescription}>You retain responsibility for content and records you create. When you use account features, the site may write likes, dislikes, views, saves, recommendations, comments, replies, and related records to your AT Protocol repository as described in the permissions shown by your account provider. These records are public, and may be copied, indexed, or displayed by other services on the network. Do not submit content or personal information that you do not want to be public.</Text>   
+        <Text style={styles.accountDescription}>You retain responsibility for content and records you create. When you use account features, the site may write likes, dislikes, views, saves, recommendations, comments, replies, and related records to your AT Protocol repository as described in the permissions shown by your account provider. These records are public, and may be copied, indexed, or displayed by other services on the network. Do not submit content or personal information that you do not want to be public.</Text>
         <Text style={styles.accountDescription}>Coffee & Code is free for everyone and is inexpensive to run, this does not mean you can missuse/abuse this service. This includes attempting to disrupt, damage, or gain unauthorized access to the site, PDS, accounts, or network; interfering with another person’s use; sending malicious code or spam; or using the services for unlawful, deceptive, abusive, or rights-infringing activity.</Text>
         <Text style={styles.accountDescription}>The site and PDS are provided as available. Features may change, be interrupted, or be discontinued. We may suspend or limit access when reasonably necessary to protect users, the services, or the network, to address misuse or security issues, or to comply with law. We will make reasonable efforts to provide notice where practical.</Text>
         <Text style={styles.accountDescription}>The AT Protocol is a distributed network. Records removed from your repository may remain in copies held by other services, and Coffee & Code cannot control how independent services process or display them. Links to or integrations with third-party services are provided for convenience and are subject to those services’ own terms and policies.</Text>
         <Text style={styles.accountDescription}>To the extent permitted by applicable law, the services are provided without warranties of any kind. The Coffee & Code publication is not responsible for the acts or services of independent PDS providers or other network participants. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited.</Text>
         <Text style={styles.accountProfileName}>Privacy Policy</Text>
-        <Text style={styles.accountDescription}>Coffee & Code does and will never share, sell or rent your personal data.</Text>
+
       </View>}
       {page === 'about' && <View style={styles.settingsCard}>
         <Text style={styles.accountProfileName}>Coffee & Code</Text>

@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A comment on a Coffee & Code story, optionally replying to another comment.",
+      "description": "A comment on a Coffee & Code story or to another comment.",
       "key": "tid",
       "record": {
         "type": "object",

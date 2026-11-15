@@ -586,9 +586,6 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     .forum-rules p { color: var(--muted); margin: 4px 0 0; }
     .forum-filter { align-items: end; display: flex; flex-wrap: wrap; gap: 14px; margin: 28px 0 18px; }
     .forum-index-actions { display: flex; justify-content: flex-end; margin: 26px 0 14px; }
-    .forum-search { margin-bottom: 30px; }
-    .forum-search__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .forum-search .archive-search__filters input { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; padding: 9px 12px; width: 100%; }
     .forum-page label { color: var(--muted); display: grid; font-size: 14px; gap: 5px; }
     .forum-page input, .forum-page textarea, .forum-page select { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink); font: inherit; max-width: 100%; padding: 9px 10px; }
     .forum-page input:focus, .forum-page textarea:focus, .forum-page select:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -647,11 +644,77 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
     @media (max-width: 760px) {
       .forum-filter { align-items: stretch; flex-direction: column; }
       .forum-filter > * { width: 100%; }
-      .forum-search__filters { grid-template-columns: 1fr; }
       .forum-editor { padding: 14px; }
       .forum-post-card__byline time { margin-left: 0; }
       .forum-reply { margin-left: calc(min(var(--reply-depth), 5) * 8px); padding-left: 10px; }
       .forum-composer, .forum-rules { padding: 14px; }
+    }
+
+    .visually-hidden { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+    .search-bar { display: grid; gap: 12px; margin: 0 0 28px; }
+    .search-bar__field { align-items: center; background: var(--paper-deep); border: 1px solid var(--line-strong); border-radius: 3px; display: flex; min-height: 50px; padding-left: 14px; }
+    .search-bar__field:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+    .search-bar__icon { color: var(--muted); font-size: 15px; }
+    .search-bar__field input { background: transparent; border: 0; color: var(--ink); flex: 1 1 auto; font: inherit; font-size: 17px; min-width: 0; padding: 12px; }
+    .search-bar__field input:focus { outline: none; }
+    .search-bar__field input::placeholder { color: var(--muted); opacity: .8; }
+    .search-bar__submit { align-self: stretch; background: var(--accent); border: 0; color: var(--paper); cursor: pointer; font: 700 13px 'Source Sans 3', sans-serif; letter-spacing: .06em; padding: 0 20px; text-transform: uppercase; transition: background 160ms, color 160ms; }
+    .search-bar__submit:hover { background: var(--ink); }
+    .search-bar__filters { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+    .search-bar .search-bar__filter { align-items: center; background: transparent; border: 1px solid var(--line); border-radius: 999px; display: inline-flex; gap: 2px; padding-left: 12px; position: relative; }
+    .search-bar .search-bar__filter.is-active, .search-bar .search-bar__toggle.is-active { border-color: var(--accent); background: rgba(178, 172, 136, .12); }
+    .search-bar .search-bar__filter:focus-within, .search-bar .search-bar__toggle:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+    .search-bar .search-bar__filter label { color: var(--muted); display: inline; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .search-bar .search-bar__filter select { appearance: none; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b2ac88'/%3E%3C/svg%3E") no-repeat right 12px center; border: 0; color: var(--ink); cursor: pointer; font: 600 14px 'Source Sans 3', sans-serif; min-height: 36px; padding: 6px 30px 6px 6px; }
+    .search-bar .search-bar__filter select:focus { outline: none; }
+    .search-bar .search-bar__filter option { background: var(--paper-deep); color: var(--ink); }
+    .search-bar .search-bar__toggle { align-items: center; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); cursor: pointer; display: inline-flex; font-size: 14px; font-weight: 600; gap: 8px; min-height: 38px; padding: 0 14px; }
+    .search-bar__toggle input { accent-color: var(--accent); height: 16px; margin: 0; width: 16px; }
+    .search-bar__clear { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .04em; margin-left: 4px; text-transform: uppercase; }
+    .search-bar__clear:hover { color: var(--ink); }
+    @media (max-width: 520px) {
+      .search-bar__submit { padding: 0 14px; }
+      .search-bar__filters { display: grid; grid-template-columns: 1fr 1fr; }
+      .search-bar .search-bar__filter { border-radius: 3px; justify-content: space-between; }
+      .search-bar .search-bar__filter select { min-height: 44px; }
+      .search-bar .search-bar__toggle { border-radius: 3px; min-height: 46px; }
+      .search-bar__clear { grid-column: 1 / -1; margin: 4px 0 0; }
+    }
+    .account-layout { align-items: start; display: grid; gap: clamp(24px, 3vw, 40px); grid-template-columns: minmax(240px, 300px) minmax(0, 1.4fr) minmax(260px, 1fr); }
+    .account-layout__column { display: grid; gap: 24px; min-width: 0; }
+    .account-layout__sidebar { position: sticky; top: 96px; }
+    .account-card { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 4px; padding: 20px; }
+    .account-card h2 { font-size: 22px; margin: 0 0 12px; }
+    .account-card__header { align-items: baseline; display: flex; gap: 12px; justify-content: space-between; margin-bottom: 12px; }
+    .account-card__header h2 { margin: 0; }
+    .account-card__count { color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .account-page .account-card.account-page__viewed, .account-page .account-card.account-author-settings { margin: 0; padding: 20px; }
+    .account-page .account-card .account-page__profile { align-items: flex-start; flex-direction: column; gap: 12px; margin: 0; }
+    .account-page__profile-meta { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+    .account-page__profile-meta[hidden] { display: none; }
+    .account-page__actions { display: grid; gap: 10px; margin-top: 18px; }
+    .account-page__actions .auth-signout { width: 100%; }
+    .account-page__section-nav { border-top: 1px solid var(--line); display: grid; gap: 2px; margin-top: 18px; padding-top: 14px; }
+    .account-page__section-nav a { color: var(--muted); font-size: 14px; font-weight: 700; letter-spacing: .04em; padding: 6px 0; text-transform: uppercase; }
+    .account-page__section-nav a:hover { color: var(--accent); }
+    .account-page__section-nav a[hidden] { display: none; }
+    .account-profile-form { display: grid; gap: 12px; margin-top: 16px; }
+    .account-profile-form[hidden] { display: none; }
+    .account-profile-form label { color: var(--muted); display: grid; font-size: 13px; font-weight: 600; gap: 6px; }
+    .account-profile-form input, .account-profile-form textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); font: 16px 'Source Sans 3', sans-serif; padding: 10px 12px; width: 100%; }
+    .account-profile-form__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .account-profile-form__status { color: var(--muted); font-size: 14px; margin: 0; min-height: 1em; }
+    .account-page__remove-save { align-items: center; display: inline-flex; gap: 6px; }
+    .account-page__wide { grid-column: 1 / -1; }
+    @media (max-width: 1100px) {
+      .account-layout { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+      .account-layout__secondary { grid-column: 2; }
+    }
+    @media (max-width: 760px) {
+      .account-layout { grid-template-columns: 1fr; }
+      .account-layout__sidebar { position: static; }
+      .account-layout__secondary { grid-column: auto; }
+      .account-page .account-card .account-page__profile { align-items: center; flex-direction: row; }
     }
   </style>
 </head>
@@ -668,6 +731,15 @@ export function renderLayout(c: Context<{ Bindings: Env }>, title: string, conte
   <search-modal-snippet class="search-modal" api-url="https://search.coffeencode.cc" placeholder="Search Coffee &amp; Code" max-results="25" max-render-results="7" show-url="true" show-date="true"></search-modal-snippet>
   <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
   <footer class="site-footer"><div class="footer-inner"><div class="footer-brand-block"><p class="footer-brand">${pubName}</p><p class="footer-tagline">${pubDescription}</p><div class="footer-social"><a href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a><a href="/rss.xml" aria-label="RSS feed" title="RSS feed"><i class="fas fa-rss" aria-hidden="true"></i></a><a href="/sitemap.xml" aria-label="Sitemap" title="Sitemap"><i class="fas fa-sitemap" aria-hidden="true"></i></a></div><nav class="footer-legal" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav></div><p class="footer-meta">© ${new Date().getFullYear()} ${pubName} an MBD Company</p></div></footer>
+  <script>
+    // Search bar drop-downs apply as soon as they change.
+    document.querySelectorAll('form.search-bar [data-search-auto-submit]').forEach((control) => {
+      control.addEventListener('change', () => {
+        const form = control.form;
+        if (form) form.requestSubmit ? form.requestSubmit() : form.submit();
+      });
+    });
+  </script>
   <script>
     // Load view counts without blocking the page.
     const viewCounterEndpoint = 'https://reads.coffeencode.cc/';

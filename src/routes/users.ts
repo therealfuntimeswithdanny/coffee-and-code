@@ -3,6 +3,7 @@ import { Env, StandardDocument } from '../types';
 import {
   fetchArticles,
   fetchAuthorProfile,
+  fetchUserProfileFields,
   getPdsEndpoint,
   proxyAvatarUrl,
   proxyImageUrl,
@@ -160,7 +161,10 @@ users.get('/:identifier', async (c) => {
   }
   const articlesByUri = new Map(articles.map((article) => [article.uri, article]));
   const authorArticle = articles.find((article) => article.author?.did.toLowerCase() === did.toLowerCase());
-  const name = profile.displayName || profile.handle;
+  const readerProfile = await fetchUserProfileFields(did, pds);
+  const name = readerProfile.displayName || profile.displayName || profile.handle;
+  const description = readerProfile.description || profile.description;
+  const pronouns = readerProfile.pronouns || profile.pronouns;
   const avatar = profile.avatar ? proxyAvatarUrl(profile.avatar) : '';
   const banner = profile.banner ? proxyImageUrl(profile.banner, pds, 'feed_fullsize') : '';
   const commentItems = comments.map((comment) => {
@@ -197,8 +201,8 @@ users.get('/:identifier', async (c) => {
         ${authorArticle?.author ? `<a class="user-page__bluesky" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
         <a class="user-page__bluesky" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </header>
-      ${profile.description ? `<p class="user-page__description">${escapeHtml(profile.description)}</p>` : ''}
-      ${profile.pronouns ? `<div class="user-page__details"><span>${escapeHtml(profile.pronouns)}</span></div>` : ''}
+      ${description ? `<p class="user-page__description">${escapeHtml(description)}</p>` : ''}
+      ${pronouns ? `<div class="user-page__details"><span>${escapeHtml(pronouns)}</span></div>` : ''}
       <section class="user-page__activity" aria-labelledby="user-forum-title">
         <div class="section-heading"><span id="user-forum-title">Forum posts</span><span>${forumPosts.length}</span></div>
         ${forumPosts.length === 100 ? '<p class="user-page__comment-limit">Showing the latest 100 forum posts.</p>' : ''}
@@ -211,9 +215,9 @@ users.get('/:identifier', async (c) => {
       </section>
     </section>`;
   const metaTags = `
-    <meta name="description" content="${escapeHtml(profile.description || `Public profile and comments by ${name} on Coffee and Code.`)}">
+    <meta name="description" content="${escapeHtml(description || `Public profile and comments by ${name} on Coffee and Code.`)}">
     <meta property="og:title" content="${escapeHtml(name)} | Coffee and Code">
-    <meta property="og:description" content="${escapeHtml(profile.description || `Comments by ${name} on Coffee and Code.`)}">
+    <meta property="og:description" content="${escapeHtml(description || `Comments by ${name} on Coffee and Code.`)}">
     <meta property="og:type" content="profile">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     ${avatar ? `<meta property="og:image" content="${escapeHtml(avatar)}">` : `<meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">`}

@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.interact.save",
+  "defs": {
+    "main": {
+      "key": "tid",
+      "type": "record",
+      "record": {
+        "type": "object",
+        "required": [
+          "document",
+          "createdAt"
+        ],
+        "properties": {
+          "document": {
+            "type": "string",
+            "format": "at-uri"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      },
+      "description": "A save record of a Coffee & Code Post."
+    }
+  }
+}
