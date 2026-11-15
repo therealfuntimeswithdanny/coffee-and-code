@@ -5,7 +5,7 @@ const SERVICE_NAME = "atCDN for Bluesky & the AT Protocol by the BlueAT Network"
 const PLC_DIRECTORIES = ["https://plc.eurosky.network", "https://plc.directory"];
 const DID_TTL_MS = 86_400_000; // 24 hours
 const NEGATIVE_TTL_S = 60;     // remember missing blobs briefly
-const IMG_CACHE_VERSION = "quality-92";
+const IMG_CACHE_VERSION = "original-feed-thumbnails-v1";
 const PDS_TIMEOUT_MS = 10_000;
 const PLC_TIMEOUT_MS = 5_000;
 
@@ -58,21 +58,17 @@ const PRESETS = {
 
 // Default transforms for /img/{type}/ (matching cdn.bsky.app behavior)
 const IMG_TYPES = {
-  avatar:           { width: 1000, height: 1000, fit: "inside" },
   avatar_thumbnail: { width: 64,   height: 64,   fit: "cover"  },
   avatar_thumb:     { width: 128,  height: 128,  fit: "cover"  },
   avatar_small:     { width: 240,  height: 240,  fit: "cover"  },
   avatar_medium:    { width: 400,  height: 400,  fit: "cover"  },
   avatar_large:     { width: 640,  height: 640,  fit: "cover"  },
-  avatar_fullsize:  { width: 1000, height: 1000, fit: "inside" },
 
-  banner:           { width: 3000, height: 1000, fit: "inside" },
   banner_thumbnail: { width: 300,  height: 100,  fit: "cover"  },
   banner_thumb:     { width: 600,  height: 200,  fit: "cover"  },
   banner_small:     { width: 900,  height: 300,  fit: "cover"  },
   banner_medium:    { width: 1200, height: 400,  fit: "cover"  },
   banner_large:     { width: 1500, height: 500,  fit: "cover"  },
-  banner_fullsize:  { width: 3000, height: 1000, fit: "inside" },
 
   feed_thumbnail:   { width: 200,  height: 200,  fit: "cover"  },
   feed_thumb:       { width: 400,  height: 400,  fit: "cover"  },
@@ -80,7 +76,6 @@ const IMG_TYPES = {
   feed_small:       { width: 600,  height: 600,  fit: "cover"  },
   feed_medium:      { width: 800,  height: 800,  fit: "cover"  },
   feed_large:       { width: 1200, height: 1200, fit: "cover"  },
-  feed_fullsize:    { width: 2000, height: 2000, fit: "inside" },
 
   thumb:  { width: 150,  height: 150,  fit: "cover"  },
   small:  { width: 320,  height: 320,  fit: "inside" },
@@ -94,6 +89,15 @@ const IMG_TYPES = {
   wide_medium: { width: 1280, height: 720, fit: "cover" },
   wide_large:  { width: 1920, height: 1080, fit: "cover" },
 };
+
+const IMG_ORIGINAL_TYPES = new Set([
+  "avatar",
+  "avatar_fullsize",
+  "banner",
+  "banner_fullsize",
+  "feed_thumbnail",
+  "feed_fullsize",
+]);
 
 const LANDING_PAGE = `<!DOCTYPE html>
 <html>
@@ -135,18 +139,18 @@ const LANDING_PAGE = `<!DOCTYPE html>
             <option value="avatar_small">avatar_small (240x240)</option>
             <option value="avatar_medium">avatar_medium (400x400)</option>
             <option value="avatar_large">avatar_large (640x640)</option>
-            <option value="avatar_fullsize">avatar_fullsize (1000x1000)</option>
+            <option value="avatar_fullsize">avatar_fullsize (original size)</option>
             <option value="banner_thumb">banner_thumb (600x200)</option>
             <option value="banner_small">banner_small (900x300)</option>
             <option value="banner_medium">banner_medium (1200x400)</option>
             <option value="banner_large">banner_large (1500x500)</option>
-            <option value="banner_fullsize">banner_fullsize (3000x1000)</option>
-            <option value="feed_thumbnail">feed_thumbnail (200x200)</option>
+            <option value="banner_fullsize">banner_fullsize (original size)</option>
+            <option value="feed_thumbnail">feed_thumbnail (original size)</option>
             <option value="feed_thumb">feed_thumb (400x400)</option>
             <option value="feed_small">feed_small (600x600)</option>
             <option value="feed_medium">feed_medium (800x800)</option>
             <option value="feed_large">feed_large (1200x1200)</option>
-            <option value="feed_fullsize" selected>feed_fullsize (2000x2000)</option>
+            <option value="feed_fullsize" selected>feed_fullsize (original size)</option>
         </select>
         Ext:
         <select id="img-ext">
@@ -573,7 +577,8 @@ function extractPds(doc) {
 function parseRoute(url) {
   const img = url.pathname.match(IMG_PATH_RE);
   if (img) {
-    const transform = parseTransformParams(url.searchParams) || IMG_TYPES[img[1]] || null;
+    const transform = parseTransformParams(url.searchParams)
+      || (IMG_ORIGINAL_TYPES.has(img[1]) ? null : IMG_TYPES[img[1]] || null);
     return {
       format: "img",
       type: img[1],
