@@ -96,7 +96,7 @@ export async function getCachedUri(uri) {
     if (!inflight.has(key)) inflight.set(key, download(uri, key).finally(() => inflight.delete(key)));
     return await inflight.get(key);
   } catch {
-    return uriget;
+    return uri;
   }
 }
 

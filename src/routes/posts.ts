@@ -128,11 +128,14 @@ async function renderPost(
   const ogImage = post.cover
     ? proxyImageUrl(post.cover, pageOrigin)
     : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}?browserRun=true`)}`;
-  const proxiedCoverImage = post.cover ? escapeHtml(proxyImageUrl(post.cover, pds)) : undefined;
+  const proxiedCoverImage = post.cover ? escapeHtml(proxyImageUrl(post.cover, pds, 'wide_medium')) : undefined;
+  const proxiedCoverSrcSet = post.cover
+    ? `${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_small'))} 640w, ${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_medium'))} 1280w`
+    : undefined;
   const recommendationHtml = recommendations.map((item) => `
     <article class="recommendation-card">
       <a class="recommendation-card__image${item.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(item.path)}" aria-label="Read ${escapeHtml(item.title || 'Untitled')}">
-        ${item.cover ? `<img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_medium'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+        ${item.cover ? `<img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_small'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
       </a>
       <div class="recommendation-card__body"><h3><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></h3>
         ${item.description ? `<p>${escapeHtml(item.description.length > 125 ? `${item.description.slice(0, 122).trimEnd()}…` : item.description)}</p>` : ''}
@@ -148,7 +151,7 @@ async function renderPost(
   const railAuthors = [...authorsByDid.values()]
     .sort((a, b) => (a.displayName || a.handle).localeCompare(b.displayName || b.handle))
     .slice(0, 6)
-    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.handle)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
+    .map((author) => `<li><a class="article-rail__author" href="/author/${encodeURIComponent(author.handle)}">${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar, 'avatar_thumb'))}" alt="" width="36" height="36" loading="lazy">` : '<span class="article-rail__author-placeholder" aria-hidden="true"></span>'}<span><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(author.displayName || author.handle)}</strong><small>@${escapeHtml(author.handle)}</small></span></a></li>`)
     .join('');
   const structuredData = {
     '@context': 'https://schema.org',
@@ -216,7 +219,7 @@ async function renderPost(
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by <span data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</span> on ${formatDate(post.publishedAt)}</span></a>` : ''}
         ${tagLinks ? `<nav class="article-tags" aria-label="Article tags">${tagLinks}</nav>` : ''}
       </header>
-      ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" alt="" class="story-image" width="1200" height="667" fetchpriority="high" decoding="async"></figure>` : ''}
+      ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" srcset="${proxiedCoverSrcSet}" alt="" class="story-image" width="1200" height="667" sizes="(max-width: 860px) 100vw, 820px" fetchpriority="high" decoding="async"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
       <section class="article__comments" id="comments">
         <sequoia-comments document-uri="${escapeHtml(post.uri)}" style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>

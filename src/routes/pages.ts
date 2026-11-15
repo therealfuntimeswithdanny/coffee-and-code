@@ -641,7 +641,7 @@ pages.get('/author/:handle', async (c) => {
     .replace(/'/g, '&#39;');
   const authorName = author.displayName || author.handle;
   const authorAvatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
-  const authorBanner = author.banner ? proxyImageUrl(author.banner, pds, 'feed_fullsize') : '';
+  const authorBanner = author.banner ? proxyImageUrl(author.banner, pds, 'banner_large') : '';
   const archiveItems = authorPosts
     .map((post) => `
       <article class="archive-story">

@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
+import { proxyBlobUrl } from './atproto';
 
 function sanitizeContentHtml(html: string): string {
   return sanitizeHtml(html, {
@@ -416,8 +417,10 @@ export function renderLeaflet(content: string): string {
                 if (!imageRef) return '';
 
                 const aspectRatio = block.aspectRatio;
-                const imageUrl = cdnBlobUrl({ did: block.image?.ref?.did || block.image?.did || '', cid: imageRef }, 'feed_fullsize');
-                const safeImageUrl = imageUrl || `/api/blob/${encodeURIComponent(imageRef)}`;
+                const imageDid = block.image?.ref?.did || block.image?.did;
+                const safeImageUrl = imageDid
+                  ? proxyBlobUrl({ did: imageDid, cid: imageRef })
+                  : `/api/blob/${encodeURIComponent(imageRef)}`;
 
                 return `
                   <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
@@ -438,8 +441,10 @@ export function renderLeaflet(content: string): string {
                     if (!imageRef) return '';
 
                     const aspectRatio = item.aspectRatio;
-                    const imageUrl = cdnBlobUrl({ did: item.image?.ref?.did || item.image?.did || '', cid: imageRef }, 'feed_fullsize');
-                    const safeImageUrl = imageUrl || `/api/blob/${encodeURIComponent(imageRef)}`;
+                    const imageDid = item.image?.ref?.did || item.image?.did;
+                    const safeImageUrl = imageDid
+                      ? proxyBlobUrl({ did: imageDid, cid: imageRef })
+                      : `/api/blob/${encodeURIComponent(imageRef)}`;
                     return `
                       <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
                         <img

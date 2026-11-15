@@ -29,7 +29,7 @@ function authorByline(post: StandardDocument) {
   const author = post.author;
   const name = author.displayName || author.handle;
   return `<a class="home-post-author" href="/author/${encodeURIComponent(author.handle)}">
-    ${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" width="24" height="24" loading="lazy" decoding="async">` : '<span class="home-post-author__placeholder" aria-hidden="true"></span>'}
+    ${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar, 'avatar_thumb'))}" alt="" width="24" height="24" loading="lazy" decoding="async">` : '<span class="home-post-author__placeholder" aria-hidden="true"></span>'}
     <span data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(name)}</span>
   </a>`;
 }
@@ -67,7 +67,7 @@ home.get('/', async (c) => {
     .filter((post): post is StandardDocument => Boolean(post));
   const homeBaseUrl = new URL(c.req.url).origin;
 
-  const proxiedCover = (source?: string, preset = 'feed_fullsize') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);
+  const proxiedCover = (source?: string, preset = 'feed_medium') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);
 
   const emptyMessage = pdsAvailable
     ? 'No stories have been published yet. Please check back soon.'
@@ -77,7 +77,7 @@ home.get('/', async (c) => {
       <div class="lead-column">
         <article class="lead-story">
           <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
-            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover) || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
+            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
           </a>
           <div class="lead-story__content">
             <h2><a href="${escapeHtml(heroPost.path)}">${escapeHtml(heroPost.title || 'Untitled')}</a></h2>
@@ -105,7 +105,7 @@ home.get('/', async (c) => {
           (post) => `
             <article class="side-story">
               <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-                ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+                ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_thumb') || '')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
               </a>
               <div>
                 <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
@@ -122,7 +122,7 @@ home.get('/', async (c) => {
       (post) => `
         <article class="archive-story">
           <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-            ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_medium') || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
+            ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_small') || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
           </a>
           <div>
             <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
@@ -146,7 +146,7 @@ home.get('/', async (c) => {
   const authorsHtml = [...authorsByDid.values()].map(({ author, postCount }) => {
     const name = author.displayName || author.handle;
     return `<a class="author-card" href="/author/${encodeURIComponent(author.handle)}">
-      ${author.avatar ? `<img src="${escapeHtml(proxyImageUrl(author.avatar))}" alt="" class="author-card__avatar" width="64" height="64" loading="lazy" decoding="async">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
+      ${author.avatar ? `<img src="${escapeHtml(proxyAvatarUrl(author.avatar))}" alt="" class="author-card__avatar" width="64" height="64" loading="lazy" decoding="async">` : '<span class="author-card__avatar author-card__avatar--placeholder" aria-hidden="true"></span>'}
       <span class="author-card__details"><strong data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(name)}</strong><span>@${escapeHtml(author.handle)}</span><span>${postCount} ${postCount === 1 ? 'story' : 'stories'}</span></span>
     </a>`;
   }).join('');

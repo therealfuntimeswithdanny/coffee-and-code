@@ -10,7 +10,8 @@ function atprotoBlobParts(imageUrl: string, baseUrl?: string): { did: string; ci
     const cid = url.searchParams.get('cid');
     if (did && cid && url.pathname.endsWith('/xrpc/com.atproto.sync.getBlob')) return { did, cid };
 
-    const match = url.pathname.match(/\/img\/(?:avatar|banner)\/plain\/([^/]+)\/([^/]+)$/i);
+    const match = url.pathname.match(/\/img\/[^/]+\/plain\/([^/]+)\/([^/]+)$/i)
+      || url.pathname.match(/\/blob\/([^/]+)\/([^/]+)(?:\/[^/]+)?$/i);
     if (!match) return undefined;
     const [blobCid, extension] = decodeURIComponent(match[2]).split('@', 2);
     if (!blobCid) return undefined;
@@ -24,7 +25,7 @@ function atprotoBlobParts(imageUrl: string, baseUrl?: string): { did: string; ci
   }
 }
 
-function cdnBlobUrl(parts: { did: string; cid: string; extension?: string }, preset: string): string {
+export function proxyBlobUrl(parts: { did: string; cid: string; extension?: string }, preset = 'feed_medium'): string {
   const blob = `${parts.cid}${parts.extension ? `@${parts.extension}` : ''}`;
   return `${imageCdnUrl}/blob/${encodeURIComponent(parts.did)}/${blob}/${encodeURIComponent(preset)}`;
 }
@@ -66,12 +67,11 @@ async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): P
   throw lastError || new Error('Failed after retries');
 }
 
-export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed_fullsize'): string {
-  if (imageUrl.startsWith(`${imageCdnUrl}/blob/`)) return imageUrl;
+export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed_medium'): string {
+  const blob = atprotoBlobParts(imageUrl, baseUrl);
+  if (blob) return proxyBlobUrl(blob, preset);
   const bskyCdnUrl = proxyBlueskyCdnUrl(imageUrl);
   if (bskyCdnUrl) return bskyCdnUrl;
-  const blob = atprotoBlobParts(imageUrl, baseUrl);
-  if (blob) return cdnBlobUrl(blob, preset);
 
   if (imageUrl.startsWith('/') && baseUrl) {
     return new URL(imageUrl, baseUrl).toString();
@@ -79,11 +79,10 @@ export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed
   return imageUrl;
 }
 
-export function proxyAvatarUrl(avatarUrl: string): string {
-  const bskyCdnUrl = proxyBlueskyCdnUrl(avatarUrl);
-  if (bskyCdnUrl) return bskyCdnUrl;
+export function proxyAvatarUrl(avatarUrl: string, preset = 'avatar_small'): string {
   const blob = atprotoBlobParts(avatarUrl);
-  return blob ? cdnBlobUrl(blob, 'avatar_medium') : avatarUrl;
+  if (blob) return proxyBlobUrl(blob, preset);
+  return proxyBlueskyCdnUrl(avatarUrl) || avatarUrl;
 }
 
 function extractDocumentContent(value: any): { content: string; format?: string; mimeType?: string } {

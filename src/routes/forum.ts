@@ -391,7 +391,7 @@ async function listReplies(postUri: string, fallbackPds: string): Promise<ForumR
 function imageMarkup(images: Array<{ cid: string; alt: string }>, did: string, pds: string) {
   if (!images.length) return '';
   return `<div class="forum-images">${images.map(({ cid, alt }) => {
-    const source = proxyImageUrl(`${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, pds, 'feed_fullsize');
+    const source = proxyImageUrl(`${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, pds, 'feed_medium');
     return `<figure><img src="${escapeHtml(source)}" alt="${escapeHtml(alt)}" loading="lazy"><figcaption>${escapeHtml(alt)}</figcaption></figure>`;
   }).join('')}</div>`;
 }

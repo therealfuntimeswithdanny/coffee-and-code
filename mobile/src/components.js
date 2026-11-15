@@ -5,9 +5,11 @@ import { WebView } from 'react-native-webview';
 import { C, styles } from './theme';
 import { formatDate, storyAuthor } from './utils';
 import { getCachedUri } from './imageCache';
+import { imageUrlForPreset, cdnBlobImageUrl } from './imageUrls';
 
-export function SkeletonImage({ source, style, ...props }) {
+export function SkeletonImage({ source, imagePreset, style, ...props }) {
   const uri = source?.uri;
+  const optimizedUri = imageUrlForPreset(uri, imagePreset);
   const [resolved, setResolved] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -20,10 +22,10 @@ export function SkeletonImage({ source, style, ...props }) {
     setLoaded(false);
     setFailed(false);
     fade.setValue(0);
-    if (!uri) return undefined;
-    getCachedUri(uri).then((local) => { if (active) setResolved(local || uri); });
+    if (!optimizedUri) return undefined;
+    getCachedUri(optimizedUri).then((local) => { if (active) setResolved(local || optimizedUri); });
     return () => { active = false; };
-  }, [uri, fade]);
+  }, [optimizedUri, fade]);
 
   useEffect(() => {
     if (loaded || failed) return undefined;
@@ -45,7 +47,11 @@ export function SkeletonImage({ source, style, ...props }) {
         setLoaded(true);
         Animated.timing(fade, { toValue: 1, duration: 200, useNativeDriver: true }).start();
       }}
-      onError={() => { if (resolved !== uri) setResolved(uri); else setFailed(true); }}
+      onError={() => {
+        if (resolved !== optimizedUri && resolved !== uri) setResolved(optimizedUri);
+        else if (optimizedUri !== uri && resolved !== uri) setResolved(uri);
+        else setFailed(true);
+      }}
     />}
   </View>;
 }
@@ -123,10 +129,10 @@ function documentImageUrl(image, fallbackDid) {
   const cid = ref?.$link;
   if (typeof did === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did)
     && typeof cid === 'string' && cid.length > 0) {
-    return `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${encodeURIComponent(cid)}/feed_fullsize`;
+    return cdnBlobImageUrl(did, cid, 'large');
   }
   const url = typeof image?.url === 'string' ? image.url : '';
-  return /^https:\/\//i.test(url) ? url : undefined;
+  return /^https:\/\//i.test(url) ? imageUrlForPreset(url, 'large') : undefined;
 }
 
 function StructuredImage({ image, did, index }) {
@@ -137,7 +143,7 @@ function StructuredImage({ image, did, index }) {
   const height = Number.isFinite(ratio?.height) && ratio.height > 0 ? ratio.height : 9;
   const alt = typeof image?.alt === 'string' ? image.alt.trim() : typeof image?.title === 'string' ? image.title.trim() : '';
   return <View key={index}>
-    <SkeletonImage source={{ uri }} accessibilityLabel={alt || 'Article image'} style={[styles.articleImage, { aspectRatio: width / height, height: undefined, marginBottom: 0 }]} resizeMode="cover" />
+    <SkeletonImage source={{ uri }} imagePreset="large" accessibilityLabel={alt || 'Article image'} style={[styles.articleImage, { aspectRatio: width / height, height: undefined, marginBottom: 0 }]} resizeMode="cover" />
     {!!alt && <Text style={styles.imageAlt}>{alt}</Text>}
     {!!image?.caption && <Text style={styles.paragraph}>{image.caption}</Text>}
   </View>;
@@ -246,11 +252,11 @@ export function SectionBar({ title, detail }) {
 
 export function StoryRow({ story, featured, compact, onPress }) {
   if (compact) return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.compactStory}>
-    {story.cover ? <SkeletonImage source={{ uri: story.cover }} style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
+    {story.cover ? <SkeletonImage source={{ uri: story.cover }} imagePreset="feed_thumb" style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
     <View style={styles.compactCopy}><Text style={styles.compactTitle} numberOfLines={3}>{story.title}</Text><Text style={styles.compactSummary} numberOfLines={2}>{story.description || ''}</Text><Text style={styles.compactMeta} numberOfLines={1}>{formatDate(story.publishedAt)}  ·  {storyAuthor(story)}</Text></View>
   </Pressable>;
   return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.storyRow}>
-    {!!story.cover && <SkeletonImage source={{ uri: story.cover }} style={featured ? styles.heroImage : styles.storyImage} resizeMode="cover" />}
+    {!!story.cover && <SkeletonImage source={{ uri: story.cover }} imagePreset={featured ? 'wide_medium' : 'feed_medium'} style={featured ? styles.heroImage : styles.storyImage} resizeMode="cover" />}
     <Text style={featured ? styles.heroTitle : styles.storyTitle}>{story.title}</Text>
     {!!story.description && <Text numberOfLines={featured ? 4 : 3} style={styles.summary}>{story.description}</Text>}
     <Text style={styles.meta}>{storyAuthor(story)}  ·  {formatDate(story.publishedAt)}</Text>
@@ -263,7 +269,7 @@ export function TabButton({ label, icon, active, onPress, imageUri, compactProgr
   const labelOpacity = compactProgress?.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 0.2, 0] }) || 1;
   const labelHeight = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) || 12;
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}>
-    <Animated.View style={[styles.tabIconWrap, { transform: [{ scale: iconScale }] }]}>{imageUri ? <Image source={{ uri: imageUri }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</Animated.View>
+    <Animated.View style={[styles.tabIconWrap, { transform: [{ scale: iconScale }] }]}>{imageUri ? <Image source={{ uri: imageUrlForPreset(imageUri, 'avatar_thumb') }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</Animated.View>
     <Animated.Text style={[styles.tabLabel, active && styles.tabActive, { opacity: labelOpacity, height: labelHeight }]}>{label}</Animated.Text>
   </Pressable>;
 }

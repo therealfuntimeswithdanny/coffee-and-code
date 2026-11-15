@@ -7,6 +7,7 @@ import { createAccount, restoreSession, signIn, signOut } from './oauth';
 import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
 import { formatDate, storyAuthor } from './src/utils';
 import { ArticleBody, SectionBar, SkeletonImage, StoryRow, TabButton } from './src/components';
+import { cdnBlobImageUrl, imageUrlForPreset } from './src/imageUrls';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
 import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
 import { clearImageCache, getImageCacheSize, MAX_CACHE_BYTES } from './src/imageCache';
@@ -26,10 +27,10 @@ const LIKE_COLLECTION = 'cc.coffeencode.interact.like';
 const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
 const NOTIFICATION_READ_COLLECTION = 'cc.coffeencode.notifications.read';
 
-function profileBlobUrl(blob, did, pdsEndpoint) {
+function profileBlobUrl(blob, did, preset) {
   const cid = blob?.ref?.$link;
-  if (typeof cid !== 'string' || !pdsEndpoint) return undefined;
-  return `${pdsEndpoint}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
+  if (typeof cid !== 'string' || !did) return undefined;
+  return cdnBlobImageUrl(did, cid, preset);
 }
 
 async function readNotificationMarker(agent, did) {
@@ -358,8 +359,8 @@ export default function App() {
           if (!cancelled && data.value?.$type === 'cc.coffeencode.profile') {
             setCoffeeProfile({
               ...data.value,
-              avatarUrl: profileBlobUrl(data.value.avatar, did, pdsEndpoint),
-              bannerUrl: profileBlobUrl(data.value.banner, did, pdsEndpoint),
+              avatarUrl: profileBlobUrl(data.value.avatar, did, 'avatar_medium'),
+              bannerUrl: profileBlobUrl(data.value.banner, did, 'banner_medium'),
             });
           }
         } catch {
@@ -461,7 +462,7 @@ export default function App() {
             const r = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?repo=${encodeURIComponent(authorDid)}&collection=cc.coffeencode.profile&rkey=self`);
             if (r.ok) {
               const { value } = await r.json();
-              coffee = { ...value, avatarUrl: profileBlobUrl(value?.avatar, authorDid, pds) };
+              coffee = { ...value, avatarUrl: profileBlobUrl(value?.avatar, authorDid, 'avatar_small') };
             }
           }
         } catch {}
@@ -817,7 +818,7 @@ export default function App() {
     {!!promotion && <Pressable style={styles.promotion} onPress={() => Linking.openURL(promotion.url)}><Text style={styles.promoTitle}>We're looking for writers</Text><Text style={styles.promoDescription}>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</Text><Text style={styles.action}>WRITE FOR US  ›</Text></Pressable>}
     {!!remainingLatest.length && <><SectionBar title="More stories" detail={`${remainingLatest.length} STORIES`} />{remainingLatest.map((story) => <StoryRow key={`more-${story.uri}`} story={story} compact onPress={() => openStory(story)} />)}</>}
     {!!authors.length && <><SectionBar title="Authors" />{authors.map((author) => <Pressable key={author.did} style={styles.authorRow} onPress={() => openContributor(author)}>
-      {author.avatar ? <Image source={{ uri: author.avatar }} accessibilityLabel={`${author.displayName || author.handle} profile photo`} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Text style={styles.avatarInitial}>{(author.displayName || author.handle || 'C')[0].toUpperCase()}</Text></View>}
+      {author.avatar ? <SkeletonImage source={{ uri: author.avatar }} imagePreset="avatar_thumb" accessibilityLabel={`${author.displayName || author.handle} profile photo`} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Text style={styles.avatarInitial}>{(author.displayName || author.handle || 'C')[0].toUpperCase()}</Text></View>}
       <View style={styles.authorCopy}><Text style={styles.authorName}>{author.displayName || author.handle}</Text><Text style={styles.meta}>@{author.handle}  ·  {author.storyCount} {author.storyCount === 1 ? 'STORY' : 'STORIES'}</Text></View><Text style={styles.chevron}>›</Text>
     </Pressable>)}</>}
   </ScrollView>;
@@ -849,7 +850,7 @@ export default function App() {
     const time = item.createdAt ? relativeNotificationTime(item.createdAt) : '';
     return <Pressable key={item.uri} accessibilityRole="button" accessibilityLabel={`${item.actorName || item.actorHandle || 'Someone'} ${message} ${item.documentTitle || 'a story'}`} onPress={() => openStory(story)} style={styles.notificationRow}>
       {item.actorAvatar
-        ? <Image source={{ uri: item.actorAvatar }} accessibilityLabel={`${item.actorName || 'User'} profile photo`} style={styles.notificationAvatar} />
+        ? <SkeletonImage source={{ uri: item.actorAvatar }} imagePreset="avatar_thumb" accessibilityLabel={`${item.actorName || 'User'} profile photo`} style={styles.notificationAvatar} />
         : <View style={styles.notificationAvatarPlaceholder}><Text style={styles.notificationAvatarInitial}>{(item.actorName || item.actorHandle || '?')[0].toUpperCase()}</Text></View>}
       <View style={styles.notificationCopy}>
         <Text style={styles.notificationSummary}><Text style={styles.notificationActor}>{item.actorName || item.actorHandle || item.actorDid}</Text>{` ${message} `}<Text style={styles.notificationStory}>{item.documentTitle || 'a story'}</Text></Text>
@@ -903,7 +904,7 @@ export default function App() {
     <Text style={[styles.pageTitle, { marginTop: 0 }]}>{activeAuthor?.displayName || 'Authors'}</Text>
     {activeAuthor && <Text style={styles.handle}>@{activeAuthor.handle}</Text>}
     {!activeAuthor ? authors.length ? authors.map((author) => <Pressable key={author.did} style={styles.authorRow} onPress={() => setActiveAuthor(author)}>
-      {author.avatar ? <Image source={{ uri: author.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Text style={styles.avatarInitial}>{(author.displayName || author.handle || 'C')[0].toUpperCase()}</Text></View>}
+      {author.avatar ? <SkeletonImage source={{ uri: author.avatar }} imagePreset="avatar_thumb" style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Text style={styles.avatarInitial}>{(author.displayName || author.handle || 'C')[0].toUpperCase()}</Text></View>}
       <View style={styles.authorCopy}><Text style={styles.authorName}>{author.displayName || author.handle}</Text><Text style={styles.meta}>@{author.handle}  ·  {author.storyCount} {author.storyCount === 1 ? 'STORY' : 'STORIES'}</Text></View><Text style={styles.chevron}>›</Text>
     </Pressable>) : <Text style={styles.emptyText}>Contributor profiles will appear here.</Text>
       : <><SectionBar title="Stories" detail={`${visibleStories.length} STORIES`} />{visibleStories.length ? visibleStories.map((story, index) => <StoryRow key={story.uri || `${story.title}-${index}`} story={story} onPress={() => openStory(story)} />) : <Text style={styles.emptyText}>No stories from this contributor are in the current edition.</Text>}</>}
@@ -924,7 +925,7 @@ export default function App() {
     return <React.Fragment key={comment.uri}>
       <View style={[styles.comment, depth > 0 && styles.commentReply]}>
         <View style={styles.commentHeader}>
-          {comment.avatar ? <Image source={{ uri: comment.avatar }} accessibilityLabel={`${comment.displayName || comment.handle} profile photo`} style={styles.commentAvatar} /> : <View style={styles.commentAvatarPlaceholder}><SymbolView name="person.fill" size={14} tintColor={C.muted} /></View>}
+          {comment.avatar ? <SkeletonImage source={{ uri: comment.avatar }} imagePreset="avatar_thumb" accessibilityLabel={`${comment.displayName || comment.handle} profile photo`} style={styles.commentAvatar} /> : <View style={styles.commentAvatarPlaceholder}><SymbolView name="person.fill" size={14} tintColor={C.muted} /></View>}
           <View style={{ flex: 1 }}><Text style={styles.commentAuthor}>{comment.displayName || comment.handle}</Text><Text style={styles.meta}>{formatDate(comment.createdAt)}</Text></View>
         </View>
         {!!comment.parentUri && <Text style={styles.commentReplyLabel}>REPLY</Text>}
@@ -960,8 +961,8 @@ export default function App() {
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
     {account ? <>
       <View style={styles.accountCard}>
-        {!!coffeeProfile?.bannerUrl && <Image source={{ uri: coffeeProfile.bannerUrl }} accessibilityLabel="Coffee & Code profile banner" resizeMode="cover" style={{ width: '100%', height: 120, borderRadius: 10, marginBottom: 14, backgroundColor: C.panelLight }} />}
-        {!!coffeeProfile?.avatarUrl || !!accountProfile?.avatar ? <Image source={{ uri: coffeeProfile?.avatarUrl || accountProfile.avatar }} accessibilityLabel="Profile photo" style={styles.accountProfileAvatar} /> : <View style={styles.accountAvatar}><SymbolView name="person.fill" size={25} tintColor={C.ink} /></View>}
+        {!!coffeeProfile?.bannerUrl && <SkeletonImage source={{ uri: coffeeProfile.bannerUrl }} imagePreset="banner_medium" accessibilityLabel="Coffee & Code profile banner" resizeMode="cover" style={{ width: '100%', height: 120, borderRadius: 10, marginBottom: 14, backgroundColor: C.panelLight }} />}
+        {!!coffeeProfile?.avatarUrl || !!accountProfile?.avatar ? <SkeletonImage source={{ uri: coffeeProfile?.avatarUrl || accountProfile.avatar }} imagePreset="avatar_medium" accessibilityLabel="Profile photo" style={styles.accountProfileAvatar} /> : <View style={styles.accountAvatar}><SymbolView name="person.fill" size={25} tintColor={C.ink} /></View>}
         <Text style={styles.accountProfileName}>{coffeeProfile?.displayName || accountProfile?.displayName || accountProfile?.handle || 'Your account'}</Text>
         {!!coffeeProfile?.pronouns && <Text style={styles.meta}>{coffeeProfile.pronouns}</Text>}
         <View style={styles.accountIdentityDetails}>
@@ -1049,12 +1050,12 @@ export default function App() {
         <Text style={styles.launchStatus}>Loading...</Text>
       </View>
       : selected ? <ScrollView key={selected.uri || selected.title} contentContainerStyle={styles.article} onScroll={onArticleScroll} scrollEventThrottle={16} onTouchStart={onArticleTouchStart} onTouchEnd={onArticleTouchEnd} onTouchCancel={() => { articleTouchStart.current = null; }}>
-        {!!selected.cover && <SkeletonImage source={{ uri: selected.cover }} style={styles.cover} resizeMode="cover" />}
+        {!!selected.cover && <SkeletonImage source={{ uri: selected.cover }} imagePreset="wide_medium" style={styles.cover} resizeMode="cover" />}
         <Text style={styles.articleTitle}>{selected.title}</Text>
         {!!selected.description && <Text style={styles.dek}>{selected.description}</Text>}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
           {articleAuthor?.avatar
-            ? <SkeletonImage source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 22, height: 22, borderRadius: 11, marginRight: 8 }} />
+            ? <SkeletonImage source={{ uri: articleAuthor.avatar }} imagePreset="avatar_thumb" accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 22, height: 22, borderRadius: 11, marginRight: 8 }} />
             : null}
           <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>{articleAuthor?.name || storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
         </View>
@@ -1073,7 +1074,7 @@ export default function App() {
           <View style={styles.accountCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {articleAuthor.avatar
-                ? <SkeletonImage source={{ uri: articleAuthor.avatar }} accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 56, height: 56, borderRadius: 28, marginRight: 12 }} />
+                ? <SkeletonImage source={{ uri: articleAuthor.avatar }} imagePreset="avatar_thumb" accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 56, height: 56, borderRadius: 28, marginRight: 12 }} />
                 : <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}><Text style={styles.avatarInitial}>{(articleAuthor.name || 'C')[0].toUpperCase()}</Text></View>}
               <View style={{ flex: 1 }}>
                 <Text style={styles.authorName}>{articleAuthor.name}</Text>

@@ -166,7 +166,7 @@ users.get('/:identifier', async (c) => {
   const description = readerProfile.description || profile.description;
   const pronouns = readerProfile.pronouns || profile.pronouns;
   const avatar = profile.avatar ? proxyAvatarUrl(profile.avatar) : '';
-  const banner = profile.banner ? proxyImageUrl(profile.banner, pds, 'feed_fullsize') : '';
+  const banner = profile.banner ? proxyImageUrl(profile.banner, pds, 'banner_large') : '';
   const commentItems = comments.map((comment) => {
     const article = articlesByUri.get(comment.subjectUri);
     const subjectLink = article?.path || `https://pdsls.dev/${comment.subjectUri}`;
