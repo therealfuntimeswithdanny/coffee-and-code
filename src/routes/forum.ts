@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
 import { Env } from '../types';
-import { fetchAuthorProfile, getPdsEndpoint, proxyImageUrl, resolveAtprotoIdentifier } from '../lib/atproto';
+import { fetchAuthorProfile, getPdsEndpoint, proxyAvatarUrl, proxyImageUrl, resolveAtprotoIdentifier } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 import { renderSearchBar } from '../templates/searchBar';
 
@@ -284,7 +284,7 @@ async function readPost(
     authorDid: did,
     handle: profile.handle,
     name: profile.displayName || profile.handle,
-    avatar: profile.avatar,
+    avatar: profile.avatar ? proxyAvatarUrl(profile.avatar, 'avatar_thumb') : undefined,
     title: value.title.trim().slice(0, 300),
     content: value.content.slice(0, 300000),
     createdAt: value.createdAt,
@@ -370,7 +370,7 @@ async function listReplies(postUri: string, fallbackPds: string): Promise<ForumR
           authorDid: item.did,
           handle: profile.handle,
           name: profile.displayName || profile.handle,
-          avatar: profile.avatar,
+          avatar: profile.avatar ? proxyAvatarUrl(profile.avatar, 'avatar_thumb') : undefined,
           parentUri: parent,
           content: value.content.slice(0, 100000),
           createdAt: value.createdAt,

@@ -26,6 +26,19 @@ if (!sharedScope || !sharedScope.split(' ').includes(authorScope)) {
 const memberScope = sharedScope.split(' ').filter((scope) => scope !== authorScope).join(' ');
 const handleResolver = 'https://database.coffeencode.cc';
 
+function accountAvatarUrl(imageUrl: string): string | undefined {
+  try {
+    const url = new URL(imageUrl);
+    const match = url.pathname.match(/^\/img\/[^/]+\/plain\/([^/]+)\/([^/]+)$/i);
+    if (!match) return undefined;
+    const did = decodeURIComponent(match[1]);
+    const blob = decodeURIComponent(match[2]);
+    return `https://cdn.coffeencode.cc/blob/${encodeURIComponent(did)}/${blob}/avatar_thumb`;
+  } catch {
+    return undefined;
+  }
+}
+
 let client: BrowserOAuthClient | undefined;
 let session: OAuthSession | undefined;
 let initializationError: unknown;
@@ -225,7 +238,7 @@ function renderAccount() {
     .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
     .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
       if (session?.did !== did) return;
-      const avatar = profile.avatar;
+      const avatar = profile.avatar ? accountAvatarUrl(profile.avatar) : undefined;
       if (headerAccountAvatar && avatar) {
         headerAccountAvatar.src = avatar;
         headerAccountAvatar.alt = `${profile.displayName || profile.handle || 'Account'} profile picture`;

@@ -836,7 +836,9 @@ async function hydrateFeedPosts(uris: string[], pinnedUris = new Set<string>()) 
       author: {
         name: typeof post.author?.displayName === 'string' && post.author.displayName ? post.author.displayName : String(post.author?.handle || 'Bluesky user'),
         handle: String(post.author?.handle || ''),
-        avatar: typeof post.author?.avatar === 'string' && post.author.avatar.startsWith('https://') ? post.author.avatar : '',
+        avatar: typeof post.author?.avatar === 'string' && post.author.avatar.startsWith('https://')
+          ? proxyAvatarUrl(post.author.avatar, 'avatar_thumb')
+          : '',
       },
       text: post.record.text.slice(0, 10000),
       createdAt: typeof post.record.createdAt === 'string' ? post.record.createdAt : '',
