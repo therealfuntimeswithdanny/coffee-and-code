@@ -1,11 +1,8 @@
-const CDN_HOSTS = new Set(['cdn.coffeencode.cc', 'cdn.bsky.app']);
-
 export function imageUrlForPreset(uri, preset) {
   if (typeof uri !== 'string' || typeof preset !== 'string') return uri;
   try {
     const url = new URL(uri);
-    if (!CDN_HOSTS.has(url.hostname)) return uri;
-    if (url.hostname === 'cdn.bsky.app') url.hostname = 'cdn.coffeencode.cc';
+    if (url.hostname !== 'cdn.coffeencode.cc') return uri;
 
     if (/^\/blob\//.test(url.pathname)) {
       const parts = url.pathname.split('/');

@@ -30,17 +30,6 @@ export function proxyBlobUrl(parts: { did: string; cid: string; extension?: stri
   return `${imageCdnUrl}/blob/${encodeURIComponent(parts.did)}/${blob}/${encodeURIComponent(preset)}`;
 }
 
-function proxyBlueskyCdnUrl(imageUrl: string): string | undefined {
-  try {
-    const url = new URL(imageUrl);
-    if (url.hostname !== 'cdn.bsky.app') return undefined;
-    url.hostname = new URL(imageCdnUrl).hostname;
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
 // Retry helper with exponential backoff
 async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): Promise<Response> {
   let lastError: Error | null = null;
@@ -70,8 +59,6 @@ async function fetchWithRetry(url: string, options: any = {}, maxRetries = 2): P
 export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed_medium'): string {
   const blob = atprotoBlobParts(imageUrl, baseUrl);
   if (blob) return proxyBlobUrl(blob, preset);
-  const bskyCdnUrl = proxyBlueskyCdnUrl(imageUrl);
-  if (bskyCdnUrl) return bskyCdnUrl;
 
   if (imageUrl.startsWith('/') && baseUrl) {
     return new URL(imageUrl, baseUrl).toString();
@@ -82,7 +69,7 @@ export function proxyImageUrl(imageUrl: string, baseUrl?: string, preset = 'feed
 export function proxyAvatarUrl(avatarUrl: string, preset = 'avatar_small'): string {
   const blob = atprotoBlobParts(avatarUrl);
   if (blob) return proxyBlobUrl(blob, preset);
-  return proxyBlueskyCdnUrl(avatarUrl) || avatarUrl;
+  return avatarUrl;
 }
 
 function extractDocumentContent(value: any): { content: string; format?: string; mimeType?: string } {

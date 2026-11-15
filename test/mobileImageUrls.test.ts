@@ -9,9 +9,9 @@ test('replaces an existing CDN blob preset', () => {
   );
 });
 
-test('converts Bluesky CDN image types to the requested preset', () => {
+test('converts Coffee & Code CDN image types to the requested preset', () => {
   assert.equal(
-    imageUrlForPreset('https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:example/cid@jpeg', 'wide_medium'),
+    imageUrlForPreset('https://cdn.coffeencode.cc/img/feed_fullsize/plain/did:plc:example/cid@jpeg', 'wide_medium'),
     'https://cdn.coffeencode.cc/img/wide_medium/plain/did:plc:example/cid@jpeg',
   );
 });
