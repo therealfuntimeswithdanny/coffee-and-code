@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
 import { loadNotificationsForUser } from '../lib/notifications';
+import legal from '../legal.json';
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -60,6 +61,10 @@ async function findDocumentForRequest(documents: StandardDocument[], rkey: strin
     return result;
   }
 }
+
+// Single source of truth for the privacy policy and terms of service,
+// shared by the /privacy and /terms pages and the mobile app.
+api.get('/legal', (c) => c.json(legal, 200, { 'Cache-Control': 'public, max-age=300' }));
 
 api.get('/home', async (c) => {
   const loaded = await loadDocumentsSafely(c);

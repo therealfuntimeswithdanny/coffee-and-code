@@ -77,6 +77,30 @@ async function download(uri, key) {
   return path;
 }
 
+// Reports actual bytes on disk (not just index bookkeeping) for the developer
+// settings screen.
+export async function cacheStats() {
+  await loadIndex();
+  let bytes = 0;
+  let count = 0;
+  try {
+    const names = await FileSystem.readDirectoryAsync(DIR);
+    for (const name of names) {
+      const info = await FileSystem.getInfoAsync(`${DIR}${name}`);
+      if (info.exists && !info.isDirectory) { bytes += info.size || 0; count += 1; }
+    }
+  } catch {}
+  return { bytes, count, maxBytes: MAX_CACHE_BYTES };
+}
+
+export async function clearImageCache() {
+  await loadIndex();
+  index = {};
+  try { await FileSystem.deleteAsync(DIR, { idempotent: true }); } catch {}
+  try { await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }); } catch {}
+  try { await AsyncStorage.setItem(INDEX_KEY, '{}'); } catch {}
+}
+
 export async function getCachedUri(uri) {
   if (typeof uri !== 'string' || !/^https?:\/\//i.test(uri)) return uri;
   try {
@@ -98,35 +122,4 @@ export async function getCachedUri(uri) {
   } catch {
     return uri;
   }
-}
-
-export async function getImageCacheSize() {
-  await loadIndex();
-  const now = Date.now();
-  for (const [key, entry] of Object.entries(index)) {
-    if (now - entry.cachedAt >= CACHE_TTL_MS) await removeEntry(key);
-  }
-  let names = [];
-  try { names = await FileSystem.readDirectoryAsync(DIR); } catch {}
-  const known = new Set(Object.values(index).map((entry) => entry.name));
-  for (const name of names) {
-    if (!known.has(name)) await FileSystem.deleteAsync(`${DIR}${name}`, { idempotent: true }).catch(() => {});
-  }
-  let total = 0;
-  for (const [key, entry] of Object.entries(index)) {
-    const info = await FileSystem.getInfoAsync(`${DIR}${entry.name}`);
-    if (!info.exists) { delete index[key]; continue; }
-    entry.size = info.size || entry.size || 0;
-    total += entry.size;
-  }
-  saveSoon();
-  return total;
-}
-
-export async function clearImageCache() {
-  await loadIndex();
-  index = {};
-  await FileSystem.deleteAsync(DIR, { idempotent: true }).catch(() => {});
-  await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }).catch(() => {});
-  await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(index)).catch(() => {});
 }

@@ -1,12 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Image, Linking, Pressable, ScrollView, Share, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image, Linking, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { WELCOME_KEY } from './Welcome';
 import { SymbolView } from 'expo-symbols';
 import { C, styles } from './theme';
 import { formatDate } from './utils';
 import {
-  clearImageCacheRegistry, clearLogs, clearPostCache, formatBytes as devFormatBytes,
-  getLogEntries, getLogStats, getLogText, imageCacheStats, postCacheStats, refreshImageCache,
+  clearImageCacheRegistry, clearLogs, clearPostCache, DEFAULT_API_BASE, formatBytes as devFormatBytes,
+  getApiBase, getLogEntries, getLogStats, getLogText, imageCacheStats, postCacheStats, refreshImageCache,
+  setApiBase,
 } from './developer';
+import { cacheStats as imageDiskStats, clearImageCache } from './imageCache';
+import { LegalSettings } from './legal';
 
 export const accountSettingsPages = [
   { id: 'account', title: 'Manage Identity', subtitle: 'Manage your identity and perform destructive actions', icon: 'person.crop.circle' },
@@ -15,11 +20,10 @@ export const accountSettingsPages = [
   { id: 'ads', title: 'Ads and Marketing', subtitle: 'Manage your ads and marketing preferences', icon: 'bag' },
   { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
   { id: 'about', title: 'About', subtitle: 'App version and publication details', icon: 'info.circle' },
-  { id: 'storage', title: 'Storage', subtitle: 'Image cache usage and clearing', icon: 'internaldrive' },
   { id: 'developer', title: 'Developer', subtitle: 'On-device logs and caches for debugging', icon: 'hammer' },
 ];
 
-export const publicSettingsPageIds = ['ads', 'storage', 'legal', 'about'];
+export const publicSettingsPageIds = ['ads', 'legal', 'about'];
 
 export function SettingsRow({ icon, title, subtitle, onPress, destructive = false }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={styles.settingsRow}>
@@ -29,15 +33,13 @@ export function SettingsRow({ icon, title, subtitle, onPress, destructive = fals
   </Pressable>;
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 const developerSections = [
   { id: 'logs', title: 'App Logs', subtitle: 'On-device event log', icon: 'doc.text' },
-  { id: 'images', title: 'Image Cache', subtitle: 'Displayed image URL registry', icon: 'photo' },
+  { id: 'images', title: 'Image Cache', subtitle: 'Downloaded images on this device', icon: 'photo' },
   { id: 'posts', title: 'Post Cache', subtitle: 'Offline copies of opened stories', icon: 'tray.full' },
+  { id: 'api', title: 'API', subtitle: 'Endpoint the app sends requests to', icon: 'network' },
+  { id: 'welcome', title: 'Welcome Screen', subtitle: 'Show the launch tutorial and agreement again', icon: 'sparkles' },
+  { id: 'status', title: 'Status', subtitle: 'status.coffeencode.cc', icon: 'waveform.path.ecg', href: 'https://status.coffeencode.cc' },
 ];
 
 function DeveloperSettings() {
@@ -45,14 +47,19 @@ function DeveloperSettings() {
   const [logStats, setLogStats] = useState({ bytes: 0, count: 0, maxBytes: 0 });
   const [logEntries, setLogEntries] = useState([]);
   const [imageStats, setImageStats] = useState({ tracked: 0, disk: 0, memory: 0 });
+  const [imageDisk, setImageDisk] = useState({ bytes: 0, count: 0, maxBytes: 0 });
   const [postStats, setPostStats] = useState({ bytes: 0, count: 0, maxBytes: 0 });
   const [refreshingImages, setRefreshingImages] = useState(false);
+  const [apiBaseInput, setApiBaseInput] = useState(getApiBase());
+  const [apiMessage, setApiMessage] = useState('');
+  const [welcomeMessage, setWelcomeMessage] = useState('');
 
   const reload = useCallback(async () => {
     setLogStats(getLogStats());
     setLogEntries(getLogEntries(200));
     setPostStats(postCacheStats());
     setImageStats(await imageCacheStats());
+    setImageDisk(await imageDiskStats());
   }, []);
   useEffect(() => { reload(); }, [reload, section]);
 
@@ -64,11 +71,30 @@ function DeveloperSettings() {
     try { await refreshImageCache(); } finally { setRefreshingImages(false); await reload(); }
   };
   const clearAndReload = (action) => { action(); reload(); };
+  const clearImages = async () => {
+    clearImageCacheRegistry();
+    await clearImageCache();
+    await reload();
+  };
+  const saveApiBase = () => {
+    try {
+      setApiBase(apiBaseInput);
+      setApiBaseInput(getApiBase());
+      setApiMessage(`Saved. Requests now go to ${getApiBase()}`);
+    } catch (error) {
+      setApiMessage(error.message || 'Invalid URL.');
+    }
+  };
+  const resetApiBase = () => {
+    setApiBase('');
+    setApiBaseInput(DEFAULT_API_BASE);
+    setApiMessage(`Reset to ${DEFAULT_API_BASE}`);
+  };
 
   const selected = developerSections.find((item) => item.id === section);
   if (!selected) {
     return <View style={styles.settingsCard}>
-      {developerSections.map((item) => <SettingsRow key={item.id} {...item} onPress={() => setSection(item.id)} />)}
+      {developerSections.map((item) => <SettingsRow key={item.id} {...item} onPress={() => item.href ? Linking.openURL(item.href) : setSection(item.id)} />)}
     </View>;
   }
   return <View style={styles.settingsCard}>
@@ -88,22 +114,42 @@ function DeveloperSettings() {
       </ScrollView>
     </>}
     {section === 'images' && <>
-      <Text style={styles.accountDescription}>URLs of images the app has displayed. iOS manages the actual image bytes; this registry only tracks what was shown.</Text>
-      <Text style={styles.settingsMetric}>{imageStats.tracked}<Text style={styles.meta}>  TRACKED URLS</Text></Text>
-      <Text style={styles.meta}>{imageStats.disk} ON DISK  ·  {imageStats.memory} IN MEMORY</Text>
+      <Text style={styles.accountDescription}>Images the app downloads are stored on this device, up to {devFormatBytes(imageDisk.maxBytes)}. The oldest images are removed automatically when the limit is reached.</Text>
+      <Text style={styles.settingsMetric}>{devFormatBytes(imageDisk.bytes)}<Text style={styles.meta}>  OF {devFormatBytes(imageDisk.maxBytes)} USED</Text></Text>
+      <Text style={styles.meta}>{imageDisk.count} CACHED IMAGES</Text>
+      <Text style={styles.meta}>{imageStats.disk} TRACKED ON DISK  ·  {imageStats.memory} IN MEMORY</Text>
+      <Text style={styles.accountDescription}>Clearing removes every downloaded image. Images will be downloaded again as you browse, which may slow the app down until the cache refills.</Text>
       <Pressable accessibilityRole="button" disabled={refreshingImages} onPress={refreshImages} style={styles.secondaryButton}><Text style={styles.action}>{refreshingImages ? 'REFRESHING…' : 'REFRESH'}</Text></Pressable>
-      <Pressable accessibilityRole="button" onPress={() => clearAndReload(clearImageCacheRegistry)} style={styles.secondaryButton}><Text style={styles.action}>CLEAR</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={clearImages} style={styles.secondaryButton}><Text style={styles.action}>CLEAR IMAGE CACHE</Text></Pressable>
     </>}
     {section === 'posts' && <>
       <Text style={styles.accountDescription}>Stories you open are kept on this device so they stay readable offline.</Text>
       <Text style={styles.settingsMetric}>{devFormatBytes(postStats.bytes)}<Text style={styles.meta}>  OF {devFormatBytes(postStats.maxBytes)} USED</Text></Text>
       <Text style={styles.meta}>{postStats.count} CACHED POSTS</Text>
+      <Pressable accessibilityRole="button" onPress={reload} style={styles.secondaryButton}><Text style={styles.action}>REFRESH NOW</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={() => clearAndReload(clearPostCache)} style={styles.secondaryButton}><Text style={styles.action}>CLEAR POST CACHE</Text></Pressable>
+    </>}
+    {section === 'welcome' && <>
+      <Text style={styles.accountDescription}>The welcome screen asks new users to agree to the Privacy Policy and Terms of Service, and shows tips for using the app. It only appears once after install.</Text>
+      <Text style={styles.accountDescription}>Reset it to review the tutorial and agreement on the next app launch.</Text>
+      {!!welcomeMessage && <Text style={styles.meta}>{welcomeMessage}</Text>}
+      <Pressable accessibilityRole="button" onPress={async () => {
+        try { await AsyncStorage.removeItem(WELCOME_KEY); setWelcomeMessage('Done. The welcome screen will show on next launch.'); }
+        catch { setWelcomeMessage('Could not reset the welcome screen.'); }
+      }} style={styles.secondaryButton}><Text style={styles.action}>SHOW ON NEXT LAUNCH</Text></Pressable>
+    </>}
+    {section === 'api' && <>
+      <Text style={styles.accountDescription}>All app requests are sent to this endpoint. It uses the exact same routes and URL parameters as the official API, so you can point the app at your own server if you host one.</Text>
+      <Text style={styles.meta}>CURRENT: {getApiBase()}</Text>
+      <TextInput value={apiBaseInput} onChangeText={setApiBaseInput} placeholder={DEFAULT_API_BASE} placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={styles.searchInput} accessibilityLabel="API base URL" />
+      {!!apiMessage && <Text style={styles.meta}>{apiMessage}</Text>}
+      <Pressable accessibilityRole="button" onPress={saveApiBase} style={styles.secondaryButton}><Text style={styles.action}>SAVE</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={resetApiBase} style={styles.secondaryButton}><Text style={styles.action}>RESET TO DEFAULT</Text></Pressable>
     </>}
   </View>;
 }
 
-export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onSignOut, cacheBytes = 0, maxCacheBytes = 0, cacheClearing = false, onClearCache }) {
+export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onSignOut }) {
   const [page, setPage] = useState(initialPage);
   const pages = account ? accountSettingsPages : accountSettingsPages.filter((item) => publicSettingsPageIds.includes(item.id));
   const selected = pages.find((item) => item.id === page);
@@ -145,26 +191,9 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
       {page === 'ads' && <View style={styles.settingsCard}>
         <Text style={styles.accountDescription}>Ads and marketing preferences will appear here.</Text>
       </View>}
-      {page === 'storage' && <View style={styles.settingsCard}>
-        <Text style={styles.accountDescription}>Images are kept on this device for 3 hours, up to 500 MB, so they load instantly. Clearing the cache only removes downloaded copies.</Text>
-        <Text style={styles.settingsMetric}>{formatBytes(cacheBytes)}<Text style={styles.meta}>  OF {formatBytes(maxCacheBytes)} USED</Text></Text>
-        <Pressable accessibilityRole="button" disabled={cacheClearing} onPress={onClearCache} style={styles.secondaryButton}><Text style={styles.action}>{cacheClearing ? 'CLEARING…' : 'CLEAR IMAGE CACHE'}</Text></Pressable>
-      </View>}
       {page === 'developer' && <DeveloperSettings />}
       {page === 'legal' && <View style={styles.settingsCard}>
-        <Text style={styles.accountDescription}>Last updated: October 11, 2026</Text>
-        <Text style={styles.accountDescription}>Please email <Text accessibilityRole="link" style={styles.inlineLink} onPress={() => Linking.openURL('mailto:legal@coffeencode.cc')}>legal@coffeencode.cc</Text> for legal inquiries.</Text>
-        <Text style={styles.accountProfileName}>Terms of Service</Text>
-        <Text style={styles.accountDescription}>These terms apply when you use Coffee & Code, website or iOS app, or an account hosted by the Coffee & Code Personal Data Server (PDS).  By this, you agree to these terms. If you do not agree, please do not use the service and if you created an account on our PDS please delete it.</Text>
-        <Text style={styles.accountDescription}>You may read the publication without an account. Sign-in uses an AT Protocol account and the PDS that hosts it. If you create or use an account hosted by Coffee & Code, you are responsible for keeping your sign-in credentials secure and for activity performed through your account. Do not share credentials or attempt to access another person’s account.</Text>
-        <Text style={styles.accountDescription}>When you sign in with an account hosted by another provider, that provider’s terms and policies also apply. Coffee & Code does not control external PDS providers, Bluesky, or other independent AT Protocol services.</Text>
-        <Text style={styles.accountDescription}>You retain responsibility for content and records you create. When you use account features, the site may write likes, dislikes, views, saves, recommendations, comments, replies, and related records to your AT Protocol repository as described in the permissions shown by your account provider. These records are public, and may be copied, indexed, or displayed by other services on the network. Do not submit content or personal information that you do not want to be public.</Text>
-        <Text style={styles.accountDescription}>Coffee & Code is free for everyone and is inexpensive to run, this does not mean you can missuse/abuse this service. This includes attempting to disrupt, damage, or gain unauthorized access to the site, PDS, accounts, or network; interfering with another person’s use; sending malicious code or spam; or using the services for unlawful, deceptive, abusive, or rights-infringing activity.</Text>
-        <Text style={styles.accountDescription}>The site and PDS are provided as available. Features may change, be interrupted, or be discontinued. We may suspend or limit access when reasonably necessary to protect users, the services, or the network, to address misuse or security issues, or to comply with law. We will make reasonable efforts to provide notice where practical.</Text>
-        <Text style={styles.accountDescription}>The AT Protocol is a distributed network. Records removed from your repository may remain in copies held by other services, and Coffee & Code cannot control how independent services process or display them. Links to or integrations with third-party services are provided for convenience and are subject to those services’ own terms and policies.</Text>
-        <Text style={styles.accountDescription}>To the extent permitted by applicable law, the services are provided without warranties of any kind. The Coffee & Code publication is not responsible for the acts or services of independent PDS providers or other network participants. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited.</Text>
-        <Text style={styles.accountProfileName}>Privacy Policy</Text>
-
+        <LegalSettings />
       </View>}
       {page === 'about' && <View style={styles.settingsCard}>
         <Text style={styles.accountProfileName}>Coffee & Code</Text>

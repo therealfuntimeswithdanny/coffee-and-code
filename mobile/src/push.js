@@ -1,9 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { log } from './developer';
+import { getApiBase, log } from './developer';
 
-const API = 'https://coffeencode.cc/api';
 const PUSH_TOKEN_KEY = 'coffee-and-code:push-token';
 const PUSH_TOKEN_DID_KEY = 'coffee-and-code:push-token-did';
 
@@ -19,7 +18,7 @@ Notifications.setNotificationHandler({
 });
 
 async function postRegistration(path, did, token) {
-  const response = await fetch(`${API}/push/${path}`, {
+  const response = await fetch(`${getApiBase()}/push/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ did, token }),

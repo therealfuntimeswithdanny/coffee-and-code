@@ -1,0 +1,127 @@
+{
+  "privacy": {
+    "title": "Privacy Policy",
+    "updated": "October 23, 2026",
+    "sections": [
+      {
+        "heading": null,
+        "blocks": [
+          { "type": "p", "text": "Coffee & Code is a publication operated by MBD Company. This policy describes information handled when you visit [coffeencode.cc](https://coffeencode.cc), use the Coffee & Code iOS app, sign in, or interact with stories." }
+        ]
+      },
+      {
+        "heading": "Information the site uses",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Public AT Protocol information. The site reads public publication, story, author, and profile records to display content. It also asks public AT Protocol services to resolve identities and retrieve profile information.",
+              "Account sign-in. Sign-in is handled by your chosen Personal Data Server (PDS). Coffee & Code receives your account identifier (DID) and the authorization needed for features you approve. The site does not ask for or receive your PDS password. OAuth session data is kept on your device so you can stay signed in.",
+              "Interactions. If you approve and use these features, the site writes likes, dislikes, views, saves, recommendations, comments, replies, and comment likes to your AT Protocol repository. These records are public and may be copied or indexed by other network services. Removing a record from your repository may not remove copies already made elsewhere.",
+              "Push notifications. If you enable notifications in the app, the device’s push token is sent to the Coffee & Code service so it can deliver the notifications you request. You can disable notifications at any time in your device or app settings.",
+              "Technical and usage information. Cloudflare provides hosting and security for the site and may process request and device information, such as IP address, browser details, and requested URLs. Umami Cloud analytics is used to understand page usage, including page views, referrers, device/browser information, and approximate location. The site also loads search, font, and icon resources from third-party services, which receive the usual connection information when your browser requests them."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Services involved",
+        "blocks": [
+          { "type": "p", "text": "Depending on the page or feature, requests may go to your PDS, the Coffee & Code PDS resolver, the AT Protocol PLC directory, Bluesky’s public profile service, Constellation for public interaction counts, Cloudflare, Umami Cloud, Expo’s push notification service, Google Fonts, or Font Awesome. These services process requests under their own privacy practices." }
+        ]
+      },
+      {
+        "heading": "How information is used",
+        "blocks": [
+          { "type": "p", "text": "Information is used to display the publication, authenticate your account, save interactions you request, deliver push notifications you enable, retrieve public counts and profiles, protect and operate the service, and understand general site usage. Coffee & Code does not sell personal information." }
+        ]
+      },
+      {
+        "heading": "Choices and account controls",
+        "blocks": [
+          { "type": "p", "text": "You can use the publication without signing in. You can sign out from the account page and manage or remove records through tools supported by your PDS. Your PDS controls your credentials and repository. Because AT Protocol is a distributed network, Coffee & Code cannot remove copies held by other services." }
+        ]
+      },
+      {
+        "heading": "Retention",
+        "blocks": [
+          { "type": "p", "text": "OAuth session information remains on your device until you sign out or the session expires. Public AT Protocol records remain in your repository until you or your PDS remove them. Hosting logs and analytics are retained according to the settings and policies of the providers that operate those services." }
+        ]
+      },
+      {
+        "heading": "Contact",
+        "blocks": [
+          { "type": "p", "text": "For privacy questions, contact the Coffee & Code operator through [Coffee & Code on Bluesky](https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay) or email [legal@coffeencode.cc](mailto:legal@coffeencode.cc)." }
+        ]
+      },
+      {
+        "heading": "Changes to this policy",
+        "blocks": [
+          { "type": "p", "text": "This policy may be updated as the site changes. The date above shows when it was most recently revised." }
+        ]
+      }
+    ]
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "updated": "October 25, 2026",
+    "sections": [
+      {
+        "heading": null,
+        "blocks": [
+          { "type": "p", "text": "These terms apply when you use Coffee & Code at [coffeencode.cc](https://coffeencode.cc), the Coffee & Code iOS app, and, where applicable, an account hosted by the Coffee & Code Personal Data Server (PDS). The services are operated by MBD Company. By using them, you agree to these terms. If you do not agree, do not use the services, and if you created an account on our PDS please delete it." }
+        ]
+      },
+      {
+        "heading": "Accounts and account providers",
+        "blocks": [
+          { "type": "p", "text": "You may read the publication without an account. Sign-in uses an AT Protocol account and the PDS that hosts it. If you create or use an account hosted by Coffee & Code, you are responsible for keeping your sign-in credentials secure and for activity performed through your account. Do not share credentials or attempt to access another person’s account." },
+          { "type": "p", "text": "When you sign in with an account hosted by another provider, that provider’s terms and policies also apply. Coffee & Code does not control external PDS providers, Bluesky, or other independent AT Protocol services." }
+        ]
+      },
+      {
+        "heading": "Your content and public activity",
+        "blocks": [
+          { "type": "p", "text": "You retain responsibility for content and records you create. When you use account features, the site may write likes, dislikes, views, saves, recommendations, comments, replies, and related records to your AT Protocol repository as described in the permissions shown by your account provider. These records may be public, copied, indexed, or displayed by other services on the network. Do not submit content or personal information that you do not want to be public." },
+          { "type": "p", "text": "You must have the rights and permissions needed to submit content and must not use the services to violate another person’s rights or applicable law. You are responsible for reviewing and managing records through your PDS and for maintaining copies of content you wish to keep." }
+        ]
+      },
+      {
+        "heading": "Acceptable use",
+        "blocks": [
+          { "type": "p", "text": "Coffee & Code is free for everyone and inexpensive to run, but that does not permit misuse. You agree not to misuse the services. This includes attempting to disrupt, damage, or gain unauthorized access to the site, PDS, accounts, or network; interfering with another person’s use; sending malicious code or spam; or using the services for unlawful, deceptive, abusive, or rights-infringing activity." }
+        ]
+      },
+      {
+        "heading": "Availability and changes",
+        "blocks": [
+          { "type": "p", "text": "The site and PDS are provided as available. Features may change, be interrupted, or be discontinued. We may suspend or limit access when reasonably necessary to protect users, the services, or the network, to address misuse or security issues, or to comply with law. We will make reasonable efforts to provide notice where practical." }
+        ]
+      },
+      {
+        "heading": "Network and third-party services",
+        "blocks": [
+          { "type": "p", "text": "AT Protocol is a distributed network. Records removed from your repository may remain in copies held by other services, and Coffee & Code cannot control how independent services process or display them. Links to or integrations with third-party services are provided for convenience and are subject to those services’ own terms and policies." }
+        ]
+      },
+      {
+        "heading": "Disclaimers and liability",
+        "blocks": [
+          { "type": "p", "text": "To the extent permitted by applicable law, the services are provided without warranties of any kind. MBD Company is not responsible for the acts or services of independent PDS providers or other network participants. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited." }
+        ]
+      },
+      {
+        "heading": "Changes to these terms",
+        "blocks": [
+          { "type": "p", "text": "We may update these terms as the services change. The date above indicates when they were most recently revised. Continued use after an update means you accept the revised terms." }
+        ]
+      },
+      {
+        "heading": "Contact",
+        "blocks": [
+          { "type": "p", "text": "For questions about these terms or the Coffee & Code PDS, contact the operator through [Coffee & Code on Bluesky](https://bsky.app/profile/did:plc:l37td5yhxl2irrzrgvei4qay) or email [legal@coffeencode.cc](mailto:legal@coffeencode.cc)." }
+        ]
+      }
+    ]
+  }
+}

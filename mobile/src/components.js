@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Linking, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { WebView } from 'react-native-webview';
 import { C, styles } from './theme';
@@ -269,12 +269,64 @@ export function StoryRow({ story, featured, compact, onPress }) {
   </Pressable>;
 }
 
-export function TabButton({ label, icon, active, onPress, imageUri, compactProgress, badgeCount = 0 }) {
-  const iconScale = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [1, 0.84] }) || 1;
-  const labelOpacity = compactProgress?.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 0.2, 0] }) || 1;
-  const labelHeight = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) || 12;
+export function TabButton({ label, icon, active, onPress, imageUri, badgeCount = 0 }) {
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}>
-    <Animated.View style={[styles.tabIconWrap, { transform: [{ scale: iconScale }] }]}>{imageUri ? <Image source={{ uri: imageUrlForPreset(imageUri, 'avatar_thumb') }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</Animated.View>
-    <Animated.Text style={[styles.tabLabel, active && styles.tabActive, { opacity: labelOpacity, height: labelHeight }]}>{label}</Animated.Text>
+    <View style={styles.tabIconWrap}>{imageUri ? <Image source={{ uri: imageUrlForPreset(imageUri, 'avatar_thumb') }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</View>
+    <Text style={[styles.tabLabel, active && styles.tabActive]}>{label}</Text>
   </Pressable>;
+}
+const SWIPE_ACTION_WIDTH = 96;
+const SWIPE_OPEN_OFFSET = 44;
+const SWIPE_DELETE_OFFSET = 150;
+
+export function SwipeableDeleteRow({ children, onDelete, accessibilityLabel = 'Remove' }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const resting = useRef(0);
+  const [open, setOpen] = useState(false);
+
+  const settle = (toValue, isOpen) => {
+    resting.current = toValue;
+    setOpen(isOpen);
+    Animated.spring(translateX, { toValue, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
+  };
+  const settleRef = useRef(settle);
+  settleRef.current = settle;
+
+  const isHorizontalSwipe = (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2;
+  const pan = useRef(PanResponder.create({
+    // Capture phase: the row's own Pressable children (StoryRow) become the
+    // responder on touch-down, which blocks the bubble-phase shouldSet below.
+    // The capture handler runs before the child commits, so a horizontal swipe
+    // steals the gesture and prevents the tap that was opening the story.
+    onMoveShouldSetPanResponderCapture: isHorizontalSwipe,
+    onMoveShouldSetPanResponder: isHorizontalSwipe,
+    onPanResponderMove: (_, g) => {
+      const next = Math.max(-SWIPE_DELETE_OFFSET - 60, Math.min(0, resting.current + g.dx));
+      translateX.setValue(next);
+    },
+    onPanResponderRelease: (_, g) => {
+      const at = resting.current + g.dx;
+      if (at <= -SWIPE_DELETE_OFFSET || g.vx < -1.2) {
+        Animated.timing(translateX, { toValue: -600, duration: 160, useNativeDriver: true }).start(() => onDelete?.());
+      } else if (at < -SWIPE_OPEN_OFFSET || g.vx < -0.5) {
+        settleRef.current(-SWIPE_ACTION_WIDTH, true);
+      } else {
+        settleRef.current(0, false);
+      }
+    },
+    onPanResponderTerminate: () => settleRef.current(resting.current, resting.current !== 0),
+    onPanResponderTerminationRequest: () => true,
+    onShouldBlockNativeResponder: () => false,
+  })).current;
+
+  return <View style={styles.swipeableWrap}>
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onDelete} style={styles.swipeDeleteAction}>
+      <SymbolView name="trash" size={17} tintColor={C.bg} />
+      <Text style={styles.swipeDeleteText}>REMOVE</Text>
+    </Pressable>
+    <Animated.View style={[styles.swipeableContent, { transform: [{ translateX }] }]} {...pan.panHandlers}>
+      {children}
+      {open && <Pressable accessibilityLabel="Close" onPress={() => settle(0, false)} style={StyleSheet.absoluteFill} />}
+    </Animated.View>
+  </View>;
 }

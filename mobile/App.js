@@ -1,24 +1,28 @@
+// Polyfills must load before @atproto packages so they find native APIs.
+import 'core-js/modules/es.uint8-array.from-base64';
+import 'core-js/modules/es.uint8-array.to-base64';
+import 'core-js/modules/es.uint8-array.set-from-base64';
+import '@formatjs/intl-segmenter/polyfill.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
-import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
+import { C, styles } from './src/theme';
 import { formatDate, storyAuthor } from './src/utils';
-import { ArticleBody, SectionBar, SkeletonImage, StoryRow, TabButton } from './src/components';
+import { ArticleBody, SectionBar, SkeletonImage, StoryRow, SwipeableDeleteRow, TabButton } from './src/components';
 import { cdnBlobImageUrl, imageUrlForPreset } from './src/imageUrls';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
 import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
-import { clearImageCache, getImageCacheSize, MAX_CACHE_BYTES } from './src/imageCache';
-import { cachePost, getCachedPost, log, registerImageUrl } from './src/developer';
+import { cachePost, getApiBase, getCachedPost, log, registerImageUrl } from './src/developer';
 import { onNotificationResponse, registerForPushNotifications, unregisterForPushNotifications } from './src/push';
+import Welcome, { WELCOME_KEY } from './src/Welcome';
 import {
-  ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
+  ActivityIndicator, Image, Linking, Pressable, ScrollView,
   StatusBar, Text, TextInput, View, RefreshControl,
 } from 'react-native';
 
-const API = 'https://coffeencode.cc/api';
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 const SAVED_KEY = 'coffee-and-code:saved';
 const SAVED_OWNER_KEY = 'coffee-and-code:saved-owner';
@@ -114,7 +118,7 @@ export default function App() {
       const did = account.session.did;
       const [records, postsResponse] = await Promise.all([
         listRepoRecords(account.agent, did, SAVE_COLLECTION),
-        fetch(`${API}/account/posts`, { cache: 'no-store' }).catch(() => null),
+        fetch(`${getApiBase()}/account/posts`, { cache: 'no-store' }).catch(() => null),
       ]);
       const publishedPosts = postsResponse?.ok ? await postsResponse.json().catch(() => []) : [];
       const postByUri = new Map((Array.isArray(publishedPosts) ? publishedPosts : []).map((post) => [post.uri, post]));
@@ -137,16 +141,7 @@ export default function App() {
   const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
-   const [cacheBytes, setCacheBytes] = useState(0);
-  const [cacheClearing, setCacheClearing] = useState(false);
-  const handleClearCache = async () => {
-    setCacheClearing(true);
-    try { await clearImageCache(); setCacheBytes(0); } finally { setCacheClearing(false); }
-  };
   const [settingsPage, setSettingsPage] = useState(null);
-    useEffect(() => {
-    if (tab === 'Account') getImageCacheSize().then(setCacheBytes).catch(() => {});
-  }, [tab, accountRefresh, settingsPage]);
   const [loginHandle, setLoginHandle] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -154,10 +149,9 @@ export default function App() {
   const [commentDraft, setCommentDraft] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [welcomed, setWelcomed] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
-  const navCompactProgress = useRef(new Animated.Value(0)).current;
-  const navCollapsedRef = useRef(false);
   const lastArticleScrollY = useRef(0);
   const articleTouchStart = useRef(null);
   const commentsRequestId = useRef(0);
@@ -172,11 +166,11 @@ export default function App() {
     try {
       let payload;
       try {
-        const response = await fetch(`${API}/home`);
+        const response = await fetch(`${getApiBase()}/home`);
         if (response.ok) payload = await response.json().catch(() => null);
       } catch { /* Try the archive endpoint below if the home feed is unavailable. */ }
       if (!Array.isArray(payload?.latest) || !Array.isArray(payload?.pinned)) {
-        const response = await fetch(`${API}/documents?limit=100`);
+        const response = await fetch(`${getApiBase()}/documents?limit=100`);
         if (!response.ok) throw new Error('Coffee & Code is temporarily unavailable. Please try again.');
         const archive = await response.json();
         const documents = Array.isArray(archive.documents) ? archive.documents : [];
@@ -208,11 +202,11 @@ export default function App() {
         params.set('refresh', '1');
         countParams.set('refresh', '1');
       }
-      const response = await fetch(`${API}/notifications?${params}`, { cache: 'no-store' });
+      const response = await fetch(`${getApiBase()}/notifications?${params}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('Notifications are temporarily unavailable. Please try again.');
       const payload = await response.json();
       if (!Array.isArray(payload.notifications)) throw new Error('The notifications service returned an invalid response.');
-      const countResponse = await fetch(`${API}/notifications?${countParams}`, { cache: 'no-store' });
+      const countResponse = await fetch(`${getApiBase()}/notifications?${countParams}`, { cache: 'no-store' });
       if (!countResponse.ok) throw new Error('Could not load the unread notification count.');
       const countPayload = await countResponse.json();
       if (!Number.isInteger(countPayload.unreadCount) || countPayload.unreadCount < 0) {
@@ -261,6 +255,11 @@ export default function App() {
       .then((value) => setSaved(value ? JSON.parse(value) : []))
       .catch(() => {})
       .finally(() => setSavedLoaded(true));
+  }, []);
+  useEffect(() => {
+    AsyncStorage.getItem(WELCOME_KEY)
+      .then((value) => setWelcomed(value === '1'))
+      .catch(() => setWelcomed(false));
   }, []);
   useEffect(() => {
     log.info('App launched');
@@ -314,7 +313,7 @@ export default function App() {
       try {
         const [profileResponse, postsResponse, viewRecords, blockRecords, ownerValue, pdsEndpoint] = await Promise.all([
           fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`).catch(() => null),
-          fetch(`${API}/account/posts`, { cache: 'no-store' }).catch(() => null),
+          fetch(`${getApiBase()}/account/posts`, { cache: 'no-store' }).catch(() => null),
           listRepoRecords(activeAccount.agent, did, VIEW_COLLECTION),
           listRepoRecords(activeAccount.agent, did, BLOCK_COLLECTION),
           AsyncStorage.getItem(SAVED_OWNER_KEY),
@@ -399,7 +398,7 @@ export default function App() {
       const params = new URLSearchParams({ subject: storyUri, limit: '40' });
       if (account?.session?.did) params.set('did', account.session.did);
       if (cursor) params.set('cursor', cursor);
-      const response = await fetch(`${API}/comments?${params.toString()}`, { cache: 'no-store' });
+      const response = await fetch(`${getApiBase()}/comments?${params.toString()}`, { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Comments are temporarily unavailable.');
       if (!Array.isArray(payload.records)) throw new Error('The comments response was incomplete.');
@@ -422,29 +421,9 @@ export default function App() {
     }
   }, [account?.session?.did]);
 
-  const animateArticleNav = useCallback((collapsed) => {
-    if (navCollapsedRef.current === collapsed) return;
-    navCollapsedRef.current = collapsed;
-    Animated.timing(navCompactProgress, {
-      toValue: collapsed ? 1 : 0,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [navCompactProgress]);
-
   const onArticleScroll = useCallback((event) => {
-    const offset = event.nativeEvent.contentOffset.y;
-    const delta = offset - lastArticleScrollY.current;
-    if (offset <= 8) {
-      animateArticleNav(false);
-      lastArticleScrollY.current = offset;
-      return;
-    }
-    if (Math.abs(delta) < 8) return;
-    animateArticleNav(delta > 0);
-    lastArticleScrollY.current = offset;
-  }, [animateArticleNav]);
+    lastArticleScrollY.current = event.nativeEvent.contentOffset.y;
+  }, []);
 
   const openStory = useCallback(async (story) => {
     setSelected(story);
@@ -456,8 +435,6 @@ export default function App() {
     setCommentCursor(null);
     setCommentError('');
     setReplyTarget(null);
-    navCollapsedRef.current = false;
-    navCompactProgress.setValue(0);
     lastArticleScrollY.current = 0;
     void loadComments(story.uri);
     if (story.cover) registerImageUrl(story.cover);
@@ -486,7 +463,7 @@ export default function App() {
       })();
     }
     try {
-      const storyResponse = await fetch(`${API}/documents?uri=${encodeURIComponent(story.uri)}`, { cache: 'no-store' });
+      const storyResponse = await fetch(`${getApiBase()}/documents?uri=${encodeURIComponent(story.uri)}`, { cache: 'no-store' });
       if (!storyResponse.ok) throw new Error(`Story request failed (${storyResponse.status}). Please try again.`);
       const responseText = await storyResponse.text();
       const json = JSON.parse(responseText);
@@ -505,7 +482,7 @@ export default function App() {
       if (!hasContent) throw new Error('This story has no readable structured content.');
       setArticleRecord(recordValue);
       const [engagementResponse] = await Promise.all([
-        fetch(`${API}/reactions?subject=${encodeURIComponent(story.uri)}${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
+        fetch(`${getApiBase()}/reactions?subject=${encodeURIComponent(story.uri)}${account?.session?.did ? `&did=${encodeURIComponent(account.session.did)}` : ''}`).catch(() => null),
       ]);
       if (engagementResponse?.ok) setEngagement(await engagementResponse.json());
       if (account?.agent) {
@@ -533,7 +510,7 @@ export default function App() {
   const loadArchive = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API}/documents?limit=100`);
+      const response = await fetch(`${getApiBase()}/documents?limit=100`);
       if (!response.ok) throw new Error('The archive is temporarily unavailable.');
       const data = await response.json();
       setArchiveStories(data.documents || []);
@@ -565,7 +542,7 @@ export default function App() {
       await AsyncStorage.setItem(SAVED_KEY, JSON.stringify(next));
       if (account?.session?.did) await AsyncStorage.setItem(SAVED_OWNER_KEY, account.session.did);
       if (account?.agent && selected?.uri === story.uri) {
-        const response = await fetch(`${API}/reactions?subject=${encodeURIComponent(story.uri)}&did=${encodeURIComponent(account.session.did)}`).catch(() => null);
+        const response = await fetch(`${getApiBase()}/reactions?subject=${encodeURIComponent(story.uri)}&did=${encodeURIComponent(account.session.did)}`).catch(() => null);
         if (response?.ok) setEngagement(await response.json());
       }
     } catch (e) {
@@ -595,7 +572,7 @@ export default function App() {
     if (!loginHandle.trim()) { setError('Enter your AT Protocol handle to continue.'); return; }
     setAccountBusy(true); setError('');
     try {
-      const response = await fetch(`${API}/authors/check?handle=${encodeURIComponent(loginHandle.trim())}`);
+      const response = await fetch(`${getApiBase()}/authors/check?handle=${encodeURIComponent(loginHandle.trim())}`);
       const data = response.ok ? await response.json() : {};
       setAccount(await signIn(loginHandle.trim(), Boolean(data.isAuthor)));
       log.info('Signed in', loginHandle.trim());
@@ -609,7 +586,7 @@ export default function App() {
     setInviteLoading(true);
     setInviteError('');
     try {
-      const response = await fetch(`${API}/invite-code`, { cache: 'no-store' });
+      const response = await fetch(`${getApiBase()}/invite-code`, { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'An invite code is temporarily unavailable. Please try again.');
       if (typeof payload.code !== 'string' || !payload.code.trim()) throw new Error('The invite service returned an invalid code.');
@@ -768,7 +745,7 @@ export default function App() {
         } : {}),
       });
       setEngagement(localState);
-      const response = await fetch(`${API}/reactions?subject=${encodeURIComponent(selected.uri)}&did=${encodeURIComponent(account.session.did)}`, { cache: 'no-store' }).catch(() => null);
+      const response = await fetch(`${getApiBase()}/reactions?subject=${encodeURIComponent(selected.uri)}&did=${encodeURIComponent(account.session.did)}`, { cache: 'no-store' }).catch(() => null);
       if (response?.ok) {
         const indexed = await response.json();
         setEngagement((current) => current && ({
@@ -795,7 +772,7 @@ export default function App() {
     bio: authorProfile?.coffee?.description || authorProfile?.bsky?.description || selected.author.description || '',
   } : null;
   const openAuthorProfile = () => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(articleAuthor.handle || articleAuthor.did)}`);
-  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setArticleRecord(null); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
+  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setArticleRecord(null); setError(''); setReplyTarget(null); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
   const tags = [...new Set(allArchiveStories.flatMap((story) => story.tags || []))].sort((a, b) => a.localeCompare(b));
   const visibleStories = allArchiveStories.filter((story) => {
@@ -812,7 +789,7 @@ export default function App() {
   const pinnedStories = feed?.pinned || [];
   const notificationBadgeCount = account?.agent ? notificationsUnreadCount : 0;
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
-  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); animateArticleNav(false); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); };
 
   const onArticleTouchStart = (event) => {
     const touch = event.nativeEvent.touches?.[0] || event.nativeEvent;
@@ -942,10 +919,15 @@ export default function App() {
   </ScrollView>;
 
   const renderAccountStoryList = (items, emptyText, allowRemove = false) => items.length
-    ? items.map((story, index) => <View key={`${story.uri}-${index}`} style={allowRemove ? styles.accountSavedRow : undefined}>
-      <View style={allowRemove ? styles.accountSavedCopy : undefined}><StoryRow story={story} compact onPress={() => openStory(story)} /><Text style={styles.accountRecordDate}>{allowRemove ? 'Saved' : 'Viewed'} {formatDate(allowRemove ? story.savedAt : story.viewedAt) || 'recently'}</Text></View>
-      {allowRemove && <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${story.title} from your reading list`} disabled={accountBusy} onPress={() => toggleSaved(story)} style={styles.accountRemoveButton}><Text style={styles.action}>REMOVE</Text></Pressable>}
-    </View>)
+    ? items.map((story, index) => {
+      const row = <>
+        <StoryRow story={story} compact onPress={() => openStory(story)} />
+        <Text style={styles.accountRecordDate}>{allowRemove ? 'Saved' : 'Viewed'} {formatDate(allowRemove ? story.savedAt : story.viewedAt) || 'recently'}</Text>
+      </>;
+      return allowRemove
+        ? <SwipeableDeleteRow key={`${story.uri}-${index}`} accessibilityLabel={`Remove ${story.title} from your saved list`} onDelete={() => toggleSaved(story)}>{row}</SwipeableDeleteRow>
+        : <View key={`${story.uri}-${index}`}>{row}</View>;
+    })
     : <Text style={styles.emptyText}>{emptyText}</Text>;
 
   const renderCommentThread = (comment, depth = 0, ancestors = new Set()) => {
@@ -984,10 +966,6 @@ export default function App() {
     onBack={() => setSettingsPage(null)}
     onUnblock={unblockAccount}
     onSignOut={async () => { await signOut(account); void unregisterForPushNotifications(AsyncStorage); log.info('Signed out'); setAccount(null); setSettingsPage(null); }}
-    cacheBytes={cacheBytes}
-    maxCacheBytes={MAX_CACHE_BYTES}
-    cacheClearing={cacheClearing}
-    onClearCache={handleClearCache}
   /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
     {account ? <>
@@ -1066,6 +1044,13 @@ export default function App() {
     </>}
   </ScrollView>;
 
+  if (welcomed === false) {
+    return <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <Welcome onDone={() => { AsyncStorage.setItem(WELCOME_KEY, '1').catch(() => {}); setWelcomed(true); }} />
+    </SafeAreaView>;
+  }
+
   return <SafeAreaView style={styles.safe}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg} />
     <View style={styles.header}>
@@ -1091,7 +1076,7 @@ export default function App() {
           <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>{articleAuthor?.name || storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
         </View>
         <View style={styles.engagementRow}>
-          <Text style={styles.engagementStat}>◉  {engagement?.views ?? '—'} reads</Text><Text style={styles.engagementStat}>▤  {commentTotal || engagement?.comments || comments.length || 0} comments</Text>
+          <View style={styles.engagementStat}><SymbolView name="eye" size={12} tintColor={C.muted} /><Text style={styles.engagementStatText}>{engagement?.views ?? '—'} reads</Text></View><View style={styles.engagementStat}><SymbolView name="text.bubble" size={12} tintColor={C.muted} /><Text style={styles.engagementStatText}>{commentTotal || engagement?.comments || comments.length || 0} comments</Text></View>
         </View>
         <View style={styles.reactionActions}>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.liked) }} accessibilityLabel={`Like, ${engagement?.likes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('like')} style={[styles.reactionButton, engagement?.liked && styles.reactionSelected]}><SymbolView name="hand.thumbsup" size={14} tintColor={engagement?.liked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.liked && styles.reactionSelectedText]}>{engagement?.liked ? 'LIKED' : 'LIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.liked && styles.reactionSelectedText]}>{engagement?.likes ?? 0}</Text></Pressable>
@@ -1131,12 +1116,12 @@ export default function App() {
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
       : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Notifications' ? renderNotifications() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
-    <Animated.View style={[styles.tabBar, selected && styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [TAB_BAR_HEIGHT, 42] }) }]}>
-      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
-      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
-      <TabButton label="Notifications" icon="bell.fill" active={tab === 'Notifications'} onPress={() => selectMainTab('Notifications')} compactProgress={selected ? navCompactProgress : null} badgeCount={notificationBadgeCount} />
-      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
-      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
-    </Animated.View>
+    <View style={[styles.tabBar, selected && styles.articleTabBar]}>
+      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} />
+      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} />
+      <TabButton label="Notifications" icon="bell.fill" active={tab === 'Notifications'} onPress={() => selectMainTab('Notifications')} badgeCount={notificationBadgeCount} />
+      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} />
+      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} />
+    </View>
   </SafeAreaView>;
 }

@@ -3,7 +3,7 @@ PODS:
     - ReactNativeDependencies
   - DoubleConversion (1.1.6):
     - ReactNativeDependencies
-  - EXConstants (58.0.15):
+  - EXConstants (58.0.16):
     - ExpoModulesCore
   - EXJSONUtils (58.0.1)
   - EXManifests (58.0.1):
@@ -124,11 +124,15 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoApplication (58.1.2):
+    - ExpoModulesCore
   - ExpoAsset (58.0.20):
     - ExpoModulesCore
   - ExpoAtprotoOAuthClient (0.2.11):
     - ExpoModulesCore
     - JOSESwift (~> 2.3)
+  - ExpoDevice (58.0.5):
+    - ExpoModulesCore
   - ExpoDomWebView (58.0.2):
     - ExpoModulesCore
   - ExpoFileSystem (58.0.13):
@@ -170,6 +174,8 @@ PODS:
   - ExpoModulesWorklets (58.0.30):
     - ExpoModulesCore
     - ExpoModulesJSI
+  - ExpoNotifications (58.1.9):
+    - ExpoModulesCore
   - ExpoStatusBar (58.0.4):
     - ExpoModulesCore
   - ExpoSymbols (58.0.4):
@@ -1576,6 +1582,78 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-safe-area-context (5.11.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - react-native-safe-area-context/common (= 5.11.1)
+    - react-native-safe-area-context/fabric (= 5.11.1)
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - react-native-safe-area-context/common (5.11.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - react-native-safe-area-context/fabric (5.11.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - react-native-safe-area-context/common
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-webview (14.0.1):
     - hermes-engine
     - RCTRequired
@@ -2030,8 +2108,10 @@ DEPENDENCIES:
   - expo-dev-launcher (from `../node_modules/expo-dev-launcher`)
   - expo-dev-menu (from `../node_modules/expo-dev-menu`)
   - expo-dev-menu-interface (from `../node_modules/expo-dev-menu-interface/ios`)
+  - ExpoApplication (from `../node_modules/expo-application/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - "ExpoAtprotoOAuthClient (from `../node_modules/@atproto/oauth-client-expo/ios`)"
+  - ExpoDevice (from `../node_modules/expo-device/ios`)
   - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
@@ -2040,6 +2120,7 @@ DEPENDENCIES:
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
+  - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoStatusBar (from `../node_modules/expo-status-bar/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
@@ -2092,6 +2173,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - React-mutationobservernativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
+  - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-webview (from `../node_modules/react-native-webview`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
@@ -2160,10 +2242,14 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-dev-menu"
   expo-dev-menu-interface:
     :path: "../node_modules/expo-dev-menu-interface/ios"
+  ExpoApplication:
+    :path: "../node_modules/expo-application/ios"
   ExpoAsset:
     :path: "../node_modules/expo-asset/ios"
   ExpoAtprotoOAuthClient:
     :path: "../node_modules/@atproto/oauth-client-expo/ios"
+  ExpoDevice:
+    :path: "../node_modules/expo-device/ios"
   ExpoDomWebView:
     :path: "../node_modules/expo/node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
@@ -2180,6 +2266,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-jsi/apple"
   ExpoModulesWorklets:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
+  ExpoNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   ExpoStatusBar:
     :path: "../node_modules/expo-status-bar/ios"
   ExpoSymbols:
@@ -2283,6 +2371,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   React-mutationobservernativemodule:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver"
+  react-native-safe-area-context:
+    :path: "../node_modules/react-native-safe-area-context"
   react-native-webview:
     :path: "../node_modules/react-native-webview"
   React-NativeModulesApple:
@@ -2369,7 +2459,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   boost: 8502bfdc46e2804408af2e163049ece181009af4
   DoubleConversion: 501a575c40c0b50c89685762dd3e415e6bb26fb0
-  EXConstants: c1eb9dab7494834d85aa347165da9718cdfc21a6
+  EXConstants: aeda76f4be923fc719522ae162dd0b8c6483f9cc
   EXJSONUtils: d59bf6b18639752631a81818559b2675a46f99e2
   EXManifests: b0b83ad894166f7e080b18814c5e73aed46e366e
   Expo: 5e153ccf91cc18517c0d0d43c90fd2fdc19eac80
@@ -2377,8 +2467,10 @@ SPEC CHECKSUMS:
   expo-dev-launcher: bfcef59e558058e0e3afcb33b8e37aff4804af76
   expo-dev-menu: 6b2030d709633f4b0aa58bfeca54b612235e5a4c
   expo-dev-menu-interface: d304e400271187edf1534704a4a05dcc140076e2
+  ExpoApplication: c83355b2f69f996b5d26b64fef39228e7f1e1208
   ExpoAsset: c080026976ef8f00dca12c4958c658b2ebd4d4e0
   ExpoAtprotoOAuthClient: 48abfe700cb7dbf03013319977aa3669debef331
+  ExpoDevice: 77a9816436a09a0bfc00f5ace649c6ccb219b96d
   ExpoDomWebView: b2a6d681b9d34c23b1f584321386ca8da1d36afb
   ExpoFileSystem: b619d80b490c53117a9a9c976021a4ce5a9da440
   ExpoFont: 77eaad26c6a7ef6be8d431963358def09d8e3a73
@@ -2387,6 +2479,7 @@ SPEC CHECKSUMS:
   ExpoModulesCore: 0a4ae87560d8bc97af6521cef440ea90d846312a
   ExpoModulesJSI: 600554f1b699e994b78398d87a39d477b6cd4bed
   ExpoModulesWorklets: 25684e76e7b886dd31bf4538c3fd657bf07a694b
+  ExpoNotifications: fa890b1d743fd72ca15c52ac9f9f23c76860e228
   ExpoStatusBar: 56aa9746e1bee4d8adbab12f4d7efc97000ac49f
   ExpoSymbols: 1260e741b35b6fd105942779895418db306645c8
   ExpoWebBrowser: 2156882323a8634b7f01a8e2595d52187eb42fea
@@ -2440,6 +2533,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 50c4d7a1ff3f18413cbaf897c8b5ce46baa491b3
   React-microtasksnativemodule: 0207d6133274a7cbfc3d0dae326e3055c8cfcf9e
   React-mutationobservernativemodule: b97a67c29f724d18a92379e7390f24350acb433a
+  react-native-safe-area-context: 56700b839169ce88ffcec68c40447916fe512462
   react-native-webview: 3a3d1fd130d39e4dcabeebe89e6b245478ee177e
   React-NativeModulesApple: 8cfb2f308f48c48068c96b932e7f0e4297c23342
   React-networking: 3325cf73ecbdaacab0da91260b094baf36061a56

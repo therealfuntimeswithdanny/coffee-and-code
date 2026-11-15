@@ -13,6 +13,7 @@ export const IMAGE_REGISTRY_MAX = 3000;
 const IMAGE_PREFETCH_MAX = 200;
 
 const LOG_KEY = 'app-log';
+const API_BASE_KEY = 'api-base';
 const POST_PREFIX = 'post:';
 const POST_INDEX_KEY = 'post-index';
 const IMAGE_URLS_KEY = 'image-urls';
@@ -222,4 +223,26 @@ export async function refreshImageCache() {
 
 export function clearImageCacheRegistry() {
   removeKey(IMAGE_URLS_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// API base URL — developers can point the app at a self-hosted endpoint that
+// speaks the same routes and query parameters as the official API.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_API_BASE = 'https://coffeencode.cc/api';
+
+export function getApiBase() {
+  try {
+    const raw = store.getString(API_BASE_KEY);
+    if (raw && /^https?:\/\/\S+$/i.test(raw)) return raw.replace(/\/+$/, '');
+  } catch {}
+  return DEFAULT_API_BASE;
+}
+
+export function setApiBase(url) {
+  const trimmed = String(url || '').trim().replace(/\/+$/, '');
+  if (!trimmed || trimmed === DEFAULT_API_BASE) { removeKey(API_BASE_KEY); return; }
+  if (!/^https?:\/\/\S+$/i.test(trimmed)) throw new Error('Enter a full URL starting with http:// or https://');
+  store.set(API_BASE_KEY, trimmed);
 }
