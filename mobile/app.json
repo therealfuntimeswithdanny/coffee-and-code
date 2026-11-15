@@ -22,7 +22,8 @@
     },
     "plugins": [
       "expo-web-browser",
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-notifications"
     ]
   }
 }

@@ -12,6 +12,7 @@ import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey
 import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
 import { clearImageCache, getImageCacheSize, MAX_CACHE_BYTES } from './src/imageCache';
 import { cachePost, getCachedPost, log, registerImageUrl } from './src/developer';
+import { onNotificationResponse, registerForPushNotifications, unregisterForPushNotifications } from './src/push';
 import {
   ActivityIndicator, Image, Linking, Pressable, SafeAreaView, ScrollView,
   StatusBar, Text, TextInput, View, RefreshControl,
@@ -267,6 +268,14 @@ export default function App() {
       .then((session) => { log.info('Session restore', session ? 'restored' : 'no session'); setAccount(session); })
       .catch((error) => { log.warn('Session restore failed', error?.message); });
   }, []);
+  useEffect(() => {
+    if (!account?.session?.did) return;
+    void registerForPushNotifications(account.session.did, AsyncStorage);
+  }, [account?.session?.did]);
+  useEffect(() => onNotificationResponse(() => {
+    setSelected(null);
+    setTab('Notifications');
+  }), []);
 
   const stories = useMemo(() => {
     if (!feed) return [];
@@ -974,7 +983,7 @@ export default function App() {
     initialPage={settingsPage}
     onBack={() => setSettingsPage(null)}
     onUnblock={unblockAccount}
-    onSignOut={async () => { await signOut(account); log.info('Signed out'); setAccount(null); setSettingsPage(null); }}
+    onSignOut={async () => { await signOut(account); void unregisterForPushNotifications(AsyncStorage); log.info('Signed out'); setAccount(null); setSettingsPage(null); }}
     cacheBytes={cacheBytes}
     maxCacheBytes={MAX_CACHE_BYTES}
     cacheClearing={cacheClearing}
@@ -994,7 +1003,7 @@ export default function App() {
         </View>
         {!!coffeeProfile?.description && <Text style={styles.accountDescription}>{coffeeProfile.description}</Text>}
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(accountProfile?.handle || account.session.did)}`)} style={styles.profileLink}><Text style={styles.action}>VIEW PROFILE  ↗</Text></Pressable>
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); log.info('Signed out'); setAccount(null); setSettingsPage(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); void unregisterForPushNotifications(AsyncStorage); log.info('Signed out'); setAccount(null); setSettingsPage(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
       </View>
       <SectionBar title="Settings" />
       <View style={styles.settingsCard}>
