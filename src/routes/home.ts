@@ -77,7 +77,7 @@ home.get('/', async (c) => {
       <div class="lead-column">
         <article class="lead-story">
           <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
-            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')} 800w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Latest dispatch</span>'}
+            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')} 800w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Coffee & Code</span>'}
           </a>
           <div class="lead-story__content">
             <h2><a href="${escapeHtml(heroPost.path)}">${escapeHtml(heroPost.title || 'Untitled')}</a></h2>

@@ -594,6 +594,26 @@ export async function fetchArticleByUri(uri: string, fallbackPds: string, fallba
     fetchArticleByUriUncached(uri, fallbackPds, fallbackDid));
 }
 
+export async function fetchArticleByPath(
+  handle: string,
+  rkey: string,
+  fallbackPds: string,
+  fallbackDid: string,
+): Promise<StandardDocument | undefined> {
+  const requestedPath = `/author/${encodeURIComponent(handle)}/${encodeURIComponent(rkey)}`;
+  const configuredLists = await fetchConfiguredLists(fallbackPds, fallbackDid);
+  const repositoryDids = new Set([fallbackDid]);
+  configuredLists.publicationUris.forEach((uri) => {
+    const match = uri.match(/^at:\/\/(did:[^/]+)\/site\.standard\.publication\/[^/]+$/);
+    if (match) repositoryDids.add(match[1]);
+  });
+
+  const documents = await Promise.all([...repositoryDids].map((repoDid) =>
+    fetchArticleByUri(`at://${repoDid}/site.standard.document/${rkey}`, fallbackPds, fallbackDid)));
+  return documents.find((document) => document
+    && (document.path === requestedPath || document.alternatePaths?.includes(requestedPath)));
+}
+
 async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallbackDid: string): Promise<StandardDocument | undefined> {
   const match = uri.match(/^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/);
   if (!match) return undefined;

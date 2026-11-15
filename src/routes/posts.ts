@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { Env } from '../types';
-import { getPdsEndpoint, fetchArticles, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, fetchArticleByPath, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout } from '../templates/layout';
 import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
@@ -35,7 +35,10 @@ async function renderPost(
         const canonicalDid = item.author?.did || item.repoDid || '';
         return canonicalDid.toLowerCase() === requestedHandle.toLowerCase()
           || item.author?.handle.toLowerCase() === requestedHandle.toLowerCase();
-      }) || (candidates.length === 1 ? candidates[0] : undefined));
+      }) || (candidates.length === 1 ? candidates[0] : undefined))
+    || (requestedHandle
+      ? await fetchArticleByPath(requestedHandle, rkey, pds, c.env.OWNER_DID)
+      : undefined);
 
   if (!post) {
     return c.html(renderLayout(c, 'Article Not Found', `
