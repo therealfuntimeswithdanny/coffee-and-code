@@ -1227,20 +1227,21 @@ pages.get('/terms', (c) => {
 
 // Unlinked landing page for the Android test build. Not in any nav or sitemap.
 pages.get('/download', (c) => {
+  const appVersion = '0.1';
   const apkUrl = 'https://storage.coffeencode.cc/download/mobile/CoffeeAndCode-android.apk';
   const body = `
     <section class="download-page" aria-labelledby="download-title">
       <p class="eyebrow">Coffee &amp; Code for Android</p>
       <h1 id="download-title">Get the app</h1>
-      <p class="download-page__intro">The Coffee &amp; Code Android app is in testing. Download the APK and install it on your device to try it out.</p>
+      <p class="download-page__intro">The Coffee &amp; Code Android app is in testing. Download it to your device to try it out.</p>
       <a class="download-page__button" href="${apkUrl}">Download for Android</a>
-      <p class="download-page__meta">APK · ~25 MB · Android 8+ · 64-bit (arm64)</p>
+      <p class="download-page__meta">Version ${appVersion} · This download takes you to storage.coffeencode.cc</p>
       <details class="download-page__help">
         <summary>How to install</summary>
         <ol>
-          <li>Download the APK to your Android device.</li>
+          <li>Download the app to your Android device.</li>
           <li>Open it — Android will ask to allow installs from this source; approve it.</li>
-          <li>Tap Install. The app updates are manual for now — grab a fresh APK here when a new build is announced.</li>
+          <li>Tap Install. The app updates are manual for now — grab a fresh copy here when a new build is announced.</li>
         </ol>
         <p>Spotted a bug? <a href="https://userinput.app/s/did:plc:l37td5yhxl2irrzrgvei4qay/3mxrdfzksld24" target="_blank" rel="noopener">Leave feedback</a>.</p>
       </details>
@@ -1260,12 +1261,20 @@ pages.get('/download', (c) => {
       .download-page__help a { color: var(--accent); }
     </style>
   `;
+  const pageUrl = new URL(c.req.url).toString();
   const metaTags = `
-    <meta name="description" content="Download the Coffee &amp; Code Android app test build.">
+    <meta name="description" content="Download the Coffee &amp; Code Android app.">
     <meta name="robots" content="noindex">
-    <title>Download | Coffee &amp; Code</title>
+    <meta property="og:title" content="Coffee &amp; Code for Android">
+    <meta property="og:description" content="Download the Coffee &amp; Code Android app.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${pageUrl}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Coffee &amp; Code for Android">
+    <meta name="twitter:description" content="Download the Coffee &amp; Code Android app.">
+    <link rel="canonical" href="${pageUrl}">
   `;
-  return c.html(renderLayout(c, 'Download', body, metaTags));
+  return c.html(renderLayout(c, 'Coffee & Code for Android', body, metaTags));
 });
 
 export default pages;
