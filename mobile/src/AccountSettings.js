@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DevSettings, Image, Linking, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import { WELCOME_KEY } from './Welcome';
-import { SymbolView } from 'expo-symbols';
+import SymbolView from './Icon';
 import { C, styles } from './theme';
 import { formatDate } from './utils';
 import {

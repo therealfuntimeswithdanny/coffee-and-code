@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, fetchPostMetadata, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
+import { toPlainText } from '../lib/contentRenderer';
 import { loadNotificationsForUser } from '../lib/notifications';
 import legal from '../legal.json';
 
@@ -19,11 +20,17 @@ async function documentMetadata(document: StandardDocument, pds: string) {
   };
 }
 
+function documentSnippet(post: StandardDocument, length = 240) {
+  const text = toPlainText(post.content || '', post.mimeType);
+  return text.length > length ? `${text.substring(0, length).trimEnd()}…` : text;
+}
+
 function documentSummary(post: StandardDocument, pds: string) {
   return {
     uri: post.uri,
     title: post.title,
     description: post.description || '',
+    snippet: documentSnippet(post),
     publishedAt: post.publishedAt,
     path: post.path,
     cover: post.cover ? proxyImageUrl(post.cover, pds, 'feed_medium') : undefined,

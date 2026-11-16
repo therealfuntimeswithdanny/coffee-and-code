@@ -12,6 +12,10 @@
     "orientation": "portrait",
     "scheme": "cc.coffeencode",
     "userInterfaceStyle": "dark",
+    "android": {
+      "package": "cc.coffeencode.android",
+      "permissions": ["POST_NOTIFICATIONS"]
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "cc.coffeencode.ios",

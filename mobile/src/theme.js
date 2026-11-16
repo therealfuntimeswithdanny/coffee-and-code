@@ -147,10 +147,17 @@ export const styles = StyleSheet.create({
     lineHeight: 20,
   },
   compactSummary: {
+    color: C.ink,
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 15,
+    marginTop: 4,
+  },
+  compactSnippet: {
     color: C.muted,
     fontSize: 11,
     lineHeight: 15,
-    marginTop: 4,
+    marginTop: 3,
   },
   compactMeta: { color: C.muted, fontSize: 9, marginTop: 6 },
   heroTitle: {

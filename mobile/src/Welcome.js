@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import SymbolView from './Icon';
 import { C, styles } from './theme';
 import { LegalSettings } from './legal';
 import AuthCard from './AuthCard';

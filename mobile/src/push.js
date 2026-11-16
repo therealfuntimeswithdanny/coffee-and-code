@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { getApiBase, log } from './developer';
 
 const PUSH_TOKEN_KEY = 'coffee-and-code:push-token';
@@ -16,6 +17,15 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
+
+// Android 8+ requires a notification channel before any notification can post.
+// Creating it is idempotent, so do it at module load on Android only.
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'Default',
+    importance: Notifications.AndroidImportance.DEFAULT,
+  }).catch(() => {});
+}
 
 async function postRegistration(path, did, token) {
   const response = await fetch(`${getApiBase()}/push/${path}`, {

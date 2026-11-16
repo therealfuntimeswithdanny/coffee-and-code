@@ -8,7 +8,7 @@ import { Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { SymbolView } from 'expo-symbols';
+import SymbolView from './src/Icon';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
 import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
 import { articleReadingTime, formatDate, storyAuthor } from './src/utils';
@@ -1149,7 +1149,7 @@ export default function App() {
     {error ? <View style={styles.empty}><Text style={styles.error}>{error}</Text><Pressable onPress={() => loadFeed()}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>
       : !stories.length ? <Text style={styles.emptyText}>No stories have been published yet. Please check back soon.</Text>
         : topStories.map((story, index) => <StoryRow key={story.uri || `${story.title}-${index}`} story={story} featured={index === 0} compact={index > 0} onPress={() => openStory(story)} />)}
-    {!!pinnedStories.length && <><SectionBar title="Pinned" detail={`${pinnedStories.length} PICKS`} />{pinnedStories.map((story) => <StoryRow key={`pinned-${story.uri}`} story={story} compact onPress={() => openStory(story)} />)}</>}
+    {!!pinnedStories.length && <><SectionBar title="Pinned" detail={`${pinnedStories.length} PICKS`} />{pinnedStories.map((story) => <StoryRow key={`pinned-${story.uri}`} story={story} compact keepPlaceholder onPress={() => openStory(story)} />)}</>}
     {!!promotion && <Pressable style={styles.promotion} onPress={() => Linking.openURL(promotion.url)}><Text style={styles.promoTitle}>We're looking for writers</Text><Text style={styles.promoDescription}>Coffee &amp; Code is made possible thanks to you! One way you can contribute is to write for us!</Text><Text style={styles.action}>WRITE FOR US  ›</Text></Pressable>}
     {!!remainingLatest.length && <><SectionBar title="More stories" detail={`${remainingLatest.length} STORIES`} />{remainingLatest.map((story) => <StoryRow key={`more-${story.uri}`} story={story} compact onPress={() => openStory(story)} />)}</>}
     {!!authors.length && <><SectionBar title="Authors" />{authors.map((author) => <Pressable key={author.did} style={styles.authorRow} onPress={() => openContributor(author)}>

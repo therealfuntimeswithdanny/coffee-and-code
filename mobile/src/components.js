@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Image, Linking, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import SymbolView from './Icon';
 import { WebView } from 'react-native-webview';
 import { C, styles } from './theme';
 import { formatDate, storyAuthor } from './utils';
@@ -254,12 +254,25 @@ export function SectionBar({ title, detail }) {
   return <View style={styles.sectionBar}><Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>{!!detail && <Text style={styles.sectionDetail}>{detail}</Text>}</View>;
 }
 
-export function StoryRow({ story, featured, compact, onPress }) {
+export function StoryRow({ story, featured, compact, keepPlaceholder, onPress }) {
   if (story.cover) registerImageUrl(story.cover);
-  if (compact) return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.compactStory}>
-    {story.cover ? <SkeletonImage source={{ uri: story.cover }} imagePreset="feed_thumb" style={styles.compactImage} resizeMode="cover" /> : <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View>}
-    <View style={styles.compactCopy}><Text style={styles.compactTitle} numberOfLines={3}>{story.title}</Text><Text style={styles.compactSummary} numberOfLines={2}>{story.description || ''}</Text><Text style={styles.compactMeta} numberOfLines={1}>{formatDate(story.publishedAt)}  ·  {storyAuthor(story)}</Text></View>
-  </Pressable>;
+  if (compact) {
+    // Coverless stories drop the image column entirely (except where a branded
+    // placeholder is wanted, e.g. Pinned) and fill the space with a content
+    // snippet — but only when a description is also shown, so the two texts
+    // stay visually distinct and a lone snippet never poses as the dek.
+    const textOnly = !story.cover && !keepPlaceholder;
+    const snippet = textOnly && story.description ? (story.snippet || '').trim() : '';
+    return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.compactStory}>
+      {story.cover ? <SkeletonImage source={{ uri: story.cover }} imagePreset="feed_thumb" style={styles.compactImage} resizeMode="cover" /> : keepPlaceholder ? <View style={styles.compactPlaceholder}><Text style={styles.placeholderMark}>C&amp;C</Text></View> : null}
+      <View style={styles.compactCopy}>
+        <Text style={styles.compactTitle} numberOfLines={textOnly ? 2 : 3}>{story.title}</Text>
+        {!!story.description && <Text style={styles.compactSummary} numberOfLines={2}>{story.description}</Text>}
+        {!!snippet && <Text style={styles.compactSnippet} numberOfLines={2}>{snippet}</Text>}
+        <Text style={styles.compactMeta} numberOfLines={1}>{formatDate(story.publishedAt)}  ·  {storyAuthor(story)}</Text>
+      </View>
+    </Pressable>;
+  }
   return <Pressable accessibilityRole="button" accessibilityLabel={`Read ${story.title}`} onPress={onPress} style={styles.storyRow}>
     {!!story.cover && <SkeletonImage source={{ uri: story.cover }} imagePreset={featured ? 'wide_medium' : 'feed_medium'} style={featured ? styles.heroImage : styles.storyImage} resizeMode="cover" />}
     <Text style={featured ? styles.heroTitle : styles.storyTitle}>{story.title}</Text>
