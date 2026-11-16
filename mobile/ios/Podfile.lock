@@ -180,6 +180,8 @@ PODS:
     - ExpoModulesCore
   - ExpoSymbols (58.0.4):
     - ExpoModulesCore
+  - ExpoSystemUI (58.0.7):
+    - ExpoModulesCore
   - ExpoWebBrowser (58.0.7):
     - ExpoModulesCore
   - EXUpdatesInterface (58.0.1):
@@ -2123,6 +2125,7 @@ DEPENDENCIES:
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoStatusBar (from `../node_modules/expo-status-bar/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
+  - ExpoSystemUI (from `../node_modules/expo-system-ui/ios`)
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - EXUpdatesInterface (from `../node_modules/expo-updates-interface/ios`)
   - fast_float (from `build/rndeps-facades/fast_float`)
@@ -2272,6 +2275,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-status-bar/ios"
   ExpoSymbols:
     :path: "../node_modules/expo-symbols/ios"
+  ExpoSystemUI:
+    :path: "../node_modules/expo-system-ui/ios"
   ExpoWebBrowser:
     :path: "../node_modules/expo-web-browser/ios"
   EXUpdatesInterface:
@@ -2482,6 +2487,7 @@ SPEC CHECKSUMS:
   ExpoNotifications: fa890b1d743fd72ca15c52ac9f9f23c76860e228
   ExpoStatusBar: 56aa9746e1bee4d8adbab12f4d7efc97000ac49f
   ExpoSymbols: 1260e741b35b6fd105942779895418db306645c8
+  ExpoSystemUI: bfbae2409cccd81019ac00a8f57a8724f0534cfd
   ExpoWebBrowser: 2156882323a8634b7f01a8e2595d52187eb42fea
   EXUpdatesInterface: 1c6a522d0eb0485f4de3fa55d0316288763b3f10
   fast_float: 7c925d1cebf8328d4018d061f49377e9f887e3b4

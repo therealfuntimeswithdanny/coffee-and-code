@@ -1225,4 +1225,47 @@ pages.get('/terms', (c) => {
   return c.html(renderLayout(c, 'Terms of service', body, metaTags));
 });
 
+// Unlinked landing page for the Android test build. Not in any nav or sitemap.
+pages.get('/download', (c) => {
+  const apkUrl = 'https://storage.coffeencode.cc/download/mobile/CoffeeAndCode-android.apk';
+  const body = `
+    <section class="download-page" aria-labelledby="download-title">
+      <p class="eyebrow">Coffee &amp; Code for Android</p>
+      <h1 id="download-title">Get the app</h1>
+      <p class="download-page__intro">The Coffee &amp; Code Android app is in testing. Download the APK and install it on your device to try it out.</p>
+      <a class="download-page__button" href="${apkUrl}">Download for Android</a>
+      <p class="download-page__meta">APK · ~25 MB · Android 8+ · 64-bit (arm64)</p>
+      <details class="download-page__help">
+        <summary>How to install</summary>
+        <ol>
+          <li>Download the APK to your Android device.</li>
+          <li>Open it — Android will ask to allow installs from this source; approve it.</li>
+          <li>Tap Install. The app updates are manual for now — grab a fresh APK here when a new build is announced.</li>
+        </ol>
+        <p>Spotted a bug? <a href="https://userinput.app/s/did:plc:l37td5yhxl2irrzrgvei4qay/3mxrdfzksld24" target="_blank" rel="noopener">Leave feedback</a>.</p>
+      </details>
+    </section>
+    <style>
+      .download-page { margin: 0 auto; max-width: 640px; padding-top: 48px; text-align: center; }
+      .download-page .eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .1em; margin: 0 0 14px; text-transform: uppercase; }
+      .download-page h1 { font-family: Lora, serif; font-size: clamp(2.6rem, 7vw, 4.4rem); letter-spacing: -.045em; line-height: 1.05; margin: 0; }
+      .download-page__intro { color: var(--muted); font-size: 18px; line-height: 1.55; margin: 22px auto 34px; max-width: 480px; }
+      .download-page__button { background: var(--accent); border-radius: 6px; color: var(--paper); display: inline-block; font-size: 15px; font-weight: 700; letter-spacing: .06em; padding: 16px 36px; text-transform: uppercase; }
+      .download-page__button:hover { color: var(--paper); filter: brightness(1.1); }
+      .download-page__meta { color: var(--muted); font-size: 13px; margin: 14px 0 40px; }
+      .download-page__help { border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; line-height: 1.6; padding-top: 24px; text-align: left; }
+      .download-page__help summary { color: var(--ink); cursor: pointer; font-weight: 600; }
+      .download-page__help ol { margin: 14px 0; padding-left: 22px; }
+      .download-page__help li { margin: 6px 0; }
+      .download-page__help a { color: var(--accent); }
+    </style>
+  `;
+  const metaTags = `
+    <meta name="description" content="Download the Coffee &amp; Code Android app test build.">
+    <meta name="robots" content="noindex">
+    <title>Download | Coffee &amp; Code</title>
+  `;
+  return c.html(renderLayout(c, 'Download', body, metaTags));
+});
+
 export default pages;

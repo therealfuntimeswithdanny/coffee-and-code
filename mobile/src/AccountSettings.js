@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DevSettings, Image, Linking, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
-import { WELCOME_KEY } from './Welcome';
+import { WELCOME_KEY, FEEDBACK_URL } from './Welcome';
 import SymbolView from './Icon';
 import { C, styles } from './theme';
 import { formatDate } from './utils';
@@ -20,11 +20,12 @@ export const accountSettingsPages = [
   { id: 'blocked', title: 'Moderation', subtitle: 'Manage your blocked accounts and moderation preferences', icon: 'hand.raised' },
   { id: 'ads', title: 'Ads and Marketing', subtitle: 'Manage your ads and marketing preferences', icon: 'bag' },
   { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
+  { id: 'feedback', title: 'Feedback', subtitle: 'Bug reports and feature requests', icon: 'bubble.left' },
   { id: 'about', title: 'About', subtitle: 'App version and publication details', icon: 'info.circle' },
   { id: 'developer', title: 'Developer', subtitle: 'On-device logs and caches for debugging', icon: 'hammer' },
 ];
 
-export const publicSettingsPageIds = ['ads', 'legal', 'about', 'developer'];
+export const publicSettingsPageIds = ['ads', 'legal', 'feedback', 'about', 'developer'];
 
 export function SettingsRow({ icon, title, subtitle, onPress, destructive = false }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={styles.settingsRow}>
@@ -207,6 +208,12 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.accountDescription}>Ads and marketing preferences will appear here.</Text>
       </View>}
       {page === 'developer' && <DeveloperSettings />}
+      {page === 'feedback' && <View style={styles.settingsCard}>
+        <Text style={styles.accountDescription}>Spotted a bug or have an idea? Share it on the feedback board — bug reports and feature requests both welcome.</Text>
+        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(FEEDBACK_URL)} style={styles.profileLink}><Text style={styles.action}>OPEN FEEDBACK BOARD  ↗</Text></Pressable>
+        <Text style={styles.accountDescription}>Prefer email?</Text>
+        <Pressable accessibilityRole="link" onPress={() => Linking.openURL('mailto:hello@coffeencode.cc')} style={styles.profileLink}><Text style={styles.action}>EMAIL HELLO@COFFEENCODE.CC  ↗</Text></Pressable>
+      </View>}
       {page === 'legal' && <View style={styles.settingsCard}>
         <LegalSettings />
       </View>}

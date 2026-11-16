@@ -6,6 +6,7 @@ import { LegalSettings } from './legal';
 import AuthCard from './AuthCard';
 
 export const WELCOME_KEY = 'coffee-and-code:welcomed:v1';
+export const FEEDBACK_URL = 'https://userinput.app/s/did:plc:l37td5yhxl2irrzrgvei4qay/3mxrdfzksld24';
 
 const tips = [
   {
@@ -131,9 +132,14 @@ export default function Welcome({ onDone, auth }) {
 
       <Text style={styles.welcomeHeading}>Feedback</Text>
       <Text style={styles.accountDescription}>
-        Spotted a bug or have an idea? Email us or open an issue on the developer site
+        Spotted a bug or have an idea? Post it on the feedback board, email us, or open an issue on the developer site
       </Text>
       <View style={styles.settingsCard}>
+        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(FEEDBACK_URL)} style={styles.settingsRow}>
+          <View style={styles.settingsIcon}><SymbolView name="bubble.left" size={17} tintColor={C.muted} /></View>
+          <View style={styles.settingsCopy}><Text style={styles.authorName}>Feedback board</Text><Text style={styles.meta}>Bug reports & feature requests</Text></View>
+          <SymbolView name="arrow.up.right" size={15} tintColor={C.muted} />
+        </Pressable>
         <Pressable accessibilityRole="link" onPress={() => Linking.openURL('mailto:hello@coffeencode.cc')} style={styles.settingsRow}>
           <View style={styles.settingsIcon}><SymbolView name="envelope" size={17} tintColor={C.muted} /></View>
           <View style={styles.settingsCopy}><Text style={styles.authorName}>Email us</Text><Text style={styles.meta}>hello@coffeencode.cc</Text></View>
