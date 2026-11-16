@@ -1239,10 +1239,14 @@ pages.get('/download', (c) => {
       <details class="download-page__help">
         <summary>How to install</summary>
         <ol>
-          <li>Download the app to your Android device.</li>
-          <li>Open it — Android will ask to allow installs from this source; approve it.</li>
-          <li>Tap Install. The app updates are manual for now — grab a fresh copy here when a new build is announced.</li>
+          <li>Tap <strong>Download for Android</strong> above on your Android device. If the file ends up in Downloads without opening, find it in the Files app and tap it.</li>
+          <li>Android will warn that installs from this source aren't allowed. Tap <strong>Settings</strong> in the prompt and enable <strong>Allow from this source</strong> for your browser or Files app, then go back.</li>
+          <li>Tap <strong>Install</strong> on the package installer screen, then <strong>Open</strong>.</li>
+          <li>If Google Play Protect shows a warning about an unrecognized app, choose <strong>More details → Install anyway</strong>. This is expected for test builds installed outside the Play Store — the app is signed by us.</li>
+          <li>The app works without an account for reading; sign in with your AT Protocol (Bluesky-compatible) handle for likes, comments, and notifications.</li>
         </ol>
+        <p><strong>Updating:</strong> there's no auto-updater yet — when a new version is announced, download the latest build here and install it over the top. Your data and sign-in carry over.</p>
+        <p><strong>Transferring from a computer:</strong> if you downloaded on a desktop, move the file to your phone with a USB cable, Nearby Share, or by emailing it to yourself, then open it from Files.</p>
         <p>Spotted a bug? <a href="https://userinput.app/s/did:plc:l37td5yhxl2irrzrgvei4qay/3mxrdfzksld24" target="_blank" rel="noopener">Leave feedback</a>.</p>
       </details>
     </section>
