@@ -5,7 +5,7 @@
     "main": {
       "type": "permission-set",
       "title": "Coffee & Code Author Profile",
-      "detail": "Manage your author profile, post and reply in the forum, and publish forum moderation actions.",
+      "detail": "Manage your author profile and post metadata, post and reply in the forum, and publish forum moderation actions.",
       "permissions": [
         {
           "type": "permission",
@@ -17,7 +17,8 @@
           "resource": "repo",
           "collection": [
             "cc.coffeencode.author.profile",
-            "cc.coffeencode.forum.moderation"
+            "cc.coffeencode.forum.moderation",
+            "cc.coffeencode.post.metadata"
           ]
         },
         {

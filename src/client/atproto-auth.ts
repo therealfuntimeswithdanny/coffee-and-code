@@ -77,7 +77,9 @@ const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
 const inviteCodeElement = document.querySelector<HTMLElement>('[data-invite-code]');
 const copyInviteButton = document.querySelector<HTMLButtonElement>('[data-copy-invite]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
-const headerAccount = document.querySelector<HTMLAnchorElement>('[data-account-link]');
+const headerAccount = document.querySelector<HTMLElement>('[data-account-link]');
+const accountMenuButton = document.querySelector<HTMLButtonElement>('[data-account-menu-button]');
+const accountMenu = document.querySelector<HTMLElement>('[data-account-menu]');
 const headerAccountAvatar = document.querySelector<HTMLImageElement>('[data-account-avatar]');
 const headerAccountPlaceholder = document.querySelector<HTMLElement>('[data-account-placeholder]');
 const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobile-account-link]');
@@ -103,6 +105,29 @@ let activeBlockedDids = new Set<string>();
 let notificationBadgeDid: string | undefined;
 let notificationBadgeRequestDid: string | undefined;
 let notificationsAutoReadTimer: number | undefined;
+
+if (accountMenuButton && accountMenu && headerAccount) {
+  accountMenu.querySelectorAll('a').forEach((link) => {
+    if (link.getAttribute('href') === window.location.pathname) link.setAttribute('aria-current', 'page');
+  });
+  const setMenuOpen = (open: boolean) => {
+    accountMenu.hidden = !open;
+    accountMenuButton.setAttribute('aria-expanded', String(open));
+  };
+  accountMenuButton.addEventListener('click', () => setMenuOpen(accountMenu.hidden));
+  accountMenu.addEventListener('click', () => setMenuOpen(false));
+  document.addEventListener('click', (event) => {
+    if (!accountMenu.hidden && (!(event.target instanceof Node) || !headerAccount.contains(event.target))) {
+      setMenuOpen(false);
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !accountMenu.hidden) {
+      setMenuOpen(false);
+      accountMenuButton.focus();
+    }
+  });
+}
 
 declare global {
   interface Window {
@@ -168,8 +193,13 @@ function renderAccount() {
   });
   if (headerAccount) {
     headerAccount.hidden = !session;
-    headerAccount.setAttribute('aria-label', session ? `Account for ${displayName}` : 'Your account');
-    headerAccount.title = session ? `Account for ${displayName}` : 'Your account';
+    const accountLabel = session ? `Account for ${displayName}` : 'Your account';
+    headerAccount.setAttribute('aria-label', accountLabel);
+    headerAccount.title = accountLabel;
+    if (accountMenuButton) {
+      accountMenuButton.setAttribute('aria-label', accountLabel);
+      accountMenuButton.title = accountLabel;
+    }
   }
   if (mobileAccountLink) {
     mobileAccountLink.hidden = !session;
@@ -637,6 +667,7 @@ async function loadAuthorProfileEditor(did: string) {
   const previewBannerPlaceholder = accountPage.querySelector<HTMLElement>('[data-author-preview-banner-placeholder]');
   if (!section || !editButton || !form || !syncButton || !previewName || !previewHandle || !previewPronouns || !previewBio
     || !previewAvatar || !previewAvatarPlaceholder || !previewBanner || !previewBannerPlaceholder) return;
+  const authorGate = accountPage.querySelector<HTMLElement>('[data-author-gate]');
 
   let syncedBlueskyProfile: { avatar?: unknown; banner?: unknown } | undefined;
   let previewAvatarUrl: string | undefined;
@@ -722,7 +753,11 @@ async function loadAuthorProfileEditor(did: string) {
       const postsResponse = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
       if (!postsResponse.ok) throw new Error(`Could not check your published stories (${postsResponse.status}).`);
       const posts = await postsResponse.json() as Array<{ uri?: string }>;
-      if (session?.did !== did || posts.length === 0) return;
+      if (session?.did !== did) return;
+      if (posts.length === 0) {
+        if (authorGate) authorGate.hidden = false;
+        return;
+      }
       value = { $type: 'cc.coffeencode.author.profile' };
     }
 
@@ -735,6 +770,8 @@ async function loadAuthorProfileEditor(did: string) {
       .catch(() => ({}));
     previewHandle.textContent = publicProfile.handle ? `@${publicProfile.handle}` : `@${did}`;
     section.hidden = false;
+    if (authorGate) authorGate.hidden = true;
+    void loadPostMetadataEditor(did);
     const authorSettingsLink = accountPage.querySelector<HTMLElement>('[data-author-settings-link]');
     if (authorSettingsLink) authorSettingsLink.hidden = false;
     editButton.hidden = false;
@@ -947,6 +984,219 @@ async function loadAuthorPostPicker(did: string, form: HTMLFormElement, selected
   } catch (error) {
     loadingStatus.textContent = error instanceof Error ? error.message : 'Could not load your published stories.';
   }
+}
+
+const POST_METADATA_COLLECTION = 'cc.coffeencode.post.metadata';
+
+type PostMetadataValue = {
+  sources?: string[];
+  backlink?: string;
+  createdAt?: string;
+};
+
+async function fetchPostMetadataRecord(did: string, rkey: string): Promise<PostMetadataValue | undefined> {
+  const activeSession = requireSession();
+  const query = new URLSearchParams({ repo: did, collection: POST_METADATA_COLLECTION, rkey });
+  const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+  if (response.ok) {
+    const result = await response.json() as { value?: Record<string, unknown> };
+    if (result.value && result.value.$type !== POST_METADATA_COLLECTION) {
+      throw new Error('This story has a metadata record with an unexpected record type.');
+    }
+    return result.value as PostMetadataValue | undefined;
+  }
+  const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+  if (isMissingRecordResponse(response.status, payload)) return undefined;
+  throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Could not load post metadata (${response.status}).`);
+}
+
+async function loadPostMetadataEditor(did: string) {
+  if (!accountPage) return;
+  const section = accountPage.querySelector<HTMLElement>('[data-post-metadata]');
+  const list = accountPage.querySelector<HTMLElement>('[data-post-metadata-list]');
+  const status = accountPage.querySelector<HTMLElement>('[data-post-metadata-status]');
+  if (!section || !list || !status) return;
+  status.textContent = 'Loading your stories…';
+  try {
+    const response = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load your published stories.');
+    const posts = (await response.json() as Array<{ uri?: string; path?: string; title?: string; publishedAt?: string }>)
+      // Metadata records live in the same repository as the document, so only
+      // stories stored in this account's repo can be edited here.
+      .filter((post): post is { uri: string; path?: string; title?: string; publishedAt?: string } =>
+        typeof post.uri === 'string' && post.uri.startsWith(`at://${did}/`));
+    if (session?.did !== did) return;
+    list.replaceChildren();
+    if (!posts.length) {
+      status.textContent = 'Stories published in your repository will appear here.';
+      return;
+    }
+    status.textContent = 'Pick a story to add or update its metadata.';
+    for (const post of posts) {
+      list.append(buildPostMetadataItem(did, post));
+    }
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : 'Could not load your published stories.';
+  }
+}
+
+function buildPostMetadataItem(did: string, post: { uri: string; path?: string; title?: string; publishedAt?: string }) {
+  const rkey = post.uri.split('/').pop() || '';
+  const item = document.createElement('li');
+  item.className = 'account-post-metadata__item';
+
+  const row = document.createElement('div');
+  row.className = 'account-post-metadata__row';
+  const title = document.createElement('span');
+  title.className = 'account-post-metadata__title';
+  if (post.path) {
+    const link = document.createElement('a');
+    link.href = post.path;
+    link.textContent = post.title || 'Untitled story';
+    title.append(link);
+  } else {
+    title.textContent = post.title || 'Untitled story';
+  }
+  const badges = document.createElement('span');
+  badges.className = 'account-post-metadata__badges';
+  const editButton = document.createElement('button');
+  editButton.type = 'button';
+  editButton.className = 'account-post-metadata__edit';
+  editButton.textContent = 'Edit metadata';
+  row.append(title, badges, editButton);
+
+  const form = document.createElement('form');
+  form.className = 'account-post-metadata__form';
+  form.hidden = true;
+  const sourcesLabel = document.createElement('label');
+  sourcesLabel.textContent = 'Sources (one URL per line)';
+  const sourcesInput = document.createElement('textarea');
+  sourcesInput.name = 'sources';
+  sourcesInput.rows = 3;
+  sourcesInput.placeholder = 'https://example.com/article';
+  sourcesLabel.append(sourcesInput);
+  const backlinkLabel = document.createElement('label');
+  backlinkLabel.textContent = 'Source document (at:// URI, optional)';
+  const backlinkInput = document.createElement('input');
+  backlinkInput.name = 'backlink';
+  backlinkInput.placeholder = 'at://did:plc:…/site.standard.document/…';
+  backlinkLabel.append(backlinkInput);
+  const actions = document.createElement('div');
+  actions.className = 'account-post-metadata__form-actions';
+  const saveButton = document.createElement('button');
+  saveButton.type = 'submit';
+  saveButton.className = 'account-post-metadata__save';
+  saveButton.textContent = 'Save metadata';
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'account-post-metadata__cancel';
+  cancelButton.textContent = 'Cancel';
+  actions.append(saveButton, cancelButton);
+  const formStatus = document.createElement('p');
+  formStatus.className = 'account-post-metadata__form-status';
+  formStatus.setAttribute('role', 'status');
+  form.append(sourcesLabel, backlinkLabel, actions, formStatus);
+  item.append(row, form);
+
+  let loaded = false;
+  let existing: PostMetadataValue | undefined;
+  const updateBadges = () => {
+    badges.replaceChildren();
+    const count = Array.isArray(existing?.sources) ? existing!.sources.length : 0;
+    const parts: string[] = [];
+    if (count) parts.push(`${count} ${count === 1 ? 'source' : 'sources'}`);
+    if (existing?.backlink) parts.push('linked document');
+    if (parts.length) {
+      const badge = document.createElement('span');
+      badge.className = 'account-post-metadata__badge';
+      badge.textContent = parts.join(' · ');
+      badges.append(badge);
+    }
+  };
+
+  editButton.onclick = async () => {
+    if (form.hidden && !loaded) {
+      editButton.disabled = true;
+      formStatus.textContent = 'Loading metadata…';
+      form.hidden = false;
+      try {
+        existing = await fetchPostMetadataRecord(did, rkey);
+        if (session?.did !== did) return;
+        loaded = true;
+        sourcesInput.value = Array.isArray(existing?.sources) ? existing!.sources.join('\n') : '';
+        backlinkInput.value = typeof existing?.backlink === 'string' ? existing.backlink : '';
+        formStatus.textContent = '';
+        updateBadges();
+      } catch (error) {
+        formStatus.textContent = error instanceof Error ? error.message : 'Could not load post metadata.';
+      } finally {
+        editButton.disabled = false;
+      }
+      return;
+    }
+    form.hidden = !form.hidden;
+  };
+  cancelButton.onclick = () => {
+    form.hidden = true;
+    formStatus.textContent = '';
+  };
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (session?.did !== did) return;
+    const sources = [...new Set(sourcesInput.value.split('\n').map((line) => line.trim()).filter(Boolean))];
+    const invalidSource = sources.find((source) => {
+      try {
+        const url = new URL(source);
+        return url.protocol !== 'https:' && url.protocol !== 'http:';
+      } catch {
+        return true;
+      }
+    });
+    if (invalidSource) {
+      formStatus.textContent = `"${invalidSource}" is not a valid http(s) URL.`;
+      return;
+    }
+    const backlink = backlinkInput.value.trim();
+    if (backlink && !/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/[a-zA-Z0-9.]+\/[a-zA-Z0-9._~:-]+$/.test(backlink)) {
+      formStatus.textContent = 'The source document must be a valid at:// URI.';
+      return;
+    }
+
+    saveButton.disabled = true;
+    formStatus.textContent = 'Saving metadata…';
+    try {
+      if (!sources.length && !backlink) {
+        if (loaded && existing) {
+          await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: POST_METADATA_COLLECTION, rkey });
+        }
+        existing = undefined;
+        formStatus.textContent = 'Metadata removed.';
+      } else {
+        const record: Record<string, unknown> = {
+          $type: POST_METADATA_COLLECTION,
+          createdAt: typeof existing?.createdAt === 'string' ? existing.createdAt : new Date().toISOString(),
+        };
+        if (sources.length) record.sources = sources;
+        if (backlink) record.backlink = backlink;
+        await repoRequest('com.atproto.repo.putRecord', {
+          repo: did,
+          collection: POST_METADATA_COLLECTION,
+          rkey,
+          record,
+        });
+        existing = record as PostMetadataValue;
+        formStatus.textContent = 'Metadata saved. It will appear on the story page shortly.';
+      }
+      loaded = true;
+      updateBadges();
+    } catch (error) {
+      formStatus.textContent = error instanceof Error ? error.message : 'Could not save post metadata.';
+    } finally {
+      saveButton.disabled = false;
+    }
+  };
+  updateBadges();
+  return item;
 }
 
 async function uploadAuthorImage(file: File): Promise<unknown> {
