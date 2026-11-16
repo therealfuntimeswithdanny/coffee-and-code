@@ -222,6 +222,7 @@ function renderAccount() {
       void loadAccountProfile(did);
       void loadAccountViewedPosts(did);
       void loadAccountSavedPosts(did);
+      void renderTagFollows(did);
       void loadAuthorProfileEditor(did);
     }
 
@@ -373,6 +374,117 @@ async function renderBlockManager(did: string) {
       list.append(item);
     });
     status.textContent = records.length ? `${records.length} ${records.length === 1 ? 'account' : 'accounts'} blocked on Coffee & Code.` : 'You have not blocked any accounts.';
+  } catch (error) {
+    status.textContent = errorMessage(error);
+  }
+}
+
+type TagFollowRecord = { uri: string; rkey: string; tag: string; createdAt: string };
+
+const tagFollowCollection = 'cc.coffeencode.tag.follow';
+
+async function listTagFollows(did: string): Promise<TagFollowRecord[]> {
+  const records: TagFollowRecord[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({ repo: did, collection: tagFollowCollection, limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { tag?: unknown; createdAt?: unknown } }>;
+      cursor?: unknown;
+    };
+    for (const record of page.records || []) {
+      if (typeof record.uri !== 'string' || typeof record.value?.tag !== 'string' || !record.value.tag.trim()
+        || typeof record.value.createdAt !== 'string' || !Number.isFinite(Date.parse(record.value.createdAt))) continue;
+      records.push({
+        uri: record.uri,
+        rkey: recordKeyFromUri(record.uri),
+        tag: record.value.tag.trim(),
+        createdAt: record.value.createdAt,
+      });
+    }
+    if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+    seenCursors.add(page.cursor);
+    cursor = page.cursor;
+  } while (cursor);
+  // Keep the first record per tag so duplicate follows collapse.
+  return [...new Map(records.map((record) => [record.tag.toLocaleLowerCase(), record])).values()]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function renderTagFollowPosts(did: string, records: TagFollowRecord[], postsList: HTMLElement) {
+  postsList.replaceChildren();
+  if (!records.length) return;
+  const followedAt = new Map(records.map((record) => [record.tag.toLocaleLowerCase(), Date.parse(record.createdAt)]));
+  const response = await fetch('/api/documents?limit=100', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not load recent stories.');
+  const payload = await response.json() as {
+    documents?: Array<{ path?: unknown; title?: unknown; publishedAt?: unknown; tags?: unknown }>;
+  };
+  const matches = (payload.documents || []).filter((doc) => {
+    if (typeof doc.path !== 'string' || typeof doc.publishedAt !== 'string') return false;
+    const publishedAt = Date.parse(doc.publishedAt);
+    if (!Number.isFinite(publishedAt)) return false;
+    const tags = Array.isArray(doc.tags) ? doc.tags : [];
+    return tags.some((tag) => {
+      const at = followedAt.get(String(tag).toLocaleLowerCase());
+      return at !== undefined && publishedAt >= at;
+    });
+  }).slice(0, 5);
+  matches.forEach((doc) => {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = String(doc.path);
+    link.textContent = typeof doc.title === 'string' && doc.title ? doc.title : 'Untitled';
+    item.append(link);
+    postsList.append(item);
+  });
+}
+
+async function renderTagFollows(did: string) {
+  if (!accountPage) return;
+  const list = accountPage.querySelector<HTMLElement>('[data-tag-follows-list]');
+  const status = accountPage.querySelector<HTMLElement>('[data-tag-follows-status]');
+  const postsList = accountPage.querySelector<HTMLElement>('[data-tag-follows-posts]');
+  if (!list || !status) return;
+  status.textContent = 'Loading your followed tags…';
+  try {
+    const records = await listTagFollows(did);
+    if (session?.did !== did) return;
+    list.replaceChildren();
+    records.forEach((record) => {
+      const item = document.createElement('li');
+      const tagLink = document.createElement('a');
+      tagLink.href = `/tags?tag=${encodeURIComponent(record.tag)}`;
+      tagLink.textContent = record.tag;
+      const unfollow = document.createElement('button');
+      unfollow.type = 'button';
+      unfollow.className = 'auth-signout';
+      unfollow.textContent = 'Unfollow';
+      unfollow.addEventListener('click', async () => {
+        unfollow.disabled = true;
+        status.textContent = `Unfollowing ${record.tag}…`;
+        try {
+          await deleteFollowRecord(tagFollowCollection, record.uri, did);
+          await renderTagFollows(did);
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          unfollow.disabled = false;
+        }
+      });
+      item.append(tagLink, unfollow);
+      list.append(item);
+    });
+    status.textContent = records.length
+      ? `Following ${records.length} ${records.length === 1 ? 'tag' : 'tags'}.`
+      : 'You are not following any tags.';
+    if (postsList) {
+      void renderTagFollowPosts(did, records, postsList).catch((error) => {
+        console.error('Could not load stories for followed tags:', error);
+      });
+    }
   } catch (error) {
     status.textContent = errorMessage(error);
   }

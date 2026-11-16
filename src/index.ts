@@ -11,6 +11,7 @@ import commentsRouter from './routes/comments';
 import verificationsRouter from './routes/verifications';
 import usersRouter from './routes/users';
 import forumRouter from './routes/forum';
+import forumApiRouter from './routes/forumApi';
 import apiRouter from './routes/api';
 import pushRouter from './routes/push';
 import { dispatchPushNotifications } from './lib/push';
@@ -29,6 +30,7 @@ app.route('/api/comments', commentsRouter);
 app.route('/api/verifications', verificationsRouter);
 app.route('/api', apiRouter);
 app.route('/api/push', pushRouter);
+app.route('/api/forum', forumApiRouter);
 app.route('/user', usersRouter);
 app.route('/forum', forumRouter);
 // Keep the two-segment story route after named page and API routes.

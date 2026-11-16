@@ -137,7 +137,7 @@ class SequoiaComments extends HTMLElement {
     const ownActions = this.viewerDid && comment.did === this.viewerDid
       ? `<div class="comment-actions" aria-label="Your comment controls"><button type="button" class="comment-action" data-edit-comment="${escapeHtml(comment.uri)}">Edit comment</button><button type="button" class="comment-action comment-action--danger" data-delete-comment="${escapeHtml(comment.uri)}">Delete comment</button></div>`
       : '';
-    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" data-author-verification-did="${escapeHtml(comment.did)}" href="/user/${encodeURIComponent(comment.did)}">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}">♥ ${comment.liked ? 'Liked' : 'Like'} <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
+    return `<article class="comment" data-comment-uri="${escapeHtml(comment.uri)}">${avatar}<div class="comment-content"><div class="comment-meta"><a class="author" data-author-verification-did="${escapeHtml(comment.did)}" href="/user/${encodeURIComponent(comment.did)}">${escapeHtml(name)}</a><span class="handle">@${escapeHtml(comment.handle || comment.did)}</span><time class="time" datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTime(comment.createdAt))}</time></div><p class="comment-text">${escapeHtml(comment.text)}</p><button type="button" class="comment-like" data-like-comment="${escapeHtml(comment.uri)}" data-like-rkey="${escapeHtml(comment.likeRkey || '')}" aria-pressed="${String(Boolean(comment.liked))}" aria-label="${comment.liked ? 'Unlike this comment' : 'Like this comment'}"><i class="${comment.liked ? 'fa-solid' : 'fa-regular'} fa-heart" aria-hidden="true"></i> <span>${likeCount.toLocaleString()}</span></button><button type="button" class="reply-button" data-reply-to="${escapeHtml(comment.uri)}">Reply</button>${ownActions}<div class="comment-status" aria-live="polite"></div>${replies.length ? `<div class="comment-children">${replies.map((reply) => this.renderComment(reply, childrenByParent)).join('')}</div>` : ''}</div></article>`;
   }
 
   async loadVerificationBadges() {
@@ -230,8 +230,10 @@ class SequoiaComments extends HTMLElement {
       }
       if (count && current) count.textContent = current.likeCount.toLocaleString();
       button.setAttribute('aria-pressed', String(!isLiked));
+      button.setAttribute('aria-label', isLiked ? 'Like this comment' : 'Unlike this comment');
       button.dataset.likeRkey = likeRkey || '';
-      button.firstChild.textContent = `♥ ${isLiked ? 'Like' : 'Liked'} `;
+      const icon = button.querySelector('i');
+      if (icon) icon.className = `${isLiked ? 'fa-regular' : 'fa-solid'} fa-heart`;
       if (status) status.textContent = isLiked ? 'Like removed.' : 'You liked this comment.';
       this.scheduleRefresh();
     } catch (error) {

@@ -269,10 +269,13 @@ export function StoryRow({ story, featured, compact, onPress }) {
   </Pressable>;
 }
 
-export function TabButton({ label, icon, active, onPress, imageUri, badgeCount = 0 }) {
+export function TabButton({ label, icon, active, onPress, imageUri, compactProgress, badgeCount = 0 }) {
+  const iconScale = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [1, 0.84] }) || 1;
+  const labelOpacity = compactProgress?.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 0.2, 0] }) || 1;
+  const labelHeight = compactProgress?.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) || 12;
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}>
-    <View style={styles.tabIconWrap}>{imageUri ? <Image source={{ uri: imageUrlForPreset(imageUri, 'avatar_thumb') }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</View>
-    <Text style={[styles.tabLabel, active && styles.tabActive]}>{label}</Text>
+    <Animated.View style={[styles.tabIconWrap, { transform: [{ scale: iconScale }] }]}>{imageUri ? <Image source={{ uri: imageUrlForPreset(imageUri, 'avatar_thumb') }} accessibilityLabel="Your profile photo" style={[styles.tabProfileImage, active && styles.tabProfileImageActive]} /> : <SymbolView name={icon} size={21} tintColor={active ? C.ink : C.muted} type={active ? 'hierarchical' : 'monochrome'} />}{badgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text></View>}</Animated.View>
+    <Animated.Text style={[styles.tabLabel, active && styles.tabActive, { opacity: labelOpacity, height: labelHeight }]}>{label}</Animated.Text>
   </Pressable>;
 }
 const SWIPE_ACTION_WIDTH = 96;
@@ -291,6 +294,11 @@ export function SwipeableDeleteRow({ children, onDelete, accessibilityLabel = 'R
   };
   const settleRef = useRef(settle);
   settleRef.current = settle;
+  // PanResponder is created once, so props it touches must go through refs —
+  // otherwise onDelete stays bound to the story from the first render and a
+  // swipe removes the wrong row after the list reorders.
+  const onDeleteRef = useRef(onDelete);
+  onDeleteRef.current = onDelete;
 
   const isHorizontalSwipe = (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2;
   const pan = useRef(PanResponder.create({
@@ -307,7 +315,7 @@ export function SwipeableDeleteRow({ children, onDelete, accessibilityLabel = 'R
     onPanResponderRelease: (_, g) => {
       const at = resting.current + g.dx;
       if (at <= -SWIPE_DELETE_OFFSET || g.vx < -1.2) {
-        Animated.timing(translateX, { toValue: -600, duration: 160, useNativeDriver: true }).start(() => onDelete?.());
+        Animated.timing(translateX, { toValue: -600, duration: 160, useNativeDriver: true }).start(() => onDeleteRef.current?.());
       } else if (at < -SWIPE_OPEN_OFFSET || g.vx < -0.5) {
         settleRef.current(-SWIPE_ACTION_WIDTH, true);
       } else {
@@ -329,4 +337,75 @@ export function SwipeableDeleteRow({ children, onDelete, accessibilityLabel = 'R
       {open && <Pressable accessibilityLabel="Close" onPress={() => settle(0, false)} style={StyleSheet.absoluteFill} />}
     </Animated.View>
   </View>;
+}
+
+// A single, non-wrapping row of tag chips. Chips are measured off-screen on
+// first render; only as many as fit in the row are shown, and any remainder
+// collapses into a "+N" chip that activates the first hidden tag.
+const OVERFLOW_CHIP_WIDTH = 54;
+const TAG_GAP = 7;
+
+export function ArticleTagRow({ tags = [], followedTags = [], onPressTag }) {
+  const [rowWidth, setRowWidth] = useState(0);
+  const [measuredCount, setMeasuredCount] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const widths = useRef({});
+
+  const isFollowed = (tag) => followedTags.some((followed) => followed.toLocaleLowerCase() === tag.toLocaleLowerCase());
+  const chip = (tag, hidden = false) => (
+    <Pressable
+      key={hidden ? `measure-${tag}` : tag}
+      accessibilityRole={hidden ? 'none' : 'button'}
+      accessibilityLabel={hidden ? undefined : `${tag}${isFollowed(tag) ? ', followed' : ''}. Filter the archive by this tag`}
+      disabled={hidden}
+      onLayout={hidden ? (event) => {
+        const key = tag.toLocaleLowerCase();
+        if (!widths.current[key]) {
+          widths.current[key] = event.nativeEvent.layout.width;
+          setMeasuredCount((count) => count + 1);
+        }
+      } : undefined}
+      onPress={hidden ? undefined : () => onPressTag?.(tag)}
+      style={[styles.tagChip, styles.articleTagChip, isFollowed(tag) && styles.tagChipActive]}
+    >
+      <Text style={[styles.tagText, isFollowed(tag) && styles.tagTextActive]}>{tag}</Text>
+    </Pressable>
+  );
+
+  let visibleCount = tags.length;
+  if (rowWidth > 0 && measuredCount >= tags.length) {
+    let used = 0;
+    for (let index = 0; index < tags.length; index += 1) {
+      const chipWidth = widths.current[tags[index].toLocaleLowerCase()] || 0;
+      const remaining = tags.length - index - 1;
+      const reserve = remaining > 0 ? OVERFLOW_CHIP_WIDTH + TAG_GAP : 0;
+      if (used + chipWidth + reserve > rowWidth) { visibleCount = index; break; }
+      used += chipWidth + TAG_GAP;
+    }
+  } else {
+    visibleCount = 0;
+  }
+  const hiddenTags = expanded ? [] : tags.slice(visibleCount);
+  const shownTags = expanded ? tags : tags.slice(0, visibleCount);
+
+  return (
+    <View style={[styles.articleTagRow, expanded && styles.articleTagRowExpanded]} onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}>
+      {measuredCount < tags.length && (
+        <View style={styles.articleTagMeasure} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {tags.map((tag) => chip(tag, true))}
+        </View>
+      )}
+      {shownTags.map((tag) => chip(tag))}
+      {hiddenTags.length > 0 && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Show ${hiddenTags.length} more ${hiddenTags.length === 1 ? 'tag' : 'tags'}: ${hiddenTags.join(', ')}`}
+          onPress={() => setExpanded(true)}
+          style={[styles.tagChip, styles.articleTagChip]}
+        >
+          <Text style={styles.tagText}>+{hiddenTags.length}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
 }

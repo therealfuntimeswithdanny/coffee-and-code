@@ -1,8 +1,8 @@
 import { Hono, type Context } from 'hono';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, fetchArticleByPath, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
-import { renderLayout } from '../templates/layout';
-import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
+import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
+import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, toPlainText, readingTimeMinutes } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
 
 const posts = new Hono<{ Bindings: Env }>();
@@ -125,26 +125,31 @@ async function renderPost(
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
   const authorAvatar = post.author?.avatar ? escapeHtml(proxyAvatarUrl(post.author.avatar)) : '';
+  const readingTime = readingTimeMinutes(post.content || '', post.mimeType);
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleDescription);
   const pageOrigin = new URL(pageUrl).origin;
   const ogImage = post.cover
     ? proxyImageUrl(post.cover, pageOrigin)
-    : `https://browser-run.coffeencode.cc/?url=${encodeURIComponent(`https://coffeencode.cc${post.path}?browserRun=true`)}`;
+    : browserRunScreenshotUrl(post.path);
   const proxiedCoverImage = post.cover ? escapeHtml(proxyImageUrl(post.cover, pds, 'wide_medium')) : undefined;
   const proxiedCoverSrcSet = post.cover
     ? `${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_small'))} 640w, ${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_medium'))} 1280w`
     : undefined;
-  const recommendationHtml = recommendations.map((item) => `
-    <article class="recommendation-card">
-      <a class="recommendation-card__image${item.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(item.path)}" aria-label="Read ${escapeHtml(item.title || 'Untitled')}">
-        ${item.cover ? `<img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_small'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-      </a>
+  const recommendationHtml = recommendations.map((item) => {
+    const dek = item.description?.trim() || toPlainText(item.content || '');
+    const dekExcerpt = dek.length > 125 ? `${dek.slice(0, 122).trimEnd()}…` : dek;
+    return `
+    <article class="recommendation-card${item.cover ? '' : ' recommendation-card--no-cover'}">
+      ${item.cover ? `<a class="recommendation-card__image" href="${escapeHtml(item.path)}" aria-label="Read ${escapeHtml(item.title || 'Untitled')}">
+        <img src="${escapeHtml(proxyImageUrl(item.cover, pds, 'feed_small'))}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">
+      </a>` : ''}
       <div class="recommendation-card__body"><h3><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></h3>
-        ${item.description ? `<p>${escapeHtml(item.description.length > 125 ? `${item.description.slice(0, 122).trimEnd()}…` : item.description)}</p>` : ''}
+        ${dekExcerpt ? `<p>${escapeHtml(dekExcerpt)}</p>` : ''}
         <span class="recommendation-card__date">${formatDate(item.publishedAt)}</span>
       </div>
-    </article>`).join('');
+    </article>`;
+  }).join('');
   const relatedRail = recommendations.map((item) => `
     <li><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></li>`).join('');
   const authorsByDid = new Map<string, NonNullable<typeof allPosts[number]['author']>>();
@@ -220,6 +225,7 @@ async function renderPost(
         <h1>${safeTitle}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
         ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by <span data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</span> on ${formatDate(post.publishedAt)}</span></a>` : ''}
+        ${readingTime ? `<p class="article__reading-time">${readingTime} min read</p>` : ''}
         ${tagLinks ? `<nav class="article-tags" aria-label="Article tags">${tagLinks}</nav>` : ''}
       </header>
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" srcset="${proxiedCoverSrcSet}" alt="" class="story-image" width="1200" height="667" sizes="(max-width: 860px) 100vw, 820px" fetchpriority="high" decoding="async"></figure>` : ''}

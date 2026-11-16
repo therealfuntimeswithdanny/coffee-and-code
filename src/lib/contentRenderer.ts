@@ -117,6 +117,51 @@ export function escapeHtml(text: string): string {
 }
 
 /**
+ * Converts document content to plain text for excerpts and deks.
+ * Handles HTML, Markdown, and richtext/leaflet JSON payloads.
+ */
+export function toPlainText(content: string, mimeType?: string): string {
+  const source = (content || '').trim();
+  if (!source) return '';
+
+  const format = detectFormat(source, mimeType);
+  let text = source;
+
+  if (format === ContentFormat.RICHTEXT) {
+    try {
+      const parsed = JSON.parse(source);
+      const items = Array.isArray(parsed)
+        ? parsed
+        : parsed?.content?.items ?? parsed?.blocks ?? parsed?.items ?? [];
+      text = (Array.isArray(items) ? items : [])
+        .map((item: any) => (typeof item?.text === 'string' ? item.text
+          : typeof item?.plaintext === 'string' ? item.plaintext : ''))
+        .filter(Boolean)
+        .join(' ');
+    } catch {
+      text = '';
+    }
+  } else if (format === ContentFormat.HTML) {
+    text = sanitizeHtml(source, { allowedTags: [], allowedAttributes: {} });
+  } else {
+    text = source
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^>\s?/gm, '')
+      .replace(/^[-*+]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .replace(/(\*\*|__|~~)(.*?)\1/g, '$2')
+      .replace(/(\*|_)(.*?)\1/g, '$2')
+      .replace(/`([^`]*)`/g, '$1');
+  }
+
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Renders plaintext content with basic formatting
  */
 export function renderPlaintext(content: string): string {
@@ -656,4 +701,13 @@ export function enhanceHtmlStructure(html: string): string {
   }
 
   return enhanced;
+}
+
+/**
+ * Estimated reading time in minutes at roughly 200 words per minute.
+ * Returns 0 when the content has no readable text.
+ */
+export function readingTimeMinutes(content: string, mimeType?: string): number {
+  const words = toPlainText(content, mimeType).split(/\s+/).filter(Boolean).length;
+  return words ? Math.max(1, Math.ceil(words / 200)) : 0;
 }

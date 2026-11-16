@@ -5,7 +5,7 @@ const reactions = new Hono<{ Bindings: Env }>();
 const constellationEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinksCount';
 const constellationBacklinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
 
-async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend' | 'save') {
+export async function countBacklinks(subject: string, collection: 'like' | 'dislike' | 'view' | 'recommend' | 'save') {
   const source = collection === 'recommend'
     ? 'site.standard.graph.recommend'
     : collection === 'save'

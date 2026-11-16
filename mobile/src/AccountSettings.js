@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Image, Linking, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { DevSettings, Image, Linking, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import { WELCOME_KEY } from './Welcome';
 import { SymbolView } from 'expo-symbols';
 import { C, styles } from './theme';
@@ -16,6 +16,7 @@ import { LegalSettings } from './legal';
 export const accountSettingsPages = [
   { id: 'account', title: 'Manage Identity', subtitle: 'Manage your identity and perform destructive actions', icon: 'person.crop.circle' },
   { id: 'reading', title: 'Public activity', subtitle: 'View and delete public records. Likes, views, saves, etc.', icon: 'book' },
+  { id: 'follows', title: 'Following', subtitle: 'Tags you follow for new-story notifications', icon: 'tag' },
   { id: 'blocked', title: 'Moderation', subtitle: 'Manage your blocked accounts and moderation preferences', icon: 'hand.raised' },
   { id: 'ads', title: 'Ads and Marketing', subtitle: 'Manage your ads and marketing preferences', icon: 'bag' },
   { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
@@ -23,7 +24,7 @@ export const accountSettingsPages = [
   { id: 'developer', title: 'Developer', subtitle: 'On-device logs and caches for debugging', icon: 'hammer' },
 ];
 
-export const publicSettingsPageIds = ['ads', 'legal', 'about'];
+export const publicSettingsPageIds = ['ads', 'legal', 'about', 'developer'];
 
 export function SettingsRow({ icon, title, subtitle, onPress, destructive = false }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={styles.settingsRow}>
@@ -46,7 +47,7 @@ function DeveloperSettings() {
   const [section, setSection] = useState(null);
   const [logStats, setLogStats] = useState({ bytes: 0, count: 0, maxBytes: 0 });
   const [logEntries, setLogEntries] = useState([]);
-  const [imageStats, setImageStats] = useState({ tracked: 0, disk: 0, memory: 0 });
+  const [imageStats, setImageStats] = useState({ tracked: 0, maxTracked: 0 });
   const [imageDisk, setImageDisk] = useState({ bytes: 0, count: 0, maxBytes: 0 });
   const [postStats, setPostStats] = useState({ bytes: 0, count: 0, maxBytes: 0 });
   const [refreshingImages, setRefreshingImages] = useState(false);
@@ -58,7 +59,7 @@ function DeveloperSettings() {
     setLogStats(getLogStats());
     setLogEntries(getLogEntries(200));
     setPostStats(postCacheStats());
-    setImageStats(await imageCacheStats());
+    setImageStats(imageCacheStats());
     setImageDisk(await imageDiskStats());
   }, []);
   useEffect(() => { reload(); }, [reload, section]);
@@ -117,7 +118,7 @@ function DeveloperSettings() {
       <Text style={styles.accountDescription}>Images the app downloads are stored on this device, up to {devFormatBytes(imageDisk.maxBytes)}. The oldest images are removed automatically when the limit is reached.</Text>
       <Text style={styles.settingsMetric}>{devFormatBytes(imageDisk.bytes)}<Text style={styles.meta}>  OF {devFormatBytes(imageDisk.maxBytes)} USED</Text></Text>
       <Text style={styles.meta}>{imageDisk.count} CACHED IMAGES</Text>
-      <Text style={styles.meta}>{imageStats.disk} TRACKED ON DISK  ·  {imageStats.memory} IN MEMORY</Text>
+      <Text style={styles.meta}>{imageStats.tracked} TRACKED IMAGE URLS</Text>
       <Text style={styles.accountDescription}>Clearing removes every downloaded image. Images will be downloaded again as you browse, which may slow the app down until the cache refills.</Text>
       <Pressable accessibilityRole="button" disabled={refreshingImages} onPress={refreshImages} style={styles.secondaryButton}><Text style={styles.action}>{refreshingImages ? 'REFRESHING…' : 'REFRESH'}</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={clearImages} style={styles.secondaryButton}><Text style={styles.action}>CLEAR IMAGE CACHE</Text></Pressable>
@@ -137,6 +138,13 @@ function DeveloperSettings() {
         try { await AsyncStorage.removeItem(WELCOME_KEY); setWelcomeMessage('Done. The welcome screen will show on next launch.'); }
         catch { setWelcomeMessage('Could not reset the welcome screen.'); }
       }} style={styles.secondaryButton}><Text style={styles.action}>SHOW ON NEXT LAUNCH</Text></Pressable>
+      <Text style={styles.accountDescription}>Refreshing reloads the app bundle immediately — handy for seeing the welcome screen or picking up changes without restarting the app yourself.</Text>
+      <Pressable accessibilityRole="button" onPress={() => {
+        try {
+          if (typeof DevSettings?.reload === 'function') DevSettings.reload();
+          else setWelcomeMessage('App reload is not available in this build.');
+        } catch { setWelcomeMessage('Could not refresh the app.'); }
+      }} style={styles.secondaryButton}><Text style={styles.action}>REFRESH APP</Text></Pressable>
     </>}
     {section === 'api' && <>
       <Text style={styles.accountDescription}>All app requests are sent to this endpoint. It uses the exact same routes and URL parameters as the official API, so you can point the app at your own server if you host one.</Text>
@@ -149,7 +157,7 @@ function DeveloperSettings() {
   </View>;
 }
 
-export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onSignOut }) {
+export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, tagFollows = [], savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onToggleTagFollow, onSignOut }) {
   const [page, setPage] = useState(initialPage);
   const pages = account ? accountSettingsPages : accountSettingsPages.filter((item) => publicSettingsPageIds.includes(item.id));
   const selected = pages.find((item) => item.id === page);
@@ -180,6 +188,13 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.settingsMetric}>{viewedCount}<Text style={styles.meta}>  STORIES READ</Text></Text>
         <View style={styles.rule} />
         <Text style={styles.settingsMetric}>{savedCount}<Text style={styles.meta}>  SAVED STORIES</Text></Text>
+      </View>}
+      {page === 'follows' && <View style={styles.settingsCard}>
+        <Text style={styles.accountDescription}>Stories published under tags you follow appear in your notifications. Follow a tag from the search tab.</Text>
+        {tagFollows.length ? tagFollows.map((follow) => <View key={follow.rkey || follow.tag} style={styles.blockedAccountRow}>
+          <View style={{ flex: 1 }}><Text style={styles.accountIdentityValue}>{follow.tag}</Text><Text style={styles.meta}>Following since {formatDate(follow.createdAt) || 'recently'}</Text></View>
+          <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => onToggleTagFollow?.(follow.tag)} style={styles.accountRemoveButton}><Text style={styles.action}>UNFOLLOW</Text></Pressable>
+        </View>) : <Text style={styles.emptyText}>You are not following any tags.</Text>}
       </View>}
       {page === 'blocked' && <View style={styles.settingsCard}>
         <Text style={styles.accountDescription}>Comments and forum posts from Blocked accounts will be hidden on Coffee & Code. Unless specified, the user will still be visable on Bluesky.</Text>

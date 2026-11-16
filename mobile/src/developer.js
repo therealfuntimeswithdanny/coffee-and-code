@@ -1,5 +1,5 @@
 import * as Mmkv from 'react-native-mmkv';
-import { Image } from 'react-native';
+import { getCachedUri } from './imageCache';
 
 // Dedicated on-device store for developer tooling. Nothing here ever leaves the device.
 const store = typeof Mmkv.createMMKV === 'function'
@@ -197,28 +197,15 @@ export function registerImageUrl(uri) {
   }
 }
 
-export async function imageCacheStats() {
+export function imageCacheStats() {
   const urls = readImageUrls();
-  let disk = 0;
-  let memory = 0;
-  try {
-    const result = await Image.queryCache(urls);
-    if (result && typeof result === 'object') {
-      for (const state of Object.values(result)) {
-        if (state === 'disk') disk += 1;
-        else if (state === 'memory') memory += 1;
-      }
-    }
-  } catch {
-    // queryCache is best-effort.
-  }
-  return { tracked: urls.length, disk, memory, maxTracked: IMAGE_REGISTRY_MAX };
+  return { tracked: urls.length, maxTracked: IMAGE_REGISTRY_MAX };
 }
 
 export async function refreshImageCache() {
   const urls = readImageUrls().slice(-IMAGE_PREFETCH_MAX);
-  const results = await Promise.allSettled(urls.map((url) => Image.prefetch(url)));
-  return results.filter((result) => result.status === 'fulfilled' && result.value).length;
+  const results = await Promise.allSettled(urls.map((url) => getCachedUri(url)));
+  return results.filter((result) => result.status === 'fulfilled').length;
 }
 
 export function clearImageCacheRegistry() {

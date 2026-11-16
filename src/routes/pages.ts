@@ -3,6 +3,7 @@ import { Env, StandardDocument } from '../types';
 import { renderSearchBar } from '../templates/searchBar';
 import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
+import { toPlainText } from '../lib/contentRenderer';
 import { externalLinkUrl } from '../lib/externalLinks';
 import { renderLegalDocument } from '../lib/legal';
 import { isForumModerator } from './forum';
@@ -125,7 +126,8 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-type ArchiveStory = Pick<StandardDocument, 'uri' | 'path' | 'title' | 'publishedAt' | 'cover' | 'description'>;
+type ArchiveStory = Pick<StandardDocument, 'uri' | 'path' | 'title' | 'publishedAt' | 'cover' | 'description'>
+  & { content?: string };
 type ArchiveFilters = { q: string; author: string; year: string; sort: 'newest' | 'oldest'; image: boolean };
 type ArchivePaginationState = {
   cursors: Record<string, string | null>;
@@ -135,10 +137,10 @@ type ArchivePaginationState = {
 
 function renderArchiveStories(posts: ArchiveStory[], pds: string, origin: string) {
   return posts.map((post) => `
-    <article class="archive-story">
-      <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds || origin, 'feed_small'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-      </a>
+    <article class="archive-story${post.cover ? '' : ' archive-story--no-cover'}">
+      ${post.cover ? `<a class="archive-story__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+        <img src="${escapeHtml(proxyImageUrl(post.cover, pds || origin, 'feed_small'))}" alt="" class="story-image" loading="lazy" decoding="async">
+      </a>` : ''}
       <div>
         <p class="eyebrow">${escapeHtml(formatDate(post.publishedAt))}</p>
         <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
@@ -174,6 +176,7 @@ function readArchivePagination(value: unknown): ArchivePaginationState | undefin
       || typeof story.title !== 'string' || story.title.length > 2000
       || typeof story.publishedAt !== 'string' || !Number.isFinite(Date.parse(story.publishedAt))
       || (story.description !== undefined && (typeof story.description !== 'string' || story.description.length > 180))
+      || (story.content !== undefined && (typeof story.content !== 'string' || story.content.length > 800))
       || (story.cover !== undefined && (typeof story.cover !== 'string' || story.cover.length > 4096))) return undefined;
     if (typeof story.cover === 'string') {
       try {
@@ -189,6 +192,7 @@ function readArchivePagination(value: unknown): ArchivePaginationState | undefin
       title: story.title,
       publishedAt: story.publishedAt,
       ...(typeof story.description === 'string' ? { description: story.description } : {}),
+      ...(typeof story.content === 'string' ? { content: story.content } : {}),
       ...(typeof story.cover === 'string' ? { cover: story.cover } : {}),
     });
   }
@@ -251,6 +255,7 @@ pages.post('/api/archive/more', async (c) => {
     title: post.title,
     publishedAt: post.publishedAt,
     ...(post.description ? { description: excerpt(post) } : {}),
+    ...(post.content ? { content: toPlainText(post.content).slice(0, 600) } : {}),
     ...(post.cover ? { cover: post.cover } : {}),
   }))];
   const uniqueStories = [...new Map(candidateStories.map((post) => [post.uri, post])).values()].sort(sortStories);
@@ -399,6 +404,7 @@ pages.get('/account', (c) => {
             <nav class="account-page__section-nav" aria-label="Account sections">
               <a href="#saved-posts-title">Reading list</a>
               <a href="#viewed-posts-title">Recently viewed</a>
+              <a href="#followed-tags-title">Followed tags</a>
               <a href="#blocked-accounts-title">Blocked accounts</a>
               <a href="#author-settings-title" data-author-settings-link hidden>Author profile</a>
             </nav>
@@ -409,6 +415,14 @@ pages.get('/account', (c) => {
           <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title">Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
         </div>
         <div class="account-layout__column account-layout__secondary">
+          <section class="account-card account-page__viewed" aria-labelledby="followed-tags-title">
+            <h2 id="followed-tags-title">Followed tags</h2>
+            <p class="account-page__viewed-status" data-tag-follows-status role="status" aria-live="polite">Loading your followed tags…</p>
+            <ul data-tag-follows-list></ul>
+            <h3 class="account-page__subheading">Latest from your tags</h3>
+            <ul class="account-page__tag-posts" data-tag-follows-posts></ul>
+            <p class="account-page__blocks-note">Follow tags from the <a href="/tags">tag directory</a> to see new matching stories here and get notified.</p>
+          </section>
           <section class="account-card account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
             <h2 id="blocked-accounts-title">Blocked accounts</h2>
             <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
@@ -498,8 +512,9 @@ function formatDate(date?: string) {
   });
 }
 
-function excerpt(post: Pick<StandardDocument, 'description'>) {
-  const text = typeof post.description === 'string' ? post.description.trim() : '';
+function excerpt(post: Pick<StandardDocument, 'description'> & { content?: string }) {
+  const text = (typeof post.description === 'string' ? post.description.trim() : '')
+    || toPlainText(typeof post.content === 'string' ? post.content : '');
   if (!text) return '';
   return text.length > 150 ? `${text.substring(0, 150).trimEnd()}…` : text;
 }
@@ -585,19 +600,7 @@ pages.get('/tags', async (c) => {
     <a class="tag-directory__item${selectedTagKey === label.toLocaleLowerCase() ? ' is-selected' : ''}" href="/tags?tag=${encodeURIComponent(label)}">
       <span>${escapeHtml(label)}</span><span>${count} ${count === 1 ? 'post' : 'posts'}</span>
     </a>`).join('');
-  const postItems = matchingPosts.map((post) => `
-    <article class="archive-story">
-      <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-        ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_small'))}" alt="" class="story-image" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-      </a>
-      <div>
-        <p class="eyebrow">${escapeHtml(formatDate(post.publishedAt))}</p>
-        <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
-        ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
-        <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
-      </div>
-      <a href="${escapeHtml(post.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-    </article>`).join('');
+  const postItems = renderArchiveStories(matchingPosts, pds, new URL(c.req.url).origin);
   const body = `
     <section class="tags-page" aria-labelledby="tags-title">
       <h1 id="tags-title">Browse by tag</h1>
@@ -643,29 +646,15 @@ pages.get('/author/:handle', async (c) => {
   const authorName = author.displayName || author.handle;
   const authorAvatar = author.avatar ? proxyAvatarUrl(author.avatar) : '';
   const authorBanner = author.banner ? proxyImageUrl(author.banner, pds, 'banner_large') : '';
-  const archiveItems = authorPosts
-    .map((post) => `
-      <article class="archive-story">
-        <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${post.path}" aria-label="Read ${escapeHtml(post.title)}">
-          ${post.cover ? `<img src="${proxyImageUrl(post.cover, pds, 'feed_small')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-        </a>
-        <div>
-          <p class="eyebrow">${formatDate(post.publishedAt)}</p>
-          <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
-          ${excerpt(post) ? `<p>${escapeHtml(excerpt(post))}</p>` : ''}
-            <span class="view-counter">Reads <span data-at-uri="${escapeHtml(post.uri)}">—</span></span>
-        </div>
-        <a href="${escapeHtml(post.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-      </article>`)
-    .join('');
+  const archiveItems = renderArchiveStories(authorPosts, pds, new URL(c.req.url).origin);
   const pinnedPosts = new Set(author.pinnedPosts || []);
   const pinnedArticles = authorPosts.filter((post) => pinnedPosts.has(post.uri));
   const pinnedItems = pinnedArticles
     .map((post) => `
-      <article class="author-pinned-card">
-        <a class="author-pinned-card__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-          ${post.cover ? `<img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_small'))}" alt="" width="800" height="450" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
-        </a>
+      <article class="author-pinned-card${post.cover ? '' : ' author-pinned-card--no-cover'}">
+        ${post.cover ? `<a class="author-pinned-card__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+          <img src="${escapeHtml(proxyImageUrl(post.cover, pds, 'feed_small'))}" alt="" width="800" height="450" loading="lazy" decoding="async">
+        </a>` : ''}
         <div class="author-pinned-card__content">
           <p class="eyebrow">${formatDate(post.publishedAt)}</p>
           <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>

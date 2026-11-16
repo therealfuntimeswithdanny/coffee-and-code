@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { getPdsEndpoint, fetchArticles, isPdsAvailable, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
-import { renderLayout } from '../templates/layout';
+import { getPdsEndpoint, fetchArticles, isPdsAvailable, proxyImageUrl, proxyAvatarUrl, getEdgeCachedValue } from '../lib/atproto';
+import { countBacklinks } from './reactions';
+import { toPlainText } from '../lib/contentRenderer';
+import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
 
 const home = new Hono<{ Bindings: Env }>();
 
@@ -15,7 +17,7 @@ function formatDate(date?: string) {
 }
 
 function excerpt(post: StandardDocument, length = 180) {
-  const text = post.description?.trim() || '';
+  const text = post.description?.trim() || toPlainText(post.content || '');
   if (!text) return '';
   return text.length > length ? `${text.substring(0, length).trimEnd()}…` : text;
 }
@@ -76,8 +78,8 @@ home.get('/', async (c) => {
     ? `
       <div class="lead-column">
         <article class="lead-story">
-          <a class="lead-image${heroPost.cover ? '' : ' lead-image--placeholder'}" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
-            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')} 800w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : '<span>Coffee & Code</span>'}
+          <a class="lead-image" href="${escapeHtml(heroPost.path)}" aria-label="Read ${escapeHtml(heroPost.title || 'Untitled')}">
+            ${heroPost.cover ? `<img src="${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')}" srcset="${escapeHtml(proxiedCover(heroPost.cover, 'wide_small') || '')} 640w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_card') || '')} 800w, ${escapeHtml(proxiedCover(heroPost.cover, 'wide_medium') || '')} 1280w" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">` : `<img src="${escapeHtml(browserRunScreenshotUrl(heroPost.path))}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 700px" fetchpriority="high" decoding="async">`}
           </a>
           <div class="lead-story__content">
             <h2><a href="${escapeHtml(heroPost.path)}">${escapeHtml(heroPost.title || 'Untitled')}</a></h2>
@@ -90,29 +92,36 @@ home.get('/', async (c) => {
 
   const pinnedHtml = pinnedForHome.length ? `<section class="home-pinned" aria-labelledby="home-pinned-title">
     <div class="section-heading"><span id="home-pinned-title">Pinned stories</span></div>
-    <div class="home-pinned__grid">${pinnedForHome.map((post) => `
-      <article class="home-pinned__card">
-        <a class="home-pinned__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-          ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_card') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">` : '<span aria-hidden="true">Pinned story</span>'}
-        </a>
-        <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${authorByline(post)}</div>
-      </article>`).join('')}</div>
+    <div class="home-pinned__grid">${pinnedForHome.map((post) => {
+      const pinnedDek = post.cover ? '' : excerpt(post, 140);
+      return `
+      <article class="home-pinned__card${post.cover ? '' : ' home-pinned__card--no-cover'}">
+        ${post.cover ? `<a class="home-pinned__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+          <img src="${escapeHtml(proxiedCover(post.cover, 'feed_card') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">
+        </a>` : ''}
+        <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${pinnedDek ? `<p class="story-dek">${escapeHtml(pinnedDek)}</p>` : ''}${authorByline(post)}</div>
+      </article>`;
+    }).join('')}</div>
   </section>` : '';
 
   const sideHtml = sidePosts.length
     ? sidePosts
         .map(
-          (post) => `
-            <article class="side-story">
-              <a class="side-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-                ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_thumb') || '')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-              </a>
+          (post) => {
+            const sideDek = post.cover ? '' : excerpt(post, 110);
+            return `
+            <article class="side-story${post.cover ? '' : ' side-story--no-cover'}">
+              ${post.cover ? `<a class="side-story__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+                <img src="${escapeHtml(proxiedCover(post.cover, 'feed_thumb') || '')}" alt="" class="story-image" width="400" height="275" sizes="100px" loading="lazy" decoding="async">
+              </a>` : ''}
               <div>
                 <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
+                ${sideDek ? `<p class="story-dek">${escapeHtml(sideDek)}</p>` : ''}
                 ${authorByline(post)}
                 ${articleMeta(post)}
               </div>
-            </article>`
+            </article>`;
+          }
         )
         .join('')
     : `<p class="side-empty">${emptyMessage}</p>`;
@@ -120,10 +129,10 @@ home.get('/', async (c) => {
   const archiveHtml = archivePosts
     .map(
       (post) => `
-        <article class="archive-story">
-          <a class="archive-story__image${post.cover ? '' : ' story-image--placeholder'}" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
-            ${post.cover ? `<img src="${escapeHtml(proxiedCover(post.cover, 'feed_small') || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">` : '<span aria-hidden="true">C&amp;C</span>'}
-          </a>
+        <article class="archive-story${post.cover ? '' : ' archive-story--no-cover'}">
+          ${post.cover ? `<a class="archive-story__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
+            <img src="${escapeHtml(proxiedCover(post.cover, 'feed_small') || '')}" alt="" class="story-image" width="1200" height="686" sizes="(max-width: 760px) 100vw, 320px" loading="lazy" decoding="async">
+          </a>` : ''}
           <div>
             <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
             ${authorByline(post)}
@@ -133,6 +142,41 @@ home.get('/', async (c) => {
         </article>`
     )
     .join('');
+
+  // "Most read this week": rank recent stories by their public view-record
+  // count. Falls back to the last 30 days when the week has too few stories.
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  let mostReadCandidates = posts.filter((post) => now - Date.parse(post.publishedAt) <= 7 * dayMs);
+  if (mostReadCandidates.length < 3) {
+    mostReadCandidates = posts.filter((post) => now - Date.parse(post.publishedAt) <= 30 * dayMs);
+  }
+  mostReadCandidates = mostReadCandidates.slice(0, 16);
+  let mostRead: Array<{ post: StandardDocument; views: number }> = [];
+  if (mostReadCandidates.length) {
+    try {
+      mostRead = await getEdgeCachedValue(
+        'most-read-week',
+        mostReadCandidates.map((post) => post.uri).join('\n'),
+        600,
+        async () => {
+          const ranked: Array<{ post: StandardDocument; views: number }> = [];
+          for (let offset = 0; offset < mostReadCandidates.length; offset += 8) {
+            const batch = mostReadCandidates.slice(offset, offset + 8);
+            const views = await Promise.all(batch.map((post) => countBacklinks(post.uri, 'view').catch(() => 0)));
+            batch.forEach((post, index) => ranked.push({ post, views: views[index] }));
+          }
+          return ranked.sort((a, b) => b.views - a.views || b.post.publishedAt.localeCompare(a.post.publishedAt));
+        },
+      ).then((ranked) => ranked.filter((entry) => entry.views > 0).slice(0, 5));
+    } catch (error) {
+      console.error('Could not load the most-read ranking:', error);
+    }
+  }
+  const mostReadHtml = mostRead.length ? `<section class="most-read" aria-labelledby="most-read-title">
+      <div class="section-heading"><span id="most-read-title">Most read this week</span><a href="/archive" class="read-link">All stories <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+      <ol class="most-read__list">${mostRead.map(({ post, views }, index) => `<li class="most-read__item"><a href="${escapeHtml(post.path)}"><span class="most-read__rank" aria-hidden="true">${index + 1}</span><span class="most-read__body"><span class="most-read__title">${escapeHtml(post.title || 'Untitled')}</span><span class="most-read__meta">${escapeHtml(post.author?.displayName || post.author?.handle || 'Coffee & Code')} · ${views.toLocaleString()} ${views === 1 ? 'read' : 'reads'}</span></span></a></li>`).join('')}</ol>
+    </section>` : '';
 
   const authorsByDid = new Map<string, { author: NonNullable<StandardDocument['author']>; postCount: number }>();
   displayedPosts.forEach((post) => {
@@ -162,6 +206,8 @@ home.get('/', async (c) => {
       </div>
       ${pinnedHtml}
     </section>
+
+    ${mostReadHtml}
 
     ${authorsHtml ? `<section class="home-authors" aria-labelledby="home-authors-title">
       <div class="section-heading"><span id="home-authors-title">Meet the authors</span><a href="/authors" class="read-link">All authors <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>

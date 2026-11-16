@@ -34,7 +34,7 @@ type ForumConfig = {
   tags: string[];
   uri: string;
 };
-type ForumPost = {
+export type ForumPost = {
   uri: string;
   cid: string;
   rkey: string;
@@ -47,9 +47,10 @@ type ForumPost = {
   createdAt: string;
   tags: string[];
   images: Array<{ cid: string; alt: string }>;
+  pds: string;
   score: number;
 };
-type ForumReply = {
+export type ForumReply = {
   uri: string;
   cid: string;
   authorDid: string;
@@ -63,7 +64,7 @@ type ForumReply = {
   pds: string;
   score: number;
 };
-type ModerationState = { pinned: boolean; locked: boolean; hidden: boolean };
+export type ModerationState = { pinned: boolean; locked: boolean; hidden: boolean };
 type ModerationRecord = {
   did: string;
   subjectUri: string;
@@ -141,7 +142,8 @@ async function getRecord(pds: string, did: string, collection: string, rkey: str
   return await response.json() as AtRecord;
 }
 
-async function getForumConfig(fallbackPds: string): Promise<ForumConfig | undefined> {
+export type { ForumConfig };
+export async function getForumConfig(fallbackPds: string): Promise<ForumConfig | undefined> {
   const pds = await getPdsEndpoint(forumConfigDid, fallbackPds);
   const record = await getRecord(pds, forumConfigDid, forumCollection, 'self');
   const value = record?.value;
@@ -194,7 +196,7 @@ async function getBacklinks(subject: string, source: string): Promise<Backlink[]
   return records.slice(0, recordLimit);
 }
 
-async function fetchModerations(config: ForumConfig, fallbackPds: string): Promise<ModerationRecord[]> {
+export async function fetchModerations(config: ForumConfig, fallbackPds: string): Promise<ModerationRecord[]> {
   const backlinks = await getBacklinks(config.uri, `${moderationCollection}:forum`);
   const allowed = new Set(config.moderators.map((did) => did.toLowerCase()));
   const records: ModerationRecord[] = [];
@@ -230,7 +232,7 @@ async function fetchModerations(config: ForumConfig, fallbackPds: string): Promi
   return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.uri.localeCompare(b.uri));
 }
 
-function moderationStates(records: ModerationRecord[]) {
+export function moderationStates(records: ModerationRecord[]) {
   const states = new Map<string, ModerationState>();
   const removed = new Set<string>();
   for (const record of records) {
@@ -248,7 +250,7 @@ function moderationStates(records: ModerationRecord[]) {
   return states;
 }
 
-async function readPost(
+export async function readPost(
   did: string,
   rkey: string,
   fallbackPds: string,
@@ -290,11 +292,12 @@ async function readPost(
     createdAt: value.createdAt,
     tags: stringArray(value.tags, 8).map((tag) => tag.slice(0, 32)),
     images,
+    pds,
     score,
   };
 }
 
-async function getVoteScore(uri: string, fallbackPds: string): Promise<number> {
+export async function getVoteScore(uri: string, fallbackPds: string): Promise<number> {
   const backlinks = await getBacklinks(uri, `${voteCollection}:subject.uri`);
   const byAuthor = new Map<string, { direction: string; createdAt: string }>();
   for (let offset = 0; offset < backlinks.length; offset += 8) {
@@ -326,7 +329,7 @@ async function getVoteScore(uri: string, fallbackPds: string): Promise<number> {
   return [...byAuthor.values()].reduce((score, vote) => score + (vote.direction === 'up' ? 1 : -1), 0);
 }
 
-async function listForumPosts(config: ForumConfig, fallbackPds: string): Promise<ForumPost[]> {
+export async function listForumPosts(config: ForumConfig, fallbackPds: string): Promise<ForumPost[]> {
   const backlinks = await getBacklinks(config.uri, `${postCollection}:forum`);
   const posts: ForumPost[] = [];
   for (let offset = 0; offset < backlinks.length; offset += 8) {
@@ -337,7 +340,7 @@ async function listForumPosts(config: ForumConfig, fallbackPds: string): Promise
   return posts;
 }
 
-async function listReplies(postUri: string, fallbackPds: string): Promise<ForumReply[]> {
+export async function listReplies(postUri: string, fallbackPds: string): Promise<ForumReply[]> {
   const backlinks = await getBacklinks(postUri, `${replyCollection}:root.uri`);
   const replies: ForumReply[] = [];
   for (let offset = 0; offset < backlinks.length; offset += 8) {

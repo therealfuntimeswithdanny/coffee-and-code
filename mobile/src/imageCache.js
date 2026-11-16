@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 
-export const MAX_CACHE_BYTES = 500 * 1024 * 1024;
+export const MAX_CACHE_BYTES = 300 * 1024 * 1024;
 export const CACHE_TTL_MS = 3 * 60 * 60 * 1000;
 const INDEX_KEY = 'coffee-and-code:image-cache-index';
 const DIR = `${FileSystem.cacheDirectory}image-cache/`;

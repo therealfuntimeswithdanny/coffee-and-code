@@ -4,20 +4,22 @@ import 'core-js/modules/es.uint8-array.to-base64';
 import 'core-js/modules/es.uint8-array.set-from-base64';
 import '@formatjs/intl-segmenter/polyfill.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { SymbolView } from 'expo-symbols';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
-import { C, styles } from './src/theme';
-import { formatDate, storyAuthor } from './src/utils';
-import { ArticleBody, SectionBar, SkeletonImage, StoryRow, SwipeableDeleteRow, TabButton } from './src/components';
+import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
+import { articleReadingTime, formatDate, storyAuthor } from './src/utils';
+import { ArticleBody, ArticleTagRow, SectionBar, SkeletonImage, StoryRow, SwipeableDeleteRow, TabButton } from './src/components';
 import { cdnBlobImageUrl, imageUrlForPreset } from './src/imageUrls';
 import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
 import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
 import { cachePost, getApiBase, getCachedPost, log, registerImageUrl } from './src/developer';
 import { onNotificationResponse, registerForPushNotifications, unregisterForPushNotifications } from './src/push';
 import Welcome, { WELCOME_KEY } from './src/Welcome';
+import AuthCard from './src/AuthCard';
 import {
   ActivityIndicator, Image, Linking, Pressable, ScrollView,
   StatusBar, Text, TextInput, View, RefreshControl,
@@ -32,6 +34,7 @@ const BLOCK_COLLECTION = 'cc.coffeencode.user.block';
 const LIKE_COLLECTION = 'cc.coffeencode.interact.like';
 const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
 const NOTIFICATION_READ_COLLECTION = 'cc.coffeencode.notifications.read';
+const TAG_FOLLOW_COLLECTION = 'cc.coffeencode.tag.follow';
 
 function profileBlobUrl(blob, did, preset) {
   const cid = blob?.ref?.$link;
@@ -74,6 +77,19 @@ function relativeNotificationTime(value) {
   return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// Forum bodies are Markdown; the app renders them as readable plain text.
+function forumText(markdown) {
+  return String(markdown || '')
+    .replace(/```[a-z]*\n?([\s\S]*?)```/gi, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '$1 ($2)')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/[*_~`]+/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export default function App() {
   const [feed, setFeed] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -91,6 +107,7 @@ export default function App() {
   const [engagement, setEngagement] = useState(null);
   const [authorProfile, setAuthorProfile] = useState(null);
   const [activeTag, setActiveTag] = useState('');
+  const [tagFollows, setTagFollows] = useState([]);
   const [archiveStories, setArchiveStories] = useState([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [savedLoaded, setSavedLoaded] = useState(false);
@@ -152,12 +169,33 @@ export default function App() {
   const [welcomed, setWelcomed] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
+  const navCompactProgress = useRef(new Animated.Value(0)).current;
+  const navCollapsedRef = useRef(false);
   const lastArticleScrollY = useRef(0);
   const articleTouchStart = useRef(null);
   const commentsRequestId = useRef(0);
   const notificationsRequestId = useRef(0);
   const notificationInitialLoadDid = useRef(null);
   const notificationAutoMarkAttemptedAt = useRef(null);
+  const forumRequestId = useRef(0);
+  const [forumConfig, setForumConfig] = useState(null);
+  const [forumPosts, setForumPosts] = useState([]);
+  const [forumLoaded, setForumLoaded] = useState(false);
+  const [forumLoading, setForumLoading] = useState(false);
+  const [forumError, setForumError] = useState('');
+  const [forumPage, setForumPage] = useState(1);
+  const [forumHasMore, setForumHasMore] = useState(false);
+  const [forumSort, setForumSort] = useState('new');
+  const [forumTag, setForumTag] = useState('');
+  const [forumThread, setForumThread] = useState(null);
+  const [forumThreadLoading, setForumThreadLoading] = useState(false);
+  const [forumThreadError, setForumThreadError] = useState('');
+  const [forumVotes, setForumVotes] = useState({});
+  const [forumBusy, setForumBusy] = useState(false);
+  const [forumComposing, setForumComposing] = useState(false);
+  const [forumDraft, setForumDraft] = useState({ title: '', content: '', tags: '' });
+  const [forumReplyDraft, setForumReplyDraft] = useState('');
+  const [forumReplyTarget, setForumReplyTarget] = useState(null);
   const [error, setError] = useState('');
 
   const loadFeed = useCallback(async (refresh = false) => {
@@ -250,6 +288,235 @@ export default function App() {
     notificationInitialLoadDid.current = did;
     void loadNotifications();
   }, [tab, account, loadNotifications]);
+
+  const loadForum = useCallback(async ({ page = 1, sort = forumSort, tag = forumTag, append = false } = {}) => {
+    const requestId = ++forumRequestId.current;
+    setForumLoading(true);
+    setForumError('');
+    try {
+      const params = new URLSearchParams({ sort, page: String(page) });
+      if (tag) params.set('tag', tag);
+      const response = await fetch(`${getApiBase()}/forum?${params.toString()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('The forum is temporarily unavailable. Please try again.');
+      const payload = await response.json();
+      if (requestId !== forumRequestId.current) return;
+      setForumConfig(payload.forum || null);
+      setForumPosts((existing) => append ? [...existing, ...(payload.posts || [])] : (payload.posts || []));
+      setForumPage(payload.page || page);
+      setForumHasMore(Boolean(payload.hasMore));
+      setForumLoaded(true);
+    } catch (forumLoadError) {
+      if (requestId === forumRequestId.current) setForumError(forumLoadError.message || 'Could not load the forum.');
+    } finally {
+      if (requestId === forumRequestId.current) setForumLoading(false);
+    }
+  }, [forumSort, forumTag]);
+
+  const openForumThread = useCallback(async (subject) => {
+    if (!subject?.uri) return;
+    setForumThreadLoading(true);
+    setForumThreadError('');
+    try {
+      const response = await fetch(`${getApiBase()}/forum/thread?uri=${encodeURIComponent(subject.uri)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'This discussion could not be loaded.');
+      setForumThread(payload);
+      setForumReplyTarget(null);
+      setForumReplyDraft('');
+    } catch (threadError) {
+      setForumThreadError(threadError.message || 'This discussion could not be loaded.');
+    } finally {
+      setForumThreadLoading(false);
+    }
+  }, []);
+
+  const listOwnForumVotes = useCallback(async () => {
+    const votes = [];
+    const uriPrefix = `at://${account.session.did}/cc.coffeencode.forum.vote/`;
+    let cursor;
+    let guard = 0;
+    do {
+      const { data } = await account.agent.com.atproto.repo.listRecords({
+        repo: account.session.did, collection: 'cc.coffeencode.forum.vote', limit: 100, cursor,
+      });
+      for (const record of data.records || []) {
+        const rkey = typeof record.uri === 'string' && record.uri.startsWith(uriPrefix)
+          ? record.uri.slice(uriPrefix.length) : '';
+        const subjectUri = record.value?.subject?.uri;
+        const direction = record.value?.direction;
+        if (rkey && typeof subjectUri === 'string' && (direction === 'up' || direction === 'down')) {
+          votes.push({ rkey, subjectUri, direction, createdAt: record.value?.createdAt || '' });
+        }
+      }
+      cursor = data.cursor;
+      if (++guard > 50) break;
+    } while (cursor);
+    return votes.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [account]);
+
+  const castForumVote = useCallback(async (subject, direction) => {
+    if (!account?.agent || forumBusy || !subject?.uri) {
+      if (!account?.agent) setForumThreadError('Sign in from the Account tab to vote.');
+      return;
+    }
+    setForumBusy(true);
+    setForumThreadError('');
+    try {
+      const current = forumVotes[subject.uri];
+      const next = current === direction ? undefined : direction;
+      const votes = (await listOwnForumVotes()).filter((vote) => vote.subjectUri === subject.uri);
+      const latest = votes[votes.length - 1];
+      for (const vote of votes) {
+        if (!next || vote.rkey !== latest?.rkey) {
+          await account.agent.com.atproto.repo.deleteRecord({
+            repo: account.session.did, collection: 'cc.coffeencode.forum.vote', rkey: vote.rkey,
+          });
+        }
+      }
+      if (next) {
+        const record = {
+          $type: 'cc.coffeencode.forum.vote',
+          subject: { uri: subject.uri, cid: subject.cid },
+          direction: next,
+          createdAt: new Date().toISOString(),
+        };
+        if (latest) {
+          await account.agent.com.atproto.repo.putRecord({
+            repo: account.session.did, collection: 'cc.coffeencode.forum.vote', rkey: latest.rkey, record,
+          });
+        } else {
+          await account.agent.com.atproto.repo.createRecord({
+            repo: account.session.did, collection: 'cc.coffeencode.forum.vote', record,
+          });
+        }
+      }
+      const delta = (next === 'up' ? 1 : next === 'down' ? -1 : 0) - (current === 'up' ? 1 : current === 'down' ? -1 : 0);
+      setForumVotes((existing) => {
+        const copy = { ...existing };
+        if (next) copy[subject.uri] = next; else delete copy[subject.uri];
+        return copy;
+      });
+      const bump = (item) => (item.uri === subject.uri ? { ...item, score: (item.score || 0) + delta } : item);
+      setForumPosts((posts) => posts.map(bump));
+      setForumThread((thread) => (thread ? { ...thread, post: bump(thread.post), replies: thread.replies.map(bump) } : thread));
+    } catch (voteError) {
+      setForumThreadError(voteError.message || 'Your vote could not be saved.');
+    } finally {
+      setForumBusy(false);
+    }
+  }, [account, forumBusy, forumVotes, listOwnForumVotes]);
+
+  const sendForumReply = useCallback(async () => {
+    if (!account?.agent || !forumThread || forumBusy || !forumReplyDraft.trim()) return;
+    const root = { uri: forumThread.post.uri, cid: forumThread.post.cid };
+    const parent = forumReplyTarget && forumReplyTarget.uri !== forumThread.post.uri
+      ? { uri: forumReplyTarget.uri, cid: forumReplyTarget.cid }
+      : root;
+    setForumBusy(true);
+    setForumThreadError('');
+    try {
+      await account.agent.com.atproto.repo.createRecord({
+        repo: account.session.did,
+        collection: 'cc.coffeencode.forum.reply',
+        record: {
+          $type: 'cc.coffeencode.forum.reply',
+          root,
+          parent,
+          content: forumReplyDraft.trim(),
+          createdAt: new Date().toISOString(),
+        },
+      });
+      setForumReplyDraft('');
+      setForumReplyTarget(null);
+      await openForumThread(forumThread.post);
+    } catch (replyError) {
+      setForumThreadError(replyError.message || 'Your reply could not be posted.');
+    } finally {
+      setForumBusy(false);
+    }
+  }, [account, forumThread, forumBusy, forumReplyDraft, forumReplyTarget, openForumThread]);
+
+  const sendForumPost = useCallback(async () => {
+    if (!account?.agent || !forumConfig || forumBusy) return;
+    const title = forumDraft.title.trim();
+    const content = forumDraft.content.trim();
+    if (!title || !content) return;
+    const tags = forumDraft.tags.split(',').map((tag) => tag.trim().slice(0, 32)).filter(Boolean).slice(0, 8);
+    setForumBusy(true);
+    try {
+      const result = await account.agent.com.atproto.repo.createRecord({
+        repo: account.session.did,
+        collection: 'cc.coffeencode.forum.post',
+        record: {
+          $type: 'cc.coffeencode.forum.post',
+          forum: forumConfig.uri,
+          title,
+          content,
+          ...(tags.length ? { tags } : {}),
+          createdAt: new Date().toISOString(),
+        },
+      });
+      setForumDraft({ title: '', content: '', tags: '' });
+      setForumComposing(false);
+      const uri = result?.data?.uri;
+      void loadForum({ page: 1 });
+      if (uri) void openForumThread({ uri });
+    } catch (postError) {
+      setForumError(postError.message || 'Your discussion could not be published.');
+    } finally {
+      setForumBusy(false);
+    }
+  }, [account, forumConfig, forumBusy, forumDraft, loadForum, openForumThread]);
+
+  const moderateForumSubject = useCallback(async (subject, action) => {
+    if (!account?.agent || forumBusy || !forumConfig
+      || !forumConfig.moderators?.some((did) => did.toLowerCase() === account.session.did.toLowerCase())) return;
+    setForumBusy(true);
+    try {
+      await account.agent.com.atproto.repo.createRecord({
+        repo: account.session.did,
+        collection: 'cc.coffeencode.forum.moderation',
+        record: {
+          $type: 'cc.coffeencode.forum.moderation',
+          forum: forumConfig.uri,
+          subject: { uri: subject.uri, cid: subject.cid },
+          action,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      if (forumThread) {
+        if (action === 'hide' || action === 'remove') setForumThread(null);
+        else await openForumThread(forumThread.post);
+      }
+      await loadForum({ page: 1 });
+    } catch (moderationError) {
+      setForumThreadError(moderationError.message || 'The moderation action could not be saved.');
+    } finally {
+      setForumBusy(false);
+    }
+  }, [account, forumBusy, forumConfig, forumThread, loadForum, openForumThread]);
+
+  useEffect(() => {
+    if (tab === 'Forum' && !forumLoaded && !forumLoading) void loadForum();
+  }, [tab, forumLoaded, forumLoading, loadForum]);
+
+  useEffect(() => {
+    if (!account?.agent) { setForumVotes({}); return; }
+    const subjects = new Set(forumPosts.map((post) => post.uri));
+    if (forumThread) {
+      subjects.add(forumThread.post.uri);
+      forumThread.replies.forEach((reply) => subjects.add(reply.uri));
+    }
+    if (!subjects.size) return;
+    let cancelled = false;
+    listOwnForumVotes().then((votes) => {
+      if (cancelled) return;
+      const map = {};
+      for (const vote of votes) if (subjects.has(vote.subjectUri)) map[vote.subjectUri] = vote.direction;
+      setForumVotes(map);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [account, forumPosts, forumThread, listOwnForumVotes]);
   useEffect(() => {
     AsyncStorage.getItem(SAVED_KEY)
       .then((value) => setSaved(value ? JSON.parse(value) : []))
@@ -261,6 +528,8 @@ export default function App() {
       .then((value) => setWelcomed(value === '1'))
       .catch(() => setWelcomed(false));
   }, []);
+  // Signing in or creating an account during onboarding is handled by
+  // Welcome itself, which shows a confirmation screen before onDone.
   useEffect(() => {
     log.info('App launched');
     restoreSession()
@@ -295,6 +564,7 @@ export default function App() {
         setViewedStories([]);
         setBlockedAccounts([]);
         setCoffeeProfile(null);
+        setTagFollows([]);
       }
       return;
     }
@@ -308,14 +578,16 @@ export default function App() {
       setShowAllViewed(false);
       setBlockedAccounts([]);
       setCoffeeProfile(null);
+      setTagFollows([]);
       setAccountDataLoading(true);
       setAccountDataError('');
       try {
-        const [profileResponse, postsResponse, viewRecords, blockRecords, ownerValue, pdsEndpoint] = await Promise.all([
+        const [profileResponse, postsResponse, viewRecords, blockRecords, followRecords, ownerValue, pdsEndpoint] = await Promise.all([
           fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`).catch(() => null),
           fetch(`${getApiBase()}/account/posts`, { cache: 'no-store' }).catch(() => null),
           listRepoRecords(activeAccount.agent, did, VIEW_COLLECTION),
           listRepoRecords(activeAccount.agent, did, BLOCK_COLLECTION),
+          listRepoRecords(activeAccount.agent, did, TAG_FOLLOW_COLLECTION),
           AsyncStorage.getItem(SAVED_OWNER_KEY),
           resolvePdsEndpoint(did),
         ]);
@@ -345,6 +617,9 @@ export default function App() {
         setBlockedAccounts(blockRecords
           .filter((record) => typeof record.uri === 'string' && typeof record.value?.subject === 'string')
           .map((record) => ({ rkey: record.uri.split('/').pop(), did: record.value.subject, createdAt: record.value.createdAt })));
+        setTagFollows(followRecords
+          .filter((record) => typeof record.uri === 'string' && typeof record.value?.tag === 'string' && record.value.tag.trim())
+          .map((record) => ({ rkey: record.uri.split('/').pop(), tag: record.value.tag.trim(), createdAt: record.value.createdAt })));
 
         const storedSaved = await AsyncStorage.getItem(SAVED_KEY);
         const cachedSaved = storedSaved ? JSON.parse(storedSaved) : [];
@@ -421,9 +696,29 @@ export default function App() {
     }
   }, [account?.session?.did]);
 
+  const animateArticleNav = useCallback((collapsed) => {
+    if (navCollapsedRef.current === collapsed) return;
+    navCollapsedRef.current = collapsed;
+    Animated.timing(navCompactProgress, {
+      toValue: collapsed ? 1 : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [navCompactProgress]);
+
   const onArticleScroll = useCallback((event) => {
-    lastArticleScrollY.current = event.nativeEvent.contentOffset.y;
-  }, []);
+    const offset = event.nativeEvent.contentOffset.y;
+    const delta = offset - lastArticleScrollY.current;
+    if (offset <= 8) {
+      animateArticleNav(false);
+      lastArticleScrollY.current = offset;
+      return;
+    }
+    if (Math.abs(delta) < 8) return;
+    animateArticleNav(delta > 0);
+    lastArticleScrollY.current = offset;
+  }, [animateArticleNav]);
 
   const openStory = useCallback(async (story) => {
     setSelected(story);
@@ -435,6 +730,8 @@ export default function App() {
     setCommentCursor(null);
     setCommentError('');
     setReplyTarget(null);
+    navCollapsedRef.current = false;
+    navCompactProgress.setValue(0);
     lastArticleScrollY.current = 0;
     void loadComments(story.uri);
     if (story.cover) registerImageUrl(story.cover);
@@ -547,6 +844,35 @@ export default function App() {
       }
     } catch (e) {
       setError(e.message || 'Could not sync this story to your account.');
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const toggleTagFollow = async (tag) => {
+    const normalized = (tag || '').trim().toLocaleLowerCase();
+    if (!normalized) return;
+    if (!account?.agent) {
+      setError('Sign in to follow tags and get notified about new matching stories.');
+      return;
+    }
+    if (accountBusy) return;
+    setAccountBusy(true);
+    setError('');
+    try {
+      const existing = tagFollows.filter((item) => item.tag.toLocaleLowerCase() === normalized);
+      if (existing.length) {
+        for (const item of existing) {
+          await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: TAG_FOLLOW_COLLECTION, rkey: item.rkey });
+        }
+        setTagFollows((current) => current.filter((item) => item.tag.toLocaleLowerCase() !== normalized));
+      } else {
+        const result = await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: TAG_FOLLOW_COLLECTION, record: { $type: TAG_FOLLOW_COLLECTION, tag: normalized, createdAt: new Date().toISOString() } });
+        const rkey = result?.data?.uri?.split('/').pop();
+        if (rkey) setTagFollows((current) => [{ rkey, tag: normalized, createdAt: new Date().toISOString() }, ...current]);
+      }
+    } catch (e) {
+      setError(e.message || 'Could not update this tag follow.');
     } finally {
       setAccountBusy(false);
     }
@@ -771,8 +1097,9 @@ export default function App() {
     avatar: authorProfile?.coffee?.avatarUrl || authorProfile?.bsky?.avatar || selected.author.avatar,
     bio: authorProfile?.coffee?.description || authorProfile?.bsky?.description || selected.author.description || '',
   } : null;
+  const readingMinutes = articleReadingTime(articleRecord) || articleReadingTime(selected);
   const openAuthorProfile = () => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(articleAuthor.handle || articleAuthor.did)}`);
-  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setArticleRecord(null); setError(''); setReplyTarget(null); lastArticleScrollY.current = 0; };
+  const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setArticleRecord(null); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
   const tags = [...new Set(allArchiveStories.flatMap((story) => story.tags || []))].sort((a, b) => a.localeCompare(b));
   const visibleStories = allArchiveStories.filter((story) => {
@@ -789,7 +1116,7 @@ export default function App() {
   const pinnedStories = feed?.pinned || [];
   const notificationBadgeCount = account?.agent ? notificationsUnreadCount : 0;
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
-  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); animateArticleNav(false); };
 
   const onArticleTouchStart = (event) => {
     const touch = event.nativeEvent.touches?.[0] || event.nativeEvent;
@@ -837,6 +1164,9 @@ export default function App() {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagStrip} contentContainerStyle={styles.tagContent}>
       {['', ...tags].map((tag) => <Pressable key={tag || 'all'} onPress={() => setActiveTag(tag)} style={[styles.tagChip, activeTag === tag && styles.tagChipActive]}><Text style={[styles.tagText, activeTag === tag && styles.tagTextActive]}>{tag || 'All topics'}</Text></Pressable>)}
     </ScrollView>
+    {!!activeTag && !!account?.agent && <Pressable accessibilityRole="button" accessibilityState={{ selected: tagFollows.some((item) => item.tag.toLocaleLowerCase() === activeTag.toLocaleLowerCase()) }} accessibilityLabel={`${tagFollows.some((item) => item.tag.toLocaleLowerCase() === activeTag.toLocaleLowerCase()) ? 'Unfollow' : 'Follow'} ${activeTag}`} disabled={accountBusy} onPress={() => toggleTagFollow(activeTag)} style={[styles.tagChip, styles.tagFollowChip, tagFollows.some((item) => item.tag.toLocaleLowerCase() === activeTag.toLocaleLowerCase()) && styles.tagChipActive]}>
+      <Text style={[styles.tagText, tagFollows.some((item) => item.tag.toLocaleLowerCase() === activeTag.toLocaleLowerCase()) && styles.tagTextActive]}>{tagFollows.some((item) => item.tag.toLocaleLowerCase() === activeTag.toLocaleLowerCase()) ? 'Following' : 'Follow tag'}</Text>
+    </Pressable>}
     <SectionBar title={query ? 'Search results' : 'All stories'} detail={`${visibleStories.length} SHOWN`} />
     {visibleStories.length ? visibleStories.map((story, index) => <StoryRow key={story.uri || `${story.title}-${index}`} story={story} compact onPress={() => openStory(story)} />)
       : <Text style={styles.emptyText}>{query ? 'No stories match that search. Try another title, topic, or author.' : 'Stories will appear here as they are published.'}</Text>}
@@ -844,7 +1174,7 @@ export default function App() {
 
   const renderSaved = () => <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={savedRefreshing} onRefresh={refreshSaved} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>Saved stories</Text>
-    {saved.length ? saved.map((story, index) => <StoryRow key={story.uri || index} compact story={story} onPress={() => openStory(story)} />) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
+    {saved.length ? saved.map((story, index) => <SwipeableDeleteRow key={story.uri || index} accessibilityLabel={`Remove ${story.title} from your saved list`} onDelete={() => toggleSaved(story)}><StoryRow compact story={story} onPress={() => openStory(story)} /></SwipeableDeleteRow>) : <View style={styles.empty}><Text style={styles.emptyTitle}>Save a story for later</Text><Text style={styles.emptyText}>Tap the bookmark on any story to add it to your saved list. {account ? 'Your saved list syncs with your Coffee & Code account.' : 'Saved stories stay on this device until you sign in.'}</Text></View>}
   </ScrollView>;
 
   const renderNotificationItem = (item) => {
@@ -867,6 +1197,201 @@ export default function App() {
       </View>
       <SymbolView name={item.type.includes('like') ? 'heart.fill' : item.type === 'post.view' ? 'eye' : 'bubble.left'} size={15} tintColor={item.type.includes('like') ? C.error : C.muted} />
     </Pressable>;
+  };
+
+  const renderForum = () => {
+    const signedIn = Boolean(account?.agent);
+    const isModerator = Boolean(account?.session?.did
+      && forumConfig?.moderators?.some((did) => did.toLowerCase() === account.session.did.toLowerCase()));
+
+    const voteControls = (item) => {
+      const myVote = forumVotes[item.uri];
+      return <View style={styles.forumVoteRow}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Upvote" disabled={forumBusy} onPress={() => castForumVote(item, 'up')} style={[styles.forumVoteButton, myVote === 'up' && styles.forumVoteButtonActive]}>
+          <SymbolView name="arrow.up" size={13} tintColor={myVote === 'up' ? C.bg : C.muted} />
+        </Pressable>
+        <Text style={styles.forumVoteScore}>{item.score || 0}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Downvote" disabled={forumBusy} onPress={() => castForumVote(item, 'down')} style={[styles.forumVoteButton, myVote === 'down' && styles.forumVoteButtonActive]}>
+          <SymbolView name="arrow.down" size={13} tintColor={myVote === 'down' ? C.bg : C.muted} />
+        </Pressable>
+      </View>;
+    };
+
+    const modControls = (item, root = false) => {
+      if (!isModerator) return null;
+      const actions = root
+        ? [[item.pinned ? 'unpin' : 'pin', item.pinned ? 'UNPIN' : 'PIN'],
+           [item.locked ? 'unlock' : 'lock', item.locked ? 'UNLOCK REPLIES' : 'LOCK REPLIES'],
+           ['hide', 'HIDE'], ['remove', 'REMOVE']]
+        : [['hide', 'HIDE'], ['remove', 'REMOVE']];
+      return <View style={styles.forumModRow}>
+        {actions.map(([action, label]) => (
+          <Pressable key={action} accessibilityRole="button" disabled={forumBusy} onPress={() => moderateForumSubject(item, action)} style={styles.forumModButton}>
+            <Text style={styles.forumModLabel}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>;
+    };
+
+    const byline = (item) => <View style={styles.forumByline}>
+      {item.avatar
+        ? <SkeletonImage source={{ uri: item.avatar }} imagePreset="avatar_thumb" accessibilityLabel={`${item.name} profile photo`} style={styles.forumAvatar} />
+        : <View style={styles.forumAvatarPlaceholder}><Text style={styles.avatarInitial}>{(item.name || 'C')[0].toUpperCase()}</Text></View>}
+      <Text style={styles.meta} numberOfLines={1}>{item.name} · {formatDate(item.createdAt)}</Text>
+      {!!item.pinned && <Text style={styles.forumBadge}>PINNED</Text>}
+    </View>;
+
+    const images = (list) => list?.length ? <View style={styles.forumImages}>
+      {list.map((image, index) => <SkeletonImage key={`${image.url}-${index}`} source={{ uri: image.url }} accessibilityLabel={image.alt || 'Forum image'} style={styles.forumImage} resizeMode="cover" />)}
+    </View> : null;
+
+    if (forumThread) {
+      const post = forumThread.post;
+      const childrenByParent = new Map();
+      for (const reply of forumThread.replies) {
+        const children = childrenByParent.get(reply.parentUri) || [];
+        children.push(reply);
+        childrenByParent.set(reply.parentUri, children);
+      }
+      const renderReply = (reply, depth, ancestors) => {
+        if (ancestors.has(reply.uri) || depth > 12) return null;
+        const next = new Set(ancestors);
+        next.add(reply.uri);
+        return <View key={reply.uri} style={[styles.forumReply, depth > 1 && { marginLeft: 14 }]}>
+          {byline(reply)}
+          <Text style={styles.forumReplyContent}>{forumText(reply.content)}</Text>
+          {images(reply.images)}
+          <View style={styles.forumFooter}>
+            {voteControls(reply)}
+            {!forumThread.locked && signedIn && <Pressable accessibilityRole="button" onPress={() => setForumReplyTarget(reply)}><Text style={styles.action}>REPLY</Text></Pressable>}
+          </View>
+          {modControls(reply)}
+          {(childrenByParent.get(reply.uri) || []).map((child) => renderReply(child, depth + 1, next))}
+        </View>;
+      };
+      return <ScrollView contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={forumThreadLoading} onRefresh={() => openForumThread(post)} tintColor={C.muted} />}>
+        <Pressable accessibilityRole="button" onPress={() => { setForumThread(null); setForumReplyTarget(null); }}><Text style={styles.action}>← ALL DISCUSSIONS</Text></Pressable>
+        {!!post.pinned && <Text style={[styles.forumBadge, { alignSelf: 'flex-start', marginLeft: 0, marginTop: 10 }]}>PINNED DISCUSSION</Text>}
+        <Text style={styles.pageTitle}>{post.title}</Text>
+        {byline(post)}
+        <Text style={styles.forumBody}>{forumText(post.content)}</Text>
+        {images(post.images)}
+        <View style={styles.forumFooter}>
+          {voteControls(post)}
+          {post.tags.map((tag) => <Text key={tag} style={styles.forumTagChipText}>#{tag}</Text>)}
+        </View>
+        {modControls(post, true)}
+        <SectionBar title="Replies" detail={String(forumThread.replies.length)} />
+        {!!forumThreadError && <Text accessibilityRole="alert" style={styles.error}>{forumThreadError}</Text>}
+        {forumThread.locked
+          ? <Text style={styles.emptyText}>Replies are locked by a forum moderator.</Text>
+          : <View style={styles.commentComposer}>
+            {!!forumReplyTarget && <View style={styles.replyingTo}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>REPLYING TO</Text>
+                <Text style={styles.commentAuthor}>{forumReplyTarget.name || forumReplyTarget.handle}</Text>
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => setForumReplyTarget(null)}><Text style={styles.action}>CANCEL</Text></Pressable>
+            </View>}
+            <Text style={styles.fieldLabel}>{signedIn ? forumReplyTarget ? 'WRITE A REPLY' : 'JOIN THE DISCUSSION' : 'SIGN IN TO REPLY'}</Text>
+            <TextInput value={forumReplyDraft} onChangeText={setForumReplyDraft} editable={signedIn && !forumBusy}
+              placeholder={signedIn ? 'Write your reply…' : 'Sign in from the Account tab to reply'}
+              placeholderTextColor={C.muted} multiline maxLength={30000} style={[styles.commentInput, !signedIn && styles.disabledInput]} />
+            <Pressable accessibilityRole="button" disabled={forumBusy || (signedIn && !forumReplyDraft.trim())} onPress={sendForumReply}
+              style={[styles.primaryButton, (forumBusy || (signedIn && !forumReplyDraft.trim())) && styles.disabledButton]}>
+              <Text style={styles.primaryButtonText}>{forumBusy ? 'POSTING…' : !signedIn ? 'SIGN IN TO REPLY' : 'POST REPLY'}</Text>
+            </Pressable>
+          </View>}
+        {(childrenByParent.get(post.uri) || []).map((reply) => renderReply(reply, 1, new Set([post.uri])))}
+        {forumThreadLoading && <ActivityIndicator color={C.muted} style={{ marginVertical: 18 }} />}
+      </ScrollView>;
+    }
+
+    if (forumComposing) {
+      if (!signedIn) {
+        return <ScrollView contentContainerStyle={styles.content}>
+          <Pressable accessibilityRole="button" onPress={() => setForumComposing(false)}><Text style={styles.action}>← BACK TO FORUM</Text></Pressable>
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>Sign in to post</Text>
+            <Text style={styles.emptyText}>Discussions are published to your own AT Protocol account. Sign in from the Account tab to start one.</Text>
+            <Pressable accessibilityRole="button" onPress={() => { setForumComposing(false); selectMainTab('Account'); }} style={styles.notificationSignIn}><Text style={styles.primaryButtonText}>GO TO SIGN IN</Text></Pressable>
+          </View>
+        </ScrollView>;
+      }
+      return <ScrollView contentContainerStyle={styles.content}>
+        <Pressable accessibilityRole="button" onPress={() => setForumComposing(false)}><Text style={styles.action}>← BACK TO FORUM</Text></Pressable>
+        <Text style={styles.pageTitle}>Start a discussion</Text>
+        <Text style={styles.pageSubtitle}>Share a project, ask a question, or start a conversation with the community.</Text>
+        {!!forumError && <Text accessibilityRole="alert" style={styles.error}>{forumError}</Text>}
+        <Text style={styles.fieldLabel}>TITLE</Text>
+        <TextInput value={forumDraft.title} onChangeText={(title) => setForumDraft((draft) => ({ ...draft, title }))}
+          placeholder="Give your discussion a clear title" placeholderTextColor={C.muted} maxLength={300} style={styles.commentInput} />
+        <Text style={[styles.fieldLabel, { marginTop: 14 }]}>YOUR POST</Text>
+        <TextInput value={forumDraft.content} onChangeText={(content) => setForumDraft((draft) => ({ ...draft, content }))}
+          placeholder="Write your post in Markdown…" placeholderTextColor={C.muted} multiline maxLength={100000}
+          style={[styles.commentInput, { minHeight: 160 }]} />
+        <Text style={styles.meta}>Markdown is supported on the web; it is shown as plain text in the app.</Text>
+        <Text style={[styles.fieldLabel, { marginTop: 14 }]}>TOPICS (COMMA-SEPARATED)</Text>
+        <TextInput value={forumDraft.tags} onChangeText={(tags) => setForumDraft((draft) => ({ ...draft, tags }))}
+          placeholder={forumConfig?.tags?.length ? forumConfig.tags.slice(0, 3).join(', ') : 'For example: projects, web development'}
+          placeholderTextColor={C.muted} maxLength={256} style={styles.commentInput} />
+        <Pressable accessibilityRole="button" disabled={forumBusy || !forumDraft.title.trim() || !forumDraft.content.trim()} onPress={sendForumPost}
+          style={[styles.primaryButton, (forumBusy || !forumDraft.title.trim() || !forumDraft.content.trim()) && styles.disabledButton, { marginTop: 16 }]}>
+          <Text style={styles.primaryButtonText}>{forumBusy ? 'PUBLISHING…' : 'PUBLISH DISCUSSION'}</Text>
+        </Pressable>
+      </ScrollView>;
+    }
+
+    return <ScrollView contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={forumLoading && forumLoaded} onRefresh={() => loadForum({ page: 1 })} tintColor={C.muted} />}>
+      <Text style={styles.pageTitle}>{forumConfig?.name || 'Forum'}</Text>
+      {!!forumConfig?.description && <Text style={styles.pageSubtitle}>{forumText(forumConfig.description)}</Text>}
+      {!!forumConfig?.rules?.length && <View style={styles.forumRuleCard}>
+        <Text style={styles.fieldLabel}>COMMUNITY RULES</Text>
+        {forumConfig.rules.map((rule, index) => <View key={`${rule.title}-${index}`} style={{ marginTop: 8 }}>
+          <Text style={styles.forumRuleTitle}>{index + 1}. {rule.title}</Text>
+          {!!rule.description && <Text style={styles.forumRuleText}>{rule.description}</Text>}
+        </View>)}
+      </View>}
+      <Pressable accessibilityRole="button" onPress={() => setForumComposing(true)} style={[styles.forumCreateButton, { marginTop: 14 }]}>
+        <Text style={styles.primaryButtonText}>START A DISCUSSION</Text>
+      </Pressable>
+      <View style={[styles.forumFooter, { marginTop: 16 }]}>
+        <Pressable accessibilityRole="button" onPress={() => { setForumSort('new'); void loadForum({ page: 1, sort: 'new' }); }} style={[styles.forumTagChip, forumSort === 'new' && styles.forumTagChipActive]}>
+          <Text style={[styles.forumTagChipText, forumSort === 'new' && styles.forumTagChipTextActive]}>NEWEST</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => { setForumSort('top'); void loadForum({ page: 1, sort: 'top' }); }} style={[styles.forumTagChip, forumSort === 'top' && styles.forumTagChipActive]}>
+          <Text style={[styles.forumTagChipText, forumSort === 'top' && styles.forumTagChipTextActive]}>TOP</Text>
+        </Pressable>
+      </View>
+      {!!forumConfig?.tags?.length && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.forumTagRow}>
+        <Pressable accessibilityRole="button" onPress={() => { setForumTag(''); void loadForum({ page: 1, tag: '' }); }} style={[styles.forumTagChip, !forumTag && styles.forumTagChipActive]}>
+          <Text style={[styles.forumTagChipText, !forumTag && styles.forumTagChipTextActive]}>ALL</Text>
+        </Pressable>
+        {forumConfig.tags.map((tag) => <Pressable key={tag} accessibilityRole="button"
+          onPress={() => { const next = forumTag === tag ? '' : tag; setForumTag(next); void loadForum({ page: 1, tag: next }); }}
+          style={[styles.forumTagChip, forumTag === tag && styles.forumTagChipActive]}>
+          <Text style={[styles.forumTagChipText, forumTag === tag && styles.forumTagChipTextActive]}>{tag}</Text>
+        </Pressable>)}
+      </ScrollView>}
+      {!!forumError && <View><Text accessibilityRole="alert" style={styles.error}>{forumError}</Text><Pressable accessibilityRole="button" onPress={() => loadForum({ page: 1 })}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>}
+      {forumLoading && !forumPosts.length && <ActivityIndicator color={C.muted} style={{ marginVertical: 28 }} />}
+      {!forumLoading && forumLoaded && !forumPosts.length && !forumError && <Text style={styles.emptyText}>No discussions yet. Be the first to post.</Text>}
+      {forumPosts.map((post) => <Pressable key={post.uri} accessibilityRole="button" accessibilityLabel={`Open discussion ${post.title}`} onPress={() => openForumThread(post)} style={styles.forumCard}>
+        {byline(post)}
+        <Text style={styles.forumTitle}>{post.title}</Text>
+        <Text style={styles.forumExcerpt} numberOfLines={4}>{forumText(post.content.slice(0, 520))}</Text>
+        <View style={styles.forumFooter}>
+          {voteControls(post)}
+          {post.tags.map((tag) => <Text key={tag} style={styles.forumTagChipText}>#{tag}</Text>)}
+        </View>
+      </Pressable>)}
+      {forumHasMore && <Pressable accessibilityRole="button" disabled={forumLoading} onPress={() => loadForum({ page: forumPage + 1, append: true })} style={styles.loadCommentsButton}>
+        <Text style={styles.action}>{forumLoading ? 'LOADING…' : 'OLDER DISCUSSIONS'}</Text>
+      </Pressable>}
+      {forumLoading && !!forumPosts.length && <ActivityIndicator color={C.muted} style={{ marginVertical: 12 }} />}
+    </ScrollView>;
   };
 
   const renderNotifications = () => {
@@ -959,12 +1484,14 @@ export default function App() {
     coffeeProfile={coffeeProfile}
     accountPds={accountPds}
     blockedAccounts={blockedAccounts}
+    tagFollows={tagFollows}
     savedCount={saved.length}
     viewedCount={viewedStories.length}
     accountBusy={accountBusy}
     initialPage={settingsPage}
     onBack={() => setSettingsPage(null)}
     onUnblock={unblockAccount}
+    onToggleTagFollow={toggleTagFollow}
     onSignOut={async () => { await signOut(account); void unregisterForPushNotifications(AsyncStorage); log.info('Signed out'); setAccount(null); setSettingsPage(null); }}
   /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
@@ -1010,32 +1537,12 @@ export default function App() {
           <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://coffeencode.cc/account')} style={styles.profileLink}><Text style={styles.action}>MANAGE ON COFFEE & CODE  ↗</Text></Pressable>
         </View>
       </>}
-    </> : <View style={styles.accountCard}>
-      <Text style={styles.accountDescription}>Sign in with your AT Protocol account. Your provider handles the password and shows the permissions requested by Coffee & Code.</Text>
-      {IS_EXPO_GO ? <Text style={styles.accountDescription}>Expo Go supports reading the live publication API. AT Protocol sign-in and member actions need the Coffee & Code development app because they use a native OAuth module.</Text> : <>
-        <Text style={styles.fieldLabel}>Typically what you use to sign into orther At proto apps, Bluesky, Pckt, Leaflet, Anisota, rpg.actor, etc</Text>
-        <TextInput value={loginHandle} onChangeText={setLoginHandle} placeholder="john-doe.coffeencode.cc or johndoe.com." placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={handleLogin} style={styles.searchInput} accessibilityLabel="AT Protocol handle" />
-        {!!error && <Text style={styles.error}>{error}</Text>}
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={handleLogin} style={styles.primaryButton}>{accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>Sign in</Text>}</Pressable>
-        <Text style={styles.privacyNote}>Coffee & Code never asks for or stores your password.</Text>
-      </>}
-      <View style={styles.createAccountCard}>
-          <Text style={styles.accountProfileName}>New to Coffee & Code?</Text>
-          <Text style={styles.accountDescription}>Create an account on our PDS (your gateway to thounds of apps, including Bluesky).</Text>
-          {IS_EXPO_GO && <Text style={styles.accountDescription}>You can get the code here, then continue signup in the Coffee & Code development app.</Text>}
-          {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-          {!!inviteError && <Text accessibilityRole="alert" style={styles.error}>{inviteError}</Text>}
-          {!inviteCode ? <Pressable accessibilityRole="button" disabled={inviteLoading} onPress={getInviteCode} style={styles.secondaryButton}>
-            {inviteLoading ? <ActivityIndicator color={C.muted} /> : <Text style={styles.action}>CREATE ACCOUNT</Text>}
-          </Pressable> : <>
-            <Text style={styles.fieldLabel}>Copy this code, you will need this to continue your signup. We do this to prevent abuse and bot attacks</Text>
-            <Text selectable style={styles.inviteCode}>{inviteCode}</Text>
-            <Pressable accessibilityRole="button" disabled={accountBusy} onPress={continueAccountCreation} style={[styles.primaryButton, styles.inviteContinue]}>
-              {accountBusy ? <ActivityIndicator color={C.bg} /> : <Text style={styles.primaryButtonText}>CONTINUE TO SIGNUP  →</Text>}
-            </Pressable>
-          </>}
-      </View>
-    </View>}
+    </> : <AuthCard
+      loginHandle={loginHandle} onChangeHandle={setLoginHandle} onLogin={handleLogin}
+      accountBusy={accountBusy} error={error}
+      inviteCode={inviteCode} inviteError={inviteError} inviteLoading={inviteLoading}
+      onGetInviteCode={getInviteCode} onContinueAccountCreation={continueAccountCreation}
+    />}
     {!account && <>
       <SectionBar title="Settings" />
       <View style={styles.settingsCard}>
@@ -1047,7 +1554,16 @@ export default function App() {
   if (welcomed === false) {
     return <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <Welcome onDone={() => { AsyncStorage.setItem(WELCOME_KEY, '1').catch(() => {}); setWelcomed(true); }} />
+      <Welcome
+        onDone={() => { AsyncStorage.setItem(WELCOME_KEY, '1').catch(() => {}); setWelcomed(true); }}
+        auth={{
+          account,
+          loginHandle, onChangeHandle: setLoginHandle, onLogin: handleLogin,
+          accountBusy, error,
+          inviteCode, inviteError, inviteLoading,
+          onGetInviteCode: getInviteCode, onContinueAccountCreation: continueAccountCreation,
+        }}
+      />
     </SafeAreaView>;
   }
 
@@ -1056,7 +1572,12 @@ export default function App() {
     <View style={styles.header}>
       {selected ? <Pressable accessibilityRole="button" accessibilityLabel="Back to stories" onPress={closeStory} style={styles.headerSide}><SymbolView name="chevron.left" size={20} tintColor={C.muted} /><Text style={styles.action}>BACK</Text></Pressable> : <View style={styles.headerSide} />}
       <Text style={styles.brand}>Coffee & Code</Text>
-      <View style={styles.headerSide} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Notifications" accessibilityState={{ selected: tab === 'Notifications' }} onPress={() => selectMainTab('Notifications')} style={[styles.headerSide, styles.headerBell]}>
+        <View style={styles.tabIconWrap}>
+          <SymbolView name={tab === 'Notifications' ? 'bell.fill' : 'bell'} size={20} tintColor={tab === 'Notifications' ? C.ink : C.muted} />
+          {notificationBadgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{notificationBadgeCount > 99 ? '99+' : notificationBadgeCount}</Text></View>}
+        </View>
+      </Pressable>
     </View>
     {loading ? <View style={styles.launchLoading}>
         <Image source={require('./assets/SplashScreen.png')} accessibilityLabel="Coffee & Code splash screen" style={styles.launchMark} resizeMode="contain" />
@@ -1073,11 +1594,17 @@ export default function App() {
           {articleAuthor?.avatar
             ? <SkeletonImage source={{ uri: articleAuthor.avatar }} imagePreset="avatar_thumb" accessibilityLabel={`${articleAuthor.name} profile photo`} style={{ width: 22, height: 22, borderRadius: 11, marginRight: 8 }} />
             : null}
-          <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>{articleAuthor?.name || storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}</Text>
+          <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>{articleAuthor?.name || storyAuthor(selected)}  ·  {formatDate(selected.publishedAt)}{readingMinutes ? `  ·  ${readingMinutes} min read` : ''}</Text>
         </View>
         <View style={styles.engagementRow}>
           <View style={styles.engagementStat}><SymbolView name="eye" size={12} tintColor={C.muted} /><Text style={styles.engagementStatText}>{engagement?.views ?? '—'} reads</Text></View><View style={styles.engagementStat}><SymbolView name="text.bubble" size={12} tintColor={C.muted} /><Text style={styles.engagementStatText}>{commentTotal || engagement?.comments || comments.length || 0} comments</Text></View>
         </View>
+        {!!selected.tags?.length && <ArticleTagRow
+          key={`tags-${selected.uri || selected.title}`}
+          tags={selected.tags}
+          followedTags={tagFollows.map((item) => item.tag)}
+          onPressTag={(tag) => { setActiveTag(tag); selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }}
+        />}
         <View style={styles.reactionActions}>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.liked) }} accessibilityLabel={`Like, ${engagement?.likes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('like')} style={[styles.reactionButton, engagement?.liked && styles.reactionSelected]}><SymbolView name="hand.thumbsup" size={14} tintColor={engagement?.liked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.liked && styles.reactionSelectedText]}>{engagement?.liked ? 'LIKED' : 'LIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.liked && styles.reactionSelectedText]}>{engagement?.likes ?? 0}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: saved.some((item) => item.uri === selected.uri) }} accessibilityLabel={`Save, ${engagement?.saves ?? 0}`} disabled={accountBusy} onPress={() => toggleSaved(selected)} style={[styles.reactionButton, saved.some((item) => item.uri === selected.uri) && styles.reactionSelected]}><SymbolView name="bookmark" size={14} tintColor={saved.some((item) => item.uri === selected.uri) ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{saved.some((item) => item.uri === selected.uri) ? 'SAVED' : 'SAVE'}</Text><Text style={[styles.reactionButtonCount, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{engagement?.saves ?? 0}</Text></Pressable>
@@ -1115,13 +1642,13 @@ export default function App() {
         </View>
         <Pressable onPress={closeStory} style={styles.returnButton}><Text style={styles.action}>BACK TO LATEST STORIES</Text></Pressable>
       </ScrollView>
-      : tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Notifications' ? renderNotifications() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}
-    <View style={[styles.tabBar, selected && styles.articleTabBar]}>
-      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} />
-      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} />
-      <TabButton label="Notifications" icon="bell.fill" active={tab === 'Notifications'} onPress={() => selectMainTab('Notifications')} badgeCount={notificationBadgeCount} />
-      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} />
-      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} />
-    </View>
+      : <View style={{ flex: 1, paddingBottom: TAB_BAR_HEIGHT }}>{tab === 'Latest' ? renderLatest() : tab === 'Archive' ? renderSearch() : tab === 'Forum' ? renderForum() : tab === 'Notifications' ? renderNotifications() : tab === 'Saved' ? renderSaved() : tab === 'Authors' ? renderAuthors() : renderAccount()}</View>}
+    <Animated.View style={[styles.tabBar, styles.articleTabBar, selected && { height: navCompactProgress.interpolate({ inputRange: [0, 1], outputRange: [TAB_BAR_HEIGHT, 42] }) }]}>
+      <TabButton label="Today" icon="newspaper.fill" active={tab === 'Latest' || tab === 'Authors'} onPress={() => selectMainTab('Latest')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Forum" icon="bubble.left.and.bubble.right.fill" active={tab === 'Forum'} onPress={() => selectMainTab('Forum')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
+    </Animated.View>
   </SafeAreaView>;
 }

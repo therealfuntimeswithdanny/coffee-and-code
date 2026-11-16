@@ -656,7 +656,7 @@ async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallb
   };
 }
 
-async function getEdgeCachedValue<T>(namespace: string, key: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
+export async function getEdgeCachedValue<T>(namespace: string, key: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
   if (typeof caches === 'undefined') return load();
 
   let cacheKey: Request;
