@@ -211,6 +211,7 @@ async function renderPost(
         <button type="button" class="reaction-button" data-reaction="like" aria-pressed="false"><i class="fa-regular fa-thumbs-up" aria-hidden="true"></i> Like <span class="reaction-count" data-reaction-count="like">—</span></button>
         <button type="button" class="reaction-button" data-reaction="dislike" aria-pressed="false"><i class="fa-regular fa-thumbs-down" aria-hidden="true"></i> Dislike <span class="reaction-count" data-reaction-count="dislike">—</span></button>
         <button type="button" class="reaction-button" data-save-post aria-pressed="false"><i class="fa-regular fa-bookmark" aria-hidden="true"></i> Save <span class="reaction-count" data-save-count>—</span></button>
+        <button type="button" class="reaction-button" data-add-to-list><i class="fa-regular fa-rectangle-list" aria-hidden="true"></i> Add to list</button>
         <a class="reaction-button" href="#comments"><i class="fa-regular fa-comment" aria-hidden="true"></i> Comments <span class="reaction-count" data-at-comment-count>—</span></a>
       </div>
       <span class="article-reactions__status" aria-live="polite"></span>
@@ -254,6 +255,13 @@ async function renderPost(
       <section class="article__comments" id="comments">
         <sequoia-comments document-uri="${escapeHtml(post.uri)}" style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
       </section>
+      <dialog class="list-dialog" data-list-dialog aria-labelledby="list-dialog-title">
+        <h2 id="list-dialog-title">Add to a list</h2>
+        <p class="list-dialog__status" data-list-dialog-status role="status" aria-live="polite">Loading your lists…</p>
+        <ul class="list-dialog__lists" data-list-dialog-lists></ul>
+        <p class="list-dialog__empty" data-list-dialog-empty hidden>You have no lists yet. <a href="/account/list">Create a list</a> first, then add this story to it.</p>
+        <div class="list-dialog__actions"><button type="button" class="auth-signout" data-list-dialog-close>Done</button></div>
+      </dialog>
       <footer class="article__footer">
         <a href="${escapeHtml(externalLinkUrl(`https://pdsls.dev/${post.uri}`))}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </footer>

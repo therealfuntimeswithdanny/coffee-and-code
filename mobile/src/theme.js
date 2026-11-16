@@ -962,7 +962,7 @@ export const styles = StyleSheet.create({
     overflow: "hidden",
   },
   forumVoteButton: { paddingHorizontal: 10, paddingVertical: 6 },
-  forumVoteButtonActive: { backgroundColor: C.ink },
+  forumVoteButtonActive: { backgroundColor: C.muted },
   forumVoteScore: {
     color: C.ink,
     fontSize: 12,
@@ -978,7 +978,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 5,
   },
-  forumTagChipActive: { backgroundColor: C.ink, borderColor: C.ink },
+  forumTagChipActive: { backgroundColor: C.muted, borderColor: C.muted },
   forumTagChipText: { color: C.muted, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
   forumTagChipTextActive: { color: C.bg },
   forumBadge: {
@@ -1011,7 +1011,7 @@ export const styles = StyleSheet.create({
   forumRuleTitle: { color: C.ink, fontWeight: "700", fontSize: 13 },
   forumRuleText: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 2 },
   forumCreateButton: {
-    backgroundColor: C.ink,
+    backgroundColor: C.muted,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 11,

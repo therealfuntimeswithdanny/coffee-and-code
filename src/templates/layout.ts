@@ -428,6 +428,45 @@ export function renderLayout(
     .account-page__remove-save { background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; flex: 0 0 auto; font: 600 12px 'Source Sans 3', sans-serif; padding: 6px 10px; }
     .account-page__remove-save:hover { border-color: var(--accent); color: var(--accent); }
     .account-page__remove-save:disabled { cursor: wait; opacity: .6; }
+    .list-icon { align-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--accent); display: inline-flex; flex: 0 0 auto; font-size: 20px; height: 40px; justify-content: center; overflow: hidden; width: 40px; }
+    .list-icon img { display: block; height: 100%; object-fit: cover; width: 100%; }
+    .list-icon--emoji { font-size: 22px; }
+    .account-list-item { align-items: flex-start; }
+    .account-list-item__body { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+    .account-list-item__body small { color: var(--muted); }
+    .account-list-item__actions { display: flex; flex: 0 0 auto; gap: 8px; }
+    .account-list-form { margin-top: 12px; }
+    .list-page__header { align-items: center; display: flex; gap: 16px; margin: 18px 0 8px; }
+    .list-page__icon { align-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--accent); display: inline-flex; flex: 0 0 auto; font-size: 30px; height: 64px; justify-content: center; object-fit: cover; overflow: hidden; width: 64px; }
+    .list-page__icon--empty { background: var(--paper); }
+    .list-page__icon--emoji { font-size: 34px; }
+    .list-page__heading h1 { font-family: Lora, Georgia, serif; margin: 0; }
+    .list-page__owner { color: var(--muted); margin: 4px 0 0; }
+    .list-page__about { color: #d2cbb9; max-width: 720px; }
+    .list-page__status { color: var(--muted); margin: 12px 0 0; min-height: 1.2em; }
+    .list-page__items { display: grid; gap: 10px; list-style: none; margin: 18px 0; max-width: 760px; padding: 0; }
+    .list-page__item a { display: grid; gap: 2px; }
+    .list-page__item a small { color: var(--muted); }
+    .list-page__share { background: transparent; border: 0; cursor: pointer; }
+    .list-page__manage { margin-top: 18px; }
+    .list-index { display: grid; gap: 14px; list-style: none; margin: 20px 0; padding: 0; }
+    .list-card { align-items: flex-start; border: 1px solid var(--line); display: flex; gap: 14px; padding: 14px 16px; }
+    .list-card__icon { border: 0; height: 48px; width: 48px; }
+    .list-card__body { display: grid; gap: 4px; min-width: 0; }
+    .list-card__body h2 { font-family: Lora, Georgia, serif; font-size: 20px; margin: 0; }
+    .list-card__body p { color: #d2cbb9; margin: 0; }
+    .list-card__body small { color: var(--muted); }
+    .list-dialog { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--ink); max-width: 440px; padding: 22px; width: min(440px, calc(100vw - 32px)); }
+    .list-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+    .list-dialog h2 { font-family: Lora, Georgia, serif; margin: 0 0 8px; }
+    .list-dialog__status { color: var(--muted); margin: 0 0 10px; min-height: 1.2em; }
+    .list-dialog__lists { display: grid; gap: 6px; list-style: none; margin: 0 0 14px; max-height: 50vh; overflow-y: auto; padding: 0; }
+    .list-dialog__list { align-items: center; border: 1px solid var(--line); cursor: pointer; display: flex; gap: 10px; padding: 10px 12px; }
+    .list-dialog__list:hover { border-color: var(--accent); }
+    .list-dialog__list input { flex: 0 0 auto; }
+    .list-dialog__list > span { align-items: center; display: inline-flex; gap: 10px; min-width: 0; }
+    .list-dialog__empty { color: var(--muted); margin: 0 0 14px; }
+    .list-dialog__actions { display: flex; justify-content: flex-end; }
     .account-page { max-width: none; width: 100%; }
     .page-content:has(.account-page) { width: min(1440px, calc(100% - 48px)); }
     .account-page > [data-auth-account] { background: transparent; border: 0; margin-top: 24px; padding: 0; }
@@ -478,6 +517,8 @@ export function renderLayout(
     .account-post-metadata__save:disabled { cursor: wait; opacity: .65; }
     .account-post-metadata__cancel { background: transparent; border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; padding: 8px 12px; }
     .account-post-metadata__form-status { color: var(--muted); font-size: 13px; margin: 0; }
+    .account-search-input { background: var(--paper); border: 1px solid var(--line); border-radius: 2px; color: var(--ink); font: 15px 'Source Sans 3', sans-serif; margin-bottom: 10px; min-height: 44px; padding: 9px 12px; width: 100%; }
+    .account-search-input::placeholder { color: var(--muted); opacity: .8; }
     .account-author-preview__banner { align-items: center; aspect-ratio: 3 / 1; background: linear-gradient(130deg, var(--paper), var(--accent)); color: var(--paper); display: flex; justify-content: center; overflow: hidden; position: relative; }
     .account-author-preview__banner img { height: 100%; object-fit: cover; position: absolute; width: 100%; }
     .account-author-preview__banner span { font: 600 15px 'Lora', Georgia, serif; }
@@ -798,11 +839,11 @@ export function renderLayout(
     <div class="block-dialog__actions"><button type="button" class="author-follow__button" data-confirm-block>Confirm block</button><button type="button" class="auth-signout" data-cancel-block>Cancel</button></div>
   </dialog>
   <dialog class="feed-client-dialog" data-feed-client-dialog aria-labelledby="feed-client-title" aria-describedby="feed-client-description">
-    <h2 id="feed-client-title">Choose your Bluesky app</h2>
+    <h2 id="feed-client-title">Choose your Social App</h2>
     <p id="feed-client-description">Open the Coffee &amp; Code following feed in your preferred client.</p>
     <div class="feed-client-dialog__options">
       <a href="https://bsky.app/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Bluesky (bsky.app)</a>
-      <a href="https://mu.social/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">μ (mu.social)</a>
+      <a href="https://mu.social/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Mu<i>.social</i></a>
       <a href="https://anisota.net/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Anisota</a>
       <a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Coffee &amp; Code</a>
       <a href="https://witchsky.app/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Witchsky</a>

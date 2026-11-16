@@ -1,0 +1,31 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.cclist.item",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A post added to a cc.coffeencode.list.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["list", "document", "createdAt"],
+        "properties": {
+          "list": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the cc.coffeencode.list record this item belongs to."
+          },
+          "document": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the site.standard.document added to the list."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

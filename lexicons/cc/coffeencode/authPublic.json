@@ -41,7 +41,8 @@
             "cc.coffeencode.interact.like",
             "cc.coffeencode.interact.dislike",
             "cc.coffeencode.save",
-            "cc.coffeencode.user.block"
+            "cc.coffeencode.user.block",
+            "cc.coffeencode.cclist.item"
           ]
         },
         {

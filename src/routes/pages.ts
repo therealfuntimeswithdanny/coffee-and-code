@@ -446,7 +446,7 @@ pages.get('/account', (c) => {
                 <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
                 <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
                 <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-                <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
+                <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
                 <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
                 <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
               </div>
@@ -466,6 +466,7 @@ pages.get('/account', (c) => {
           <div class="account-post-metadata" data-post-metadata>
             <h3 class="account-page__subheading" id="post-metadata-title">Post metadata</h3>
             <p class="account-post-metadata__intro">Attach sources and a backing document to stories published in your repository. Metadata appears on the story page.</p>
+            <input type="search" class="account-search-input" data-post-metadata-search placeholder="Search your stories to edit metadata…" aria-label="Search your stories to edit metadata">
             <p class="account-post-metadata__status" data-post-metadata-status role="status" aria-live="polite"></p>
             <ul class="account-post-metadata__list" data-post-metadata-list></ul>
           </div>
@@ -495,6 +496,7 @@ const accountSubNav = `
   <nav class="account-page__section-nav" aria-label="Account pages">
     <a href="/account">Account</a>
     <a href="/account/saves">Reading list</a>
+    <a href="/account/list">Lists</a>
     <a href="/account/reads">Recently viewed</a>
     <a href="/account/feed">Your feed</a>
     <a href="/account/author">Author profile</a>
@@ -522,6 +524,27 @@ pages.get('/account/reads', (c) => {
     </section>`;
   const body = accountPageShell('Recently viewed', inner, 'Sign in to see the stories you read.');
   return c.html(renderLayout(c, 'Recently viewed', body));
+});
+
+pages.get('/account/list', (c) => {
+  const inner = `
+    ${accountSubNav}
+    <section class="account-card account-page__viewed" aria-labelledby="account-lists-title" data-account-lists>
+      <div class="account-card__header"><h2 id="account-lists-title">Your lists</h2><span class="account-card__count" data-lists-count></span></div>
+      <p class="account-page__viewed-status" data-lists-status role="status" aria-live="polite">Loading your lists…</p>
+      <ul data-lists-list></ul>
+      <p class="account-page__blocks-note">Lists are saved to your AT Protocol account and are public. Add stories to a list from the story page, or share a list link with anyone.</p>
+      <h3 class="account-page__subheading" id="list-create-title">Create a list</h3>
+      <form class="account-profile-form account-list-form" data-list-form aria-labelledby="list-create-title">
+        <label>Title<input name="title" maxlength="120" required placeholder="Required"></label>
+        <label>About<textarea name="about" maxlength="2000" rows="3" placeholder="Optional — what belongs on this list?"></textarea></label>
+        <label>Icon<input name="icon" maxlength="2048" placeholder="Optional — emoji or https image URL"></label>
+        <div class="account-profile-form__actions"><button class="auth-signout" type="submit">Create list</button></div>
+        <p class="account-profile-form__status" data-list-form-status role="status" aria-live="polite"></p>
+      </form>
+    </section>`;
+  const body = accountPageShell('Your lists', inner, 'Sign in to create and manage your lists.');
+  return c.html(renderLayout(c, 'Your lists', body));
 });
 
 pages.get('/account/feed', (c) => {
@@ -554,7 +577,7 @@ pages.get('/account/author', (c) => {
             <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
             <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
             <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-            <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
+            <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
             <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
             <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
           </div>
@@ -574,6 +597,7 @@ pages.get('/account/author', (c) => {
       <div class="account-post-metadata" data-post-metadata>
         <h3 class="account-page__subheading" id="post-metadata-title">Post metadata</h3>
         <p class="account-post-metadata__intro">Attach sources and a backing document to stories published in your repository. Metadata appears on the story page.</p>
+        <input type="search" class="account-search-input" data-post-metadata-search placeholder="Search your stories to edit metadata…" aria-label="Search your stories to edit metadata">
         <p class="account-post-metadata__status" data-post-metadata-status role="status" aria-live="polite"></p>
         <ul class="account-post-metadata__list" data-post-metadata-list></ul>
       </div>

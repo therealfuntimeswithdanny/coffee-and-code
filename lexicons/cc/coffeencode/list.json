@@ -1,0 +1,40 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.list",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A shareable, curated list of site.standard.document posts.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["title", "createdAt"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "maxGraphemes": 60
+          },
+          "about": {
+            "type": "string",
+            "maxLength": 2000,
+            "maxGraphemes": 1000
+          },
+          "icon": {
+            "type": "string",
+            "description": "An emoji or an https image URL shown next to the list title.",
+            "maxLength": 2048
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

@@ -17,6 +17,9 @@ import {
 
 type ForumImageInput = { file: File; alt: string };
 type ForumStrongRef = { uri: string; cid: string };
+type UserListSummary = { uri: string; rkey: string; title: string; about?: string; icon?: string; createdAt: string };
+type ListMembership = UserListSummary & { inList: boolean };
+type ListInput = { title: string; about?: string; icon?: string };
 const oauthMetadata = rawClientMetadata as OAuthClientMetadataInput;
 const authorScope = 'include:cc.coffeencode.authAuthor';
 const sharedScope = rawClientMetadata.scope;
@@ -147,6 +150,12 @@ declare global {
       getForumVotes: (subjectUris: string[]) => Promise<Record<string, 'up' | 'down'>>;
       setForumVote: (subject: ForumStrongRef, direction: 'up' | 'down' | undefined) => Promise<void>;
       createForumModeration: (forumUri: string, subject: ForumStrongRef, action: string, moderators: string[]) => Promise<void>;
+      getLists: () => Promise<UserListSummary[]>;
+      createList: (input: ListInput) => Promise<string>;
+      updateList: (listUri: string, input: ListInput) => Promise<void>;
+      deleteList: (listUri: string) => Promise<void>;
+      getListsWithMembership: (documentUri: string) => Promise<ListMembership[]>;
+      setListItem: (listUri: string, documentUri: string, inList: boolean) => Promise<void>;
     };
   }
 }
@@ -252,6 +261,7 @@ function renderAccount() {
       void loadAccountProfile(did);
       void loadAccountViewedPosts(did);
       void loadAccountSavedPosts(did);
+      void loadAccountLists(did);
       void renderTagFollows(did);
       void loadAuthorProfileEditor(did);
     }
@@ -939,6 +949,7 @@ async function loadAuthorProfileEditor(did: string) {
 async function loadAuthorPostPicker(did: string, form: HTMLFormElement, selectedUris: string[]) {
   const picker = form.querySelector<HTMLElement>('[data-author-post-picker]');
   const loadingStatus = form.querySelector<HTMLElement>('[data-author-posts-status]');
+  const search = form.querySelector<HTMLInputElement>('[data-author-posts-search]');
   if (!picker || !loadingStatus) return;
   form.dataset.authorPostsLoaded = 'false';
   loadingStatus.textContent = 'Loading your published stories…';
@@ -948,24 +959,27 @@ async function loadAuthorPostPicker(did: string, form: HTMLFormElement, selected
     if (!response.ok) throw new Error('Could not load your published stories.');
     const posts = await response.json() as Array<{ uri: string; title?: string; publishedAt?: string }>;
     if (session?.did !== did) return;
-    const selected = new Set(selectedUris);
+    const selectedNow = new Set(selectedUris);
     const postsByUri = new Map(posts.filter((post) => typeof post.uri === 'string' && post.uri).map((post) => [post.uri, post]));
 
-    const list = document.createElement('div');
-    list.className = 'account-author-post-picker';
     if (!postsByUri.size) {
       loadingStatus.textContent = 'No published stories are available to pin yet.';
-    } else {
-      loadingStatus.textContent = 'Select or clear the stories you want pinned.';
+      form.dataset.authorPostsLoaded = 'true';
+      return;
     }
-    postsByUri.forEach((post, uri) => {
+
+    const buildOption = (uri: string, post: { title?: string; publishedAt?: string }) => {
       const label = document.createElement('label');
       label.className = 'account-author-post-option';
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.name = 'pinnedPost';
       checkbox.value = uri;
-      checkbox.checked = selected.has(uri);
+      checkbox.checked = selectedNow.has(uri);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) selectedNow.add(uri);
+        else selectedNow.delete(uri);
+      });
       const copy = document.createElement('span');
       copy.className = 'account-author-post-option__title';
       copy.textContent = post.title || 'Untitled story';
@@ -977,9 +991,42 @@ async function loadAuthorPostPicker(did: string, form: HTMLFormElement, selected
         copy.append(meta);
       }
       label.append(checkbox, copy);
-      list.append(label);
-    });
+      return label;
+    };
+
+    const list = document.createElement('div');
+    list.className = 'account-author-post-picker';
     picker.replaceChildren(list);
+
+    const render = () => {
+      const query = (search?.value || '').trim().toLowerCase();
+      const pinned: Array<[string, { title?: string; publishedAt?: string }]> = [];
+      const matches: typeof pinned = [];
+      postsByUri.forEach((post, uri) => {
+        if (selectedNow.has(uri)) {
+          pinned.push([uri, post]);
+        } else if (!query || (post.title || '').toLowerCase().includes(query)) {
+          matches.push([uri, post]);
+        }
+      });
+      const shown = query ? matches.slice(0, 15) : matches.slice(0, 8);
+      list.replaceChildren();
+      pinned.forEach(([uri, post]) => list.append(buildOption(uri, post)));
+      shown.forEach(([uri, post]) => list.append(buildOption(uri, post)));
+      loadingStatus.textContent = query
+        ? (matches.length
+          ? `${matches.length} ${matches.length === 1 ? 'story' : 'stories'} match${matches.length === 1 ? 'es' : ''}${matches.length > shown.length ? ` — showing the first ${shown.length}.` : '.'}`
+          : 'No stories match your search.')
+        : `Showing ${shown.length} of ${postsByUri.size} stories. Search to find others.`;
+    };
+    if (search) {
+      let debounce: number | undefined;
+      search.addEventListener('input', () => {
+        window.clearTimeout(debounce);
+        debounce = window.setTimeout(render, 150);
+      });
+    }
+    render();
     form.dataset.authorPostsLoaded = 'true';
   } catch (error) {
     loadingStatus.textContent = error instanceof Error ? error.message : 'Could not load your published stories.';
@@ -1015,6 +1062,7 @@ async function loadPostMetadataEditor(did: string) {
   const section = accountPage.querySelector<HTMLElement>('[data-post-metadata]');
   const list = accountPage.querySelector<HTMLElement>('[data-post-metadata-list]');
   const status = accountPage.querySelector<HTMLElement>('[data-post-metadata-status]');
+  const search = accountPage.querySelector<HTMLInputElement>('[data-post-metadata-search]');
   if (!section || !list || !status) return;
   status.textContent = 'Loading your stories…';
   try {
@@ -1024,17 +1072,45 @@ async function loadPostMetadataEditor(did: string) {
       // Metadata records live in the same repository as the document, so only
       // stories stored in this account's repo can be edited here.
       .filter((post): post is { uri: string; path?: string; title?: string; publishedAt?: string } =>
-        typeof post.uri === 'string' && post.uri.startsWith(`at://${did}/`));
+        typeof post.uri === 'string' && post.uri.startsWith(`at://${did}/`))
+      .sort((a, b) => (Date.parse(b.publishedAt || '') || 0) - (Date.parse(a.publishedAt || '') || 0));
     if (session?.did !== did) return;
-    list.replaceChildren();
     if (!posts.length) {
       status.textContent = 'Stories published in your repository will appear here.';
       return;
     }
-    status.textContent = 'Pick a story to add or update its metadata.';
-    for (const post of posts) {
-      list.append(buildPostMetadataItem(did, post));
+    const itemCache = new Map<string, HTMLElement>();
+    const render = () => {
+      const query = (search?.value || '').trim().toLowerCase();
+      const matches = query
+        ? posts.filter((post) => (post.title || '').toLowerCase().includes(query)
+          || (post.path || '').toLowerCase().includes(query))
+        : posts;
+      const shown = matches.slice(0, query ? 12 : 8);
+      const fragment = document.createDocumentFragment();
+      for (const post of shown) {
+        let item = itemCache.get(post.uri);
+        if (!item) {
+          item = buildPostMetadataItem(did, post);
+          itemCache.set(post.uri, item);
+        }
+        fragment.append(item);
+      }
+      list.replaceChildren(fragment);
+      status.textContent = query
+        ? (matches.length
+          ? `${matches.length} ${matches.length === 1 ? 'story' : 'stories'} match${matches.length === 1 ? 'es' : ''}${matches.length > shown.length ? ` — showing the first ${shown.length}.` : '.'}`
+          : `No stories match your search.`)
+        : `Showing your ${shown.length} most recent stories. Search to find others.`;
+    };
+    if (search) {
+      let debounce: number | undefined;
+      search.addEventListener('input', () => {
+        window.clearTimeout(debounce);
+        debounce = window.setTimeout(render, 150);
+      });
     }
+    render();
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : 'Could not load your published stories.';
   }
@@ -1509,6 +1585,89 @@ async function listOwnForumVotes(activeSession: OAuthSession) {
   return votes.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+const listCollection = 'cc.coffeencode.list';
+const listItemCollection = 'cc.coffeencode.cclist.item';
+const listUriPattern = /^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/cc\.coffeencode\.list\/([a-zA-Z0-9._~:-]+)$/;
+
+function ownListRkey(listUri: string, did: string) {
+  const match = listUri.match(listUriPattern);
+  if (!match || match[1] !== did) throw new Error('You can only change your own lists.');
+  return match[2];
+}
+
+async function listOwnLists(did: string): Promise<UserListSummary[]> {
+  const lists: UserListSummary[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({ repo: did, collection: listCollection, limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { title?: unknown; about?: unknown; icon?: unknown; createdAt?: unknown } }>;
+      cursor?: unknown;
+    };
+    for (const record of page.records || []) {
+      const value = record.value;
+      if (typeof record.uri !== 'string' || !listUriPattern.test(record.uri)) continue;
+      const title = typeof value?.title === 'string' ? value.title.trim() : '';
+      const createdAt = value?.createdAt;
+      if (!title || title.length > 600 || typeof createdAt !== 'string'
+        || !Number.isFinite(Date.parse(createdAt))) continue;
+      const icon = typeof value?.icon === 'string' ? value.icon.trim() : '';
+      const about = typeof value?.about === 'string' ? value.about.trim() : '';
+      lists.push({
+        uri: record.uri,
+        rkey: record.uri.split('/').at(-1) || '',
+        title,
+        ...(about ? { about } : {}),
+        ...(icon && (icon.length <= 8 || /^https:\/\//i.test(icon)) ? { icon } : {}),
+        createdAt,
+      });
+    }
+    if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+    seenCursors.add(page.cursor);
+    if (seenCursors.size > 100) break;
+    cursor = page.cursor;
+  } while (cursor);
+  return lists.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function listOwnListItems(did: string): Promise<Array<{ uri: string; rkey: string; list: string; document: string }>> {
+  const items: Array<{ uri: string; rkey: string; list: string; document: string }> = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({ repo: did, collection: listItemCollection, limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { list?: unknown; document?: unknown } }>;
+      cursor?: unknown;
+    };
+    for (const record of page.records || []) {
+      if (typeof record.uri !== 'string' || !record.uri.startsWith(`at://${did}/`)
+        || typeof record.value?.list !== 'string' || !listUriPattern.test(record.value.list)
+        || typeof record.value?.document !== 'string' || !record.value.document.startsWith('at://')) continue;
+      items.push({
+        uri: record.uri,
+        rkey: record.uri.split('/').at(-1) || '',
+        list: record.value.list,
+        document: record.value.document,
+      });
+    }
+    if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+    seenCursors.add(page.cursor);
+    if (seenCursors.size > 100) break;
+    cursor = page.cursor;
+  } while (cursor);
+  return items;
+}
+
+async function listItemKey(listUri: string, documentUri: string) {
+  return recordKey(`${listUri} ${documentUri}`, 'item');
+}
+
 window.coffeeAndCodeAuth = {
   getDid: async () => {
     await oauthReady;
@@ -1725,6 +1884,111 @@ window.coffeeAndCodeAuth = {
         forum: forumUri,
         subject,
         action,
+        createdAt: new Date().toISOString(),
+      },
+    });
+  },
+  getLists: async () => {
+    await oauthReady;
+    const activeSession = requireSession();
+    return listOwnLists(activeSession.did);
+  },
+  createList: async (input: ListInput) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const title = input.title.trim();
+    if (!title || title.length > 600) throw new Error('A list title is required (120 characters or fewer).');
+    const about = input.about?.trim() || '';
+    const icon = input.icon?.trim() || '';
+    const response = await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection: listCollection,
+      rkey: createTid(),
+      record: {
+        $type: listCollection,
+        title,
+        ...(about ? { about } : {}),
+        ...(icon ? { icon } : {}),
+        createdAt: new Date().toISOString(),
+      },
+    });
+    const result = await response.json() as { uri?: string };
+    if (typeof result.uri !== 'string') throw new Error('The account provider did not return the new list URI.');
+    return result.uri;
+  },
+  updateList: async (listUri: string, input: ListInput) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const rkey = ownListRkey(listUri, activeSession.did);
+    const title = input.title.trim();
+    if (!title || title.length > 600) throw new Error('A list title is required (120 characters or fewer).');
+    const about = input.about?.trim() || '';
+    const icon = input.icon?.trim() || '';
+    await repoRequest('com.atproto.repo.putRecord', {
+      repo: activeSession.did,
+      collection: listCollection,
+      rkey,
+      record: {
+        $type: listCollection,
+        title,
+        ...(about ? { about } : {}),
+        ...(icon ? { icon } : {}),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+  deleteList: async (listUri: string) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const rkey = ownListRkey(listUri, activeSession.did);
+    const items = (await listOwnListItems(activeSession.did)).filter((item) => item.list === listUri);
+    for (const item of items) {
+      await repoRequest('com.atproto.repo.deleteRecord', {
+        repo: activeSession.did,
+        collection: listItemCollection,
+        rkey: item.rkey,
+      });
+    }
+    await repoRequest('com.atproto.repo.deleteRecord', {
+      repo: activeSession.did,
+      collection: listCollection,
+      rkey,
+    });
+  },
+  getListsWithMembership: async (documentUri: string) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    const [lists, items] = await Promise.all([
+      listOwnLists(activeSession.did),
+      listOwnListItems(activeSession.did),
+    ]);
+    const membership = new Set(items.filter((item) => item.document === documentUri).map((item) => item.list));
+    return lists.map((list) => ({ ...list, inList: membership.has(list.uri) }));
+  },
+  setListItem: async (listUri: string, documentUri: string, inList: boolean) => {
+    await oauthReady;
+    const activeSession = requireSession();
+    ownListRkey(listUri, activeSession.did);
+    if (!documentUri.startsWith('at://') || !documentUri.includes('/site.standard.document/')) {
+      throw new Error('Only stories can be added to a list.');
+    }
+    const rkey = await listItemKey(listUri, documentUri);
+    if (inList) {
+      await repoRequest('com.atproto.repo.deleteRecord', {
+        repo: activeSession.did,
+        collection: listItemCollection,
+        rkey,
+      });
+      return;
+    }
+    await repoRequest('com.atproto.repo.createRecord', {
+      repo: activeSession.did,
+      collection: listItemCollection,
+      rkey,
+      record: {
+        $type: listItemCollection,
+        list: listUri,
+        document: documentUri,
         createdAt: new Date().toISOString(),
       },
     });
@@ -2764,4 +3028,284 @@ document.querySelectorAll<HTMLButtonElement>('[data-reaction-subject] [data-save
       button.disabled = false;
     }
   });
+});
+
+function listIconNode(icon: string | undefined) {
+  const span = document.createElement('span');
+  span.className = 'list-icon';
+  span.setAttribute('aria-hidden', 'true');
+  if (icon && /^https:\/\//i.test(icon)) {
+    const img = document.createElement('img');
+    img.src = icon;
+    img.alt = '';
+    img.width = 40;
+    img.height = 40;
+    img.loading = 'lazy';
+    span.append(img);
+  } else if (icon) {
+    span.classList.add('list-icon--emoji');
+    span.textContent = icon;
+  } else {
+    const glyph = document.createElement('i');
+    glyph.className = 'fa-solid fa-list';
+    span.append(glyph);
+  }
+  return span;
+}
+
+async function loadAccountLists(did: string) {
+  if (!accountPage) return;
+  const section = accountPage.querySelector<HTMLElement>('[data-account-lists]');
+  const list = accountPage.querySelector<HTMLUListElement>('[data-lists-list]');
+  const status = accountPage.querySelector<HTMLElement>('[data-lists-status]');
+  const count = accountPage.querySelector<HTMLElement>('[data-lists-count]');
+  const form = accountPage.querySelector<HTMLFormElement>('[data-list-form]');
+  const formStatus = accountPage.querySelector<HTMLElement>('[data-list-form-status]');
+  if (!section || !list || !status) return;
+
+  const renderLists = async () => {
+    if (session?.did !== did) return;
+    status.hidden = false;
+    status.textContent = 'Loading your lists…';
+    try {
+      const lists = await listOwnLists(did);
+      if (session?.did !== did) return;
+      list.replaceChildren();
+      lists.forEach((entry) => {
+        const item = document.createElement('li');
+        item.className = 'account-page__saved-item account-list-item';
+        item.append(listIconNode(entry.icon));
+        const body = document.createElement('div');
+        body.className = 'account-list-item__body';
+        const link = document.createElement('a');
+        link.href = `/user/${encodeURIComponent(did)}/list/${encodeURIComponent(entry.rkey)}`;
+        link.textContent = entry.title;
+        body.append(link);
+        if (entry.about) {
+          const about = document.createElement('small');
+          about.textContent = entry.about;
+          body.append(about);
+        }
+        const created = document.createElement('small');
+        created.textContent = `Created ${new Date(entry.createdAt).toLocaleDateString()}`;
+        body.append(created);
+        item.append(body);
+
+        const actions = document.createElement('div');
+        actions.className = 'account-list-item__actions';
+        const share = document.createElement('button');
+        share.type = 'button';
+        share.className = 'account-page__remove-save';
+        share.innerHTML = '<i class="fa-solid fa-link" aria-hidden="true"></i> Copy link';
+        share.setAttribute('aria-label', `Copy share link for ${entry.title}`);
+        share.addEventListener('click', async () => {
+          const url = new URL(link.href, window.location.origin).toString();
+          try {
+            await navigator.clipboard.writeText(url);
+            status.hidden = false;
+            status.textContent = `Share link for “${entry.title}” copied to your clipboard.`;
+          } catch {
+            window.prompt('Copy this list link:', url);
+          }
+        });
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'account-page__remove-save';
+        remove.innerHTML = '<i class="fa-solid fa-trash-can" aria-hidden="true"></i> Delete';
+        remove.setAttribute('aria-label', `Delete the list ${entry.title}`);
+        remove.addEventListener('click', async () => {
+          if (session?.did !== did || !window.coffeeAndCodeAuth) return;
+          remove.disabled = true;
+          status.hidden = false;
+          status.textContent = `Deleting “${entry.title}”…`;
+          try {
+            await window.coffeeAndCodeAuth.deleteList(entry.uri);
+            item.remove();
+            if (count) count.textContent = list.children.length ? `${list.children.length} ${list.children.length === 1 ? 'list' : 'lists'}` : '';
+            status.textContent = list.children.length
+              ? `Deleted “${entry.title}”.`
+              : 'You have no lists yet. Create one below.';
+          } catch (error) {
+            status.textContent = errorMessage(error);
+            remove.disabled = false;
+          }
+        });
+        actions.append(share, remove);
+        item.append(actions);
+        list.append(item);
+      });
+      if (count) count.textContent = lists.length ? `${lists.length} ${lists.length === 1 ? 'list' : 'lists'}` : '';
+      status.textContent = lists.length
+        ? ''
+        : 'You have no lists yet. Create one below.';
+      status.hidden = Boolean(lists.length);
+    } catch (error) {
+      status.hidden = false;
+      status.textContent = errorMessage(error);
+    }
+  };
+
+  await renderLists();
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (session?.did !== did || !window.coffeeAndCodeAuth) return;
+    const data = new FormData(form);
+    const title = String(data.get('title') || '');
+    const about = String(data.get('about') || '');
+    const icon = String(data.get('icon') || '');
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    if (formStatus) formStatus.textContent = 'Creating your list…';
+    try {
+      const uri = await window.coffeeAndCodeAuth.createList({ title, about, icon });
+      const rkey = uri.split('/').at(-1) || '';
+      form.reset();
+      if (formStatus) {
+        const link = `/user/${encodeURIComponent(did)}/list/${encodeURIComponent(rkey)}`;
+        formStatus.innerHTML = '';
+        const text = document.createElement('span');
+        text.textContent = 'List created. ';
+        const anchor = document.createElement('a');
+        anchor.href = link;
+        anchor.textContent = 'Open the public page';
+        formStatus.append(text, anchor);
+      }
+      await renderLists();
+    } catch (error) {
+      if (formStatus) formStatus.textContent = errorMessage(error);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
+}
+
+// Story pages: "Add to list" opens a dialog of the reader's own lists.
+document.querySelectorAll<HTMLButtonElement>('[data-reaction-subject] [data-add-to-list]').forEach((button) => {
+  const container = button.closest<HTMLElement>('[data-reaction-subject]');
+  const documentUri = container?.dataset.reactionSubject;
+  const status = container?.querySelector<HTMLElement>('.article-reactions__status');
+  const dialog = document.querySelector<HTMLDialogElement>('[data-list-dialog]');
+  const dialogStatus = dialog?.querySelector<HTMLElement>('[data-list-dialog-status]');
+  const dialogLists = dialog?.querySelector<HTMLUListElement>('[data-list-dialog-lists]');
+  const dialogEmpty = dialog?.querySelector<HTMLElement>('[data-list-dialog-empty]');
+  if (!container || !documentUri || !dialog || !dialogStatus || !dialogLists || !dialogEmpty) return;
+
+  dialog.querySelector<HTMLButtonElement>('[data-list-dialog-close]')?.addEventListener('click', () => dialog.close());
+
+  button.addEventListener('click', async () => {
+    await oauthReady;
+    if (!session || !window.coffeeAndCodeAuth) {
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
+      return;
+    }
+    const did = session.did;
+    dialogStatus.hidden = false;
+    dialogStatus.textContent = 'Loading your lists…';
+    dialogLists.replaceChildren();
+    dialogEmpty.hidden = true;
+    dialog.showModal();
+    try {
+      const lists = await window.coffeeAndCodeAuth.getListsWithMembership(documentUri);
+      if (session?.did !== did) return;
+      dialogLists.replaceChildren();
+      lists.forEach((entry) => {
+        const item = document.createElement('li');
+        const label = document.createElement('label');
+        label.className = 'list-dialog__list';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = entry.inList;
+        const name = document.createElement('span');
+        name.append(listIconNode(entry.icon), document.createTextNode(entry.title));
+        label.append(checkbox, name);
+        item.append(label);
+        dialogLists.append(item);
+        checkbox.addEventListener('change', async () => {
+          checkbox.disabled = true;
+          dialogStatus.hidden = false;
+          dialogStatus.textContent = checkbox.checked
+            ? `Adding to “${entry.title}”…`
+            : `Removing from “${entry.title}”…`;
+          try {
+            await window.coffeeAndCodeAuth!.setListItem(entry.uri, documentUri, !checkbox.checked);
+            dialogStatus.textContent = checkbox.checked
+              ? `Added to “${entry.title}”.`
+              : `Removed from “${entry.title}”.`;
+            if (status) {
+              status.textContent = checkbox.checked
+                ? `Story added to your list “${entry.title}”.`
+                : `Story removed from your list “${entry.title}”.`;
+            }
+          } catch (error) {
+            checkbox.checked = !checkbox.checked;
+            dialogStatus.textContent = errorMessage(error);
+          } finally {
+            checkbox.disabled = false;
+          }
+        });
+      });
+      dialogEmpty.hidden = Boolean(lists.length);
+      dialogStatus.hidden = true;
+      dialogStatus.textContent = '';
+    } catch (error) {
+      dialogStatus.hidden = false;
+      dialogStatus.textContent = errorMessage(error);
+    }
+  });
+});
+
+// Public list pages: enable owner controls (remove items, share link).
+document.querySelectorAll<HTMLElement>('[data-list-page]').forEach((page) => {
+  const ownerDid = page.dataset.listOwnerDid || '';
+  const listUri = page.dataset.listUri || '';
+  const status = page.querySelector<HTMLElement>('[data-list-status]');
+  const share = page.querySelector<HTMLButtonElement>('[data-list-share]');
+  const manage = page.querySelector<HTMLElement>('[data-list-manage]');
+  const itemsList = page.querySelector<HTMLUListElement>('[data-list-items]');
+  const empty = page.querySelector<HTMLElement>('[data-list-empty]');
+
+  share?.addEventListener('click', async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      if (status) status.textContent = 'List link copied to your clipboard.';
+    } catch {
+      window.prompt('Copy this list link:', url);
+    }
+  });
+
+  void (async () => {
+    await oauthReady;
+    if (!session || session.did !== ownerDid || !listUriPattern.test(listUri)) return;
+    manage?.removeAttribute('hidden');
+    page.querySelectorAll<HTMLButtonElement>('[data-list-remove-item]').forEach((remove) => {
+      remove.hidden = false;
+      remove.addEventListener('click', async () => {
+        if (session?.did !== ownerDid) return;
+        const rkey = remove.dataset.itemRkey || '';
+        const title = remove.dataset.itemTitle || 'story';
+        if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) return;
+        remove.disabled = true;
+        if (status) status.textContent = `Removing “${title}”…`;
+        try {
+          await repoRequest('com.atproto.repo.deleteRecord', {
+            repo: ownerDid,
+            collection: listItemCollection,
+            rkey,
+          });
+          remove.closest('li')?.remove();
+          if (status) status.textContent = `Removed “${title}” from this list.`;
+          if (itemsList && !itemsList.children.length) {
+            itemsList.hidden = true;
+            if (empty) empty.hidden = false;
+          }
+        } catch (error) {
+          if (status) status.textContent = errorMessage(error);
+          remove.disabled = false;
+        }
+      });
+    });
+  })();
 });

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import {
   fetchArticles,
@@ -15,7 +15,26 @@ import { fetchAuthorForumPosts } from './forum';
 
 const users = new Hono<{ Bindings: Env }>();
 const commentCollection = 'cc.coffeencode.comment';
+const listCollection = 'cc.coffeencode.list';
+const listItemCollection = 'cc.coffeencode.cclist.item';
 const maxComments = 300;
+const maxListItems = 500;
+
+type UserListRecord = {
+  uri: string;
+  rkey: string;
+  title: string;
+  about?: string;
+  icon?: string;
+  createdAt: string;
+};
+
+type UserListItem = {
+  uri: string;
+  rkey: string;
+  document: string;
+  createdAt: string;
+};
 
 type UserCommentRecord = {
   uri?: string;
@@ -98,6 +117,281 @@ async function fetchUserComments(pds: string, did: string): Promise<UserComment[
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 100);
 }
+
+function validListRecord(uri: unknown, value: { title?: unknown; createdAt?: unknown } | undefined, rkey: unknown): uri is string {
+  return validAtUri(uri)
+    && typeof value?.title === 'string' && Boolean(value.title.trim()) && value.title.length <= 600
+    && typeof value?.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt))
+    && typeof rkey === 'string' && /^[a-zA-Z0-9._~:-]+$/.test(rkey);
+}
+
+function parseListRecord(uri: unknown, value: { title?: unknown; about?: unknown; icon?: unknown; createdAt?: unknown } | undefined): UserListRecord | undefined {
+  if (!validAtUri(uri)) return undefined;
+  let rkey: string;
+  try {
+    rkey = uri.split('/').at(-1) || '';
+  } catch { return undefined; }
+  if (!validListRecord(uri, value, rkey)) return undefined;
+  const icon = typeof value?.icon === 'string' ? value.icon.trim() : '';
+  const about = typeof value?.about === 'string' ? value.about.trim() : '';
+  return {
+    uri,
+    rkey,
+    title: (value!.title as string).trim(),
+    ...(about ? { about: about.slice(0, 2000) } : {}),
+    ...(icon && (icon.length <= 8 || /^https:\/\//i.test(icon)) ? { icon } : {}),
+    createdAt: value!.createdAt as string,
+  };
+}
+
+async function fetchUserLists(pds: string, did: string): Promise<UserListRecord[]> {
+  const lists: UserListRecord[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const url = new URL(`${pds}/xrpc/com.atproto.repo.listRecords`);
+    url.searchParams.set('repo', did);
+    url.searchParams.set('collection', listCollection);
+    url.searchParams.set('limit', '100');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`List records returned ${response.status}`);
+    const page = await response.json() as { records?: Array<{ uri?: unknown; value?: UserListRecord }>; cursor?: string };
+    for (const record of page.records || []) {
+      const list = parseListRecord(record.uri, record.value);
+      if (list) lists.push(list);
+    }
+    if (!page.cursor || page.cursor === cursor || seenCursors.has(page.cursor) || !page.records?.length) break;
+    seenCursors.add(page.cursor);
+    cursor = page.cursor;
+  } while (cursor && lists.length < maxListItems);
+  return lists.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, maxListItems);
+}
+
+async function fetchListItems(pds: string, did: string, listUri: string): Promise<UserListItem[]> {
+  const items: UserListItem[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const url = new URL(`${pds}/xrpc/com.atproto.repo.listRecords`);
+    url.searchParams.set('repo', did);
+    url.searchParams.set('collection', listItemCollection);
+    url.searchParams.set('limit', '100');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`List item records returned ${response.status}`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { list?: unknown; document?: unknown; createdAt?: unknown } }>;
+      cursor?: string;
+    };
+    for (const record of page.records || []) {
+      const value = record.value;
+      if (!validAtUri(record.uri) || value?.list !== listUri || !validAtUri(value?.document)
+        || typeof value?.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) continue;
+      const rkey = record.uri.split('/').at(-1) || '';
+      if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) continue;
+      items.push({ uri: record.uri, rkey, document: value.document, createdAt: value.createdAt });
+    }
+    if (!page.cursor || page.cursor === cursor || seenCursors.has(page.cursor) || !page.records?.length) break;
+    seenCursors.add(page.cursor);
+    cursor = page.cursor;
+  } while (cursor && items.length < maxListItems);
+  const unique = new Map<string, UserListItem>();
+  items.forEach((item) => { if (!unique.has(item.document)) unique.set(item.document, item); });
+  return [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, maxListItems);
+}
+
+async function fetchListRecord(pds: string, did: string, rkey: string): Promise<UserListRecord | undefined> {
+  const url = new URL(`${pds}/xrpc/com.atproto.repo.getRecord`);
+  url.searchParams.set('repo', did);
+  url.searchParams.set('collection', listCollection);
+  url.searchParams.set('rkey', rkey);
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (response.status === 404 || response.status === 400) return undefined;
+  if (!response.ok) throw new Error(`List record returned ${response.status}`);
+  const record = await response.json() as { uri?: unknown; value?: { title?: unknown; about?: unknown; icon?: unknown; createdAt?: unknown } };
+  return parseListRecord(record.uri, record.value);
+}
+
+function renderListIcon(icon: string | undefined, extraClass = '') {
+  if (!icon) return `<span class="list-page__icon list-page__icon--empty${extraClass ? ` ${extraClass}` : ''}" aria-hidden="true"><i class="fa-solid fa-list"></i></span>`;
+  if (/^https:\/\//i.test(icon)) return `<img class="list-page__icon${extraClass ? ` ${extraClass}` : ''}" src="${escapeHtml(proxyImageUrl(icon))}" alt="" width="64" height="64" loading="lazy" decoding="async">`;
+  return `<span class="list-page__icon list-page__icon--emoji${extraClass ? ` ${extraClass}` : ''}" aria-hidden="true">${escapeHtml(icon)}</span>`;
+}
+
+async function resolveListOwner(c: Context<{ Bindings: Env }>, identifier: string) {
+  const did = await resolveAtprotoIdentifier(identifier);
+  if (!did) return { did: undefined, profile: undefined, pds: '' };
+  const [profile, pds] = await Promise.all([
+    fetchAuthorProfile(did, c.env.OWNER_PDS),
+    getPdsEndpoint(did, c.env.OWNER_PDS),
+  ]);
+  return { did, profile, pds };
+}
+
+users.get('/:identifier/lists', async (c) => {
+  let owner: Awaited<ReturnType<typeof resolveListOwner>>;
+  try {
+    owner = await resolveListOwner(c, c.req.param('identifier'));
+  } catch (error) {
+    console.error('Could not resolve list owner:', error);
+    return c.html(renderLayout(c, 'Lists Unavailable', `
+      <section class="not-found"><h1>Could not load these lists</h1>
+      <p>The account provider could not be reached. Please try again later.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 502);
+  }
+  const { did, profile, pds } = owner;
+  if (!did || !profile) {
+    return c.html(renderLayout(c, 'Profile Not Found', `
+      <section class="not-found"><h1>Profile not found</h1>
+      <p>That handle could not be resolved to an account.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 404);
+  }
+
+  const canonicalPath = `/user/${encodeURIComponent(profile.handle)}/lists`;
+  const currentUrl = new URL(c.req.url);
+  if (currentUrl.pathname !== canonicalPath) {
+    return c.redirect(`${canonicalPath}${currentUrl.search}`, 301);
+  }
+
+  let lists: UserListRecord[];
+  try {
+    lists = await fetchUserLists(pds, did);
+  } catch (error) {
+    console.error(`Could not load lists for ${did}:`, error);
+    return c.html(renderLayout(c, 'Lists Unavailable', `
+      <section class="not-found"><h1>Could not load these lists</h1>
+      <p>The account’s repository could not be reached. Please try again later.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 502);
+  }
+
+  const name = profile.displayName || profile.handle;
+  const items = lists.map((list) => {
+    const href = `/user/${encodeURIComponent(profile.handle)}/list/${encodeURIComponent(list.rkey)}`;
+    return `<li class="list-card">
+      ${renderListIcon(list.icon, 'list-card__icon')}
+      <div class="list-card__body">
+        <h2><a href="${escapeHtml(href)}">${escapeHtml(list.title)}</a></h2>
+        ${list.about ? `<p>${escapeHtml(list.about)}</p>` : ''}
+        <small>Created ${escapeHtml(formatCommentDate(list.createdAt))}</small>
+      </div>
+    </li>`;
+  }).join('');
+  const pageUrl = currentUrl.toString();
+  const body = `
+    <section class="user-page list-page" aria-labelledby="list-title">
+      <header class="user-page__header">
+        <div class="user-page__identity"><h1 id="list-title">Lists by ${escapeHtml(name)}</h1><p><a href="/user/${encodeURIComponent(profile.handle)}">@${escapeHtml(profile.handle)}</a></p></div>
+      </header>
+      ${lists.length ? `<ul class="list-index">${items}</ul>` : '<p class="empty-state">No public lists yet.</p>'}
+    </section>`;
+  const metaTags = `
+    <meta name="description" content="${escapeHtml(`Public post lists curated by ${name} on Coffee & Code.`)}">
+    <meta property="og:title" content="${escapeHtml(`Lists by ${name}`)} | Coffee and Code">
+    <meta property="og:type" content="profile">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">`;
+  return c.html(renderLayout(c, `Lists by ${escapeHtml(name)}`, body, metaTags));
+});
+
+users.get('/:identifier/list/:rkey', async (c) => {
+  const rkey = c.req.param('rkey');
+  if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) {
+    return c.html(renderLayout(c, 'List Not Found', `
+      <section class="not-found"><h1>List not found</h1>
+      <p>That list link is not valid.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 404);
+  }
+  let owner: Awaited<ReturnType<typeof resolveListOwner>>;
+  try {
+    owner = await resolveListOwner(c, c.req.param('identifier'));
+  } catch (error) {
+    console.error('Could not resolve list owner:', error);
+    return c.html(renderLayout(c, 'List Unavailable', `
+      <section class="not-found"><h1>Could not load this list</h1>
+      <p>The account provider could not be reached. Please try again later.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 502);
+  }
+  const { did, profile, pds } = owner;
+  if (!did || !profile) {
+    return c.html(renderLayout(c, 'Profile Not Found', `
+      <section class="not-found"><h1>Profile not found</h1>
+      <p>That handle could not be resolved to an account.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 404);
+  }
+
+  const canonicalPath = `/user/${encodeURIComponent(profile.handle)}/list/${encodeURIComponent(rkey)}`;
+  const currentUrl = new URL(c.req.url);
+  if (currentUrl.pathname !== canonicalPath) {
+    return c.redirect(`${canonicalPath}${currentUrl.search}`, 301);
+  }
+
+  let list: UserListRecord | undefined;
+  let items: UserListItem[] = [];
+  try {
+    list = await fetchListRecord(pds, did, rkey);
+    if (list) items = await fetchListItems(pds, did, list.uri);
+  } catch (error) {
+    console.error(`Could not load list ${rkey} for ${did}:`, error);
+    return c.html(renderLayout(c, 'List Unavailable', `
+      <section class="not-found"><h1>Could not load this list</h1>
+      <p>The account’s repository could not be reached. Please try again later.</p><a class="read-link" href="/">Back to Coffee &amp; Code</a></section>
+    `), 502);
+  }
+  if (!list) {
+    return c.html(renderLayout(c, 'List Not Found', `
+      <section class="not-found"><h1>List not found</h1>
+      <p>This list may have been removed or the link is incomplete.</p><a class="read-link" href="/user/${encodeURIComponent(profile.handle)}/lists">All lists by ${escapeHtml(profile.handle)}</a></section>
+    `), 404);
+  }
+
+  let articles: StandardDocument[] = [];
+  try {
+    const publicationPds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+    articles = await fetchArticles(publicationPds, c.env.OWNER_DID);
+  } catch (error) {
+    console.error('Could not load stories for list items:', error);
+  }
+  const articlesByUri = new Map(articles.map((article) => [article.uri, article]));
+
+  const name = profile.displayName || profile.handle;
+  const itemHtml = items.map((item) => {
+    const article = articlesByUri.get(item.document);
+    const link = article?.path || externalLinkUrl(`https://pdsls.dev/${item.document}`);
+    const title = article?.title || 'Story on AT Protocol';
+    return `<li class="account-page__saved-item list-page__item">
+      <a href="${escapeHtml(link)}">${escapeHtml(title)}<small>Added ${escapeHtml(formatCommentDate(item.createdAt))}</small></a>
+      <button type="button" class="account-page__remove-save" data-list-remove-item data-item-rkey="${escapeHtml(item.rkey)}" data-item-title="${escapeHtml(title)}" hidden>
+        <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Remove
+      </button>
+    </li>`;
+  }).join('');
+  const pageUrl = currentUrl.toString();
+  const body = `
+    <section class="user-page list-page" aria-labelledby="list-title" data-list-page data-list-uri="${escapeHtml(list.uri)}" data-list-owner-did="${escapeHtml(did)}">
+      <header class="list-page__header">
+        ${renderListIcon(list.icon)}
+        <div class="list-page__heading">
+          <h1 id="list-title">${escapeHtml(list.title)}</h1>
+          <p class="list-page__owner">A list by <a href="/user/${encodeURIComponent(profile.handle)}">${escapeHtml(name)}</a></p>
+        </div>
+      </header>
+      ${list.about ? `<p class="list-page__about">${escapeHtml(list.about)}</p>` : ''}
+      <p class="list-page__status" data-list-status role="status" aria-live="polite"></p>
+      <div class="section-heading"><span>${items.length} ${items.length === 1 ? 'post' : 'posts'}</span><button type="button" class="read-link list-page__share" data-list-share><i class="fa-solid fa-link" aria-hidden="true"></i> Copy share link</button></div>
+      ${items.length ? `<ul class="list-page__items" data-list-items>${itemHtml}</ul>` : '<p class="empty-state" data-list-empty>This list has no posts yet.</p><ul class="list-page__items" data-list-items hidden></ul>'}
+      <p class="list-page__manage" data-list-manage hidden><a class="read-link" href="/account/list">Manage your lists <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></p>
+    </section>`;
+  const metaTags = `
+    <meta name="description" content="${escapeHtml(list.about || `A post list curated by ${name} on Coffee & Code.`)}">
+    <meta property="og:title" content="${escapeHtml(list.title)} | Coffee and Code">
+    <meta property="og:description" content="${escapeHtml(list.about || `A post list curated by ${name}.`)}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">`;
+  return c.html(renderLayout(c, escapeHtml(list.title), body, metaTags));
+});
 
 users.get('/:identifier', async (c) => {
   let did: string | undefined;
@@ -199,6 +493,7 @@ users.get('/:identifier', async (c) => {
         <div class="user-page__identity"><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
         <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(did)}" data-block-user-name="${escapeHtml(name)}" hidden disabled>Block user</button>
         ${authorArticle?.author ? `<a class="user-page__bluesky" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
+        <a class="user-page__bluesky" href="/user/${encodeURIComponent(profile.handle)}/lists">Lists <i class="fa-solid fa-list" aria-hidden="true"></i></a>
         <a class="user-page__bluesky" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
       </header>
       ${description ? `<p class="user-page__description">${escapeHtml(description)}</p>` : ''}
