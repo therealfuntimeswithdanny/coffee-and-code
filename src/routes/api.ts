@@ -1,10 +1,23 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { fetchArticleByUri, fetchArticles, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
+import { fetchArticleByUri, fetchArticles, fetchPostMetadata, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
 import { loadNotificationsForUser } from '../lib/notifications';
 import legal from '../legal.json';
 
 const api = new Hono<{ Bindings: Env }>();
+
+async function documentMetadata(document: StandardDocument, pds: string) {
+  const metadata = document.metadata
+    || await fetchPostMetadata(document.pdsUrl || pds, document.repoDid || '', document.rkey);
+  if (!metadata) return undefined;
+  return {
+    uri: metadata.uri,
+    cid: metadata.cid,
+    sources: metadata.sources,
+    backlink: metadata.backlink,
+    createdAt: metadata.createdAt,
+  };
+}
 
 function documentSummary(post: StandardDocument, pds: string) {
   return {
@@ -134,6 +147,7 @@ api.get('/documents', async (c) => {
       if (!document) return c.json({ error: 'Document not found.' }, 404, { 'Cache-Control': 'no-store' });
       return c.json({
         ...documentSummary(document, pds),
+        metadata: await documentMetadata(document, pds),
         record: { uri: document.uri, cid: document.cid, value: document.record },
       }, 200, { 'Cache-Control': 'no-store' });
     } catch (error) {
@@ -218,6 +232,7 @@ api.get('/documents/:rkey', async (c) => {
 
   return c.json({
     ...documentSummary(document, pds),
+    metadata: await documentMetadata(document, pds),
     record: { uri: document.uri, cid: document.cid, value: document.record },
   }, 200, { 'Cache-Control': 'no-store' });
 });

@@ -26,6 +26,15 @@ export interface StandardDocument {
   pdsUrl?: string;
   publicationUri?: string;
   author?: AuthorProfile;
+  metadata?: PostMetadata;
+}
+
+export interface PostMetadata {
+  uri: string;
+  cid: string;
+  sources: string[];
+  backlink?: string;
+  createdAt?: string;
 }
 
 export interface AuthorProfile {

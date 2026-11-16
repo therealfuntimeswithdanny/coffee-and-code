@@ -1859,7 +1859,7 @@ async function loadNotificationsPage(refresh = true) {
   try {
     const did = session.did;
     const [response, marker] = await Promise.all([
-      fetch(`/api/notifications?limit=100&did=${encodeURIComponent(did)}${refresh ? '&refresh=1' : ''}`, { cache: 'no-store' }),
+      fetch(`/api/notifications?limit=30&did=${encodeURIComponent(did)}${refresh ? '&refresh=1' : ''}`, { cache: 'no-store' }),
       readNotificationsMarker(),
     ]);
     if (session?.did !== did) return;

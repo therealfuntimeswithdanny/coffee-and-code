@@ -1,4 +1,4 @@
-import { AuthorProfile, StandardDocument } from '../types';
+import { AuthorProfile, PostMetadata, StandardDocument } from '../types';
 import { USER_PROFILE_COLLECTION, USER_PROFILE_RKEY, readUserProfileFields, type UserProfileFields } from './userProfile';
 
 const imageCdnUrl = 'https://cdn.coffeencode.cc';
@@ -576,6 +576,23 @@ async function fetchArticlesUncached(
   });
 }
 
+/** Reads cc.coffeencode.post.metadata/<rkey> from the same repository as the post document. */
+export async function fetchPostMetadata(pdsUrl: string, repoDid: string, rkey: string): Promise<PostMetadata | undefined> {
+  const record = await fetchRecord(pdsUrl, repoDid, 'cc.coffeencode.post.metadata', rkey);
+  const value = record?.value;
+  if (!isRecord(value) || value.$type !== 'cc.coffeencode.post.metadata') return undefined;
+
+  return {
+    uri: typeof record.uri === 'string' ? record.uri : `at://${repoDid}/cc.coffeencode.post.metadata/${rkey}`,
+    cid: typeof record.cid === 'string' ? record.cid : '',
+    sources: Array.isArray(value.sources)
+      ? value.sources.filter((source): source is string => typeof source === 'string' && /^https?:\/\//.test(source))
+      : [],
+    backlink: typeof value.backlink === 'string' && value.backlink.startsWith('at://') ? value.backlink : undefined,
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : undefined,
+  };
+}
+
 export async function fetchArticleByUri(uri: string, fallbackPds: string, fallbackDid: string): Promise<StandardDocument | undefined> {
   return getEdgeCachedValue('article', `${fallbackPds}\n${fallbackDid}\n${uri}`, 300, () =>
     fetchArticleByUriUncached(uri, fallbackPds, fallbackDid));
@@ -624,7 +641,10 @@ async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallb
     : typeof record.value.author?.did === 'string'
       ? record.value.author.did
       : repoDid;
-  const author = await fetchAuthorProfile(authorDid, fallbackPds);
+  const [author, metadata] = await Promise.all([
+    fetchAuthorProfile(authorDid, fallbackPds),
+    fetchPostMetadata(pdsUrl, repoDid, rkey),
+  ]);
   const path = canonicalDocumentPath(authorDid, author?.handle, rkey, configuredHandles);
   const domainHandle = configuredHandles.get(authorDid.toLowerCase());
   return {
@@ -653,6 +673,7 @@ async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallb
     pdsUrl,
     publicationUri,
     author,
+    metadata,
   };
 }
 

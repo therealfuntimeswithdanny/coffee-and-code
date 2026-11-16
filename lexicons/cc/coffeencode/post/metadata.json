@@ -1,0 +1,40 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.post.metadata",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Metadata for a Coffee & Code post, stored under the same record key as the post document it describes.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["createdAt"],
+        "properties": {
+          "backlink": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the source document this post is derived from."
+          },
+          "sources": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" },
+            "description": "Links to sources cited by the post."
+          },
+          "view-link": {
+            "type": "string",
+            "description": "External link where the post can be viewed in another format."
+          },
+          "view-link-title": {
+            "type": "string",
+            "maxGraphemes": 120,
+            "description": "Label for the external view link."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

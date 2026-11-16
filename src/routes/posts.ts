@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { Env } from '../types';
-import { getPdsEndpoint, fetchArticles, fetchArticleByPath, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, fetchArticleByPath, fetchPostMetadata, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
 import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, toPlainText, readingTimeMinutes } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
@@ -58,6 +58,9 @@ async function renderPost(
   if (requestUrl.pathname !== post.path) {
     return c.redirect(`${post.path}${requestUrl.search}`, 301);
   }
+
+  const postMetadata = post.metadata
+    || await fetchPostMetadata(post.pdsUrl || pds, post.repoDid || c.env.OWNER_DID, post.rkey);
 
   const postTagKeys = new Set((post.tags || []).map((tag) => tag.toLocaleLowerCase()));
   const recommendations = allPosts
@@ -184,6 +187,23 @@ async function renderPost(
     },
   };
   const structuredDataJson = JSON.stringify(structuredData).replace(/</g, '\\u003c');
+  const sourceLabel = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname.replace(/^www\./, '') + (parsed.pathname === '/' ? '' : parsed.pathname);
+    } catch {
+      return url;
+    }
+  };
+  const sourcesHtml = postMetadata && (postMetadata.sources.length || postMetadata.backlink)
+    ? `<section class="article-sources" aria-labelledby="article-sources-title">
+        <h2 id="article-sources-title">Sources</h2>
+        <ul>${postMetadata.sources.map((source) => `
+          <li><a href="${escapeHtml(externalLinkUrl(source))}" target="_blank" rel="noopener">${escapeHtml(sourceLabel(source))} <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></li>`).join('')}
+          ${postMetadata.backlink ? `<li><a href="${escapeHtml(externalLinkUrl(`https://pdsls.dev/${postMetadata.backlink}`))}" target="_blank" rel="noopener">Original document <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></li>` : ''}
+        </ul>
+      </section>`
+    : '';
   const engagementHtml = `
     <section class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story reactions and views">
       <div class="article-reactions__buttons" aria-label="React to this story">
@@ -230,6 +250,7 @@ async function renderPost(
       </header>
       ${proxiedCoverImage ? `<figure class="article__cover"><img src="${proxiedCoverImage}" srcset="${proxiedCoverSrcSet}" alt="" class="story-image" width="1200" height="667" sizes="(max-width: 860px) 100vw, 820px" fetchpriority="high" decoding="async"></figure>` : ''}
       <div class="prose">${htmlContent}</div>
+      ${sourcesHtml}
       <section class="article__comments" id="comments">
         <sequoia-comments document-uri="${escapeHtml(post.uri)}" style="--sequoia-fg-color: var(--ink); --sequoia-bg-color: var(--paper-deep); --sequoia-border-color: var(--line); --sequoia-accent-color: var(--accent); --sequoia-secondary-color: var(--muted); --sequoia-border-radius: 0;"></sequoia-comments>
       </section>

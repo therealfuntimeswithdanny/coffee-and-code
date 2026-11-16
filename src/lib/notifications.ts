@@ -257,7 +257,7 @@ export async function loadNotificationsForUser(env: Env, did: string): Promise<N
   // TID record keys sort by creation time, providing a useful candidate
   // window before we fetch records for their timestamps.
   activities.sort((a, b) => b.recordKey.localeCompare(a.recordKey));
-  const selectedActivities = activities.slice(0, 100);
+  const selectedActivities = activities.slice(0, 30);
   const records = await Promise.all(selectedActivities.map(async (activity) => {
     if (activity.type === 'followed.post') {
       const { recordKey: _recordKey, ...notification } = activity;
