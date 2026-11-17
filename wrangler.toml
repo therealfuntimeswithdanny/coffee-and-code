@@ -27,6 +27,13 @@ OWNER_PDS = "https://account.coffeencode.cc"
 binding = "PUSH_TOKENS"
 id = "69ad42d54b0f4304b4d0acf5a1e184d3"
 
-# Polls registered accounts' notification feeds and pushes new items.
+# Polls registered accounts' notification feeds, pushes new items, and emails
+# digests to opted-in subscribers.
 [triggers]
 crons = ["*/5 * * * *"]
+
+# Cloudflare Email Sending binding used for verification and digest mail.
+# The from address domain (coffeencode.cc) must be enabled for Email Sending
+# in the Cloudflare dashboard for sends to succeed.
+[[send_email]]
+name = "EMAIL"

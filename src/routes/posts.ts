@@ -204,6 +204,8 @@ async function renderPost(
         </ul>
       </section>`
     : '';
+  const shareUrl = encodeURIComponent(pageUrl);
+  const shareText = encodeURIComponent(post.title);
   const engagementHtml = `
     <section class="article-engagement" data-reaction-subject="${escapeHtml(post.uri)}" data-view-subject="${escapeHtml(post.uri)}" aria-label="Story reactions and views">
       <div class="article-reactions__buttons" aria-label="React to this story">
@@ -213,6 +215,16 @@ async function renderPost(
         <button type="button" class="reaction-button" data-save-post aria-pressed="false"><i class="fa-regular fa-bookmark" aria-hidden="true"></i> Save <span class="reaction-count" data-save-count>—</span></button>
         <button type="button" class="reaction-button" data-add-to-list><i class="fa-regular fa-rectangle-list" aria-hidden="true"></i> Add to list</button>
         <a class="reaction-button" href="#comments"><i class="fa-regular fa-comment" aria-hidden="true"></i> Comments <span class="reaction-count" data-at-comment-count>—</span></a>
+      </div>
+      <div class="article-share" data-share-title="${safeTitle}" data-share-url="${escapeHtml(pageUrl)}">
+        <span class="article-share__label">Share this story</span>
+        <div class="article-share__buttons" aria-label="Share this story">
+          <a class="reaction-button" href="https://www.reddit.com/submit?url=${shareUrl}&title=${shareText}" target="_blank" rel="noopener" aria-label="Share on Reddit"><i class="fa-brands fa-reddit-alien" aria-hidden="true"></i> Reddit</a>
+          <a class="reaction-button" href="https://www.threads.net/intent/post?text=${shareText}%20${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Threads"><i class="fa-brands fa-threads" aria-hidden="true"></i> Threads</a>
+          <a class="reaction-button" href="https://www.facebook.com/sharer/sharer.php?u=${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Facebook"><i class="fa-brands fa-facebook-f" aria-hidden="true"></i> Facebook</a>
+          <button type="button" class="reaction-button" data-share-native hidden><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
+          <button type="button" class="reaction-button" data-share-copy><i class="fa-solid fa-link" aria-hidden="true"></i> Copy link</button>
+        </div>
       </div>
       <span class="article-reactions__status" aria-live="polite"></span>
     </section>`;

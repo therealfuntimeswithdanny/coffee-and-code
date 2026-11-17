@@ -14,7 +14,9 @@ import forumRouter from './routes/forum';
 import forumApiRouter from './routes/forumApi';
 import apiRouter from './routes/api';
 import pushRouter from './routes/push';
+import emailRouter from './routes/email';
 import { dispatchPushNotifications } from './lib/push';
+import { dispatchEmailNotifications } from './lib/emailSubscriptions';
 import { renderLayout } from './templates/layout';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -30,6 +32,7 @@ app.route('/api/comments', commentsRouter);
 app.route('/api/verifications', verificationsRouter);
 app.route('/api', apiRouter);
 app.route('/api/push', pushRouter);
+app.route('/', emailRouter);
 app.route('/api/forum', forumApiRouter);
 app.route('/user', usersRouter);
 app.route('/forum', forumRouter);
@@ -79,5 +82,6 @@ export default {
   fetch: app.fetch,
   scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(dispatchPushNotifications(env));
+    ctx.waitUntil(dispatchEmailNotifications(env));
   },
 };

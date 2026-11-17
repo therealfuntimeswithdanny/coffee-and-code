@@ -405,6 +405,7 @@ pages.get('/account', (c) => {
               <a href="#saved-posts-title">Reading list</a>
               <a href="#viewed-posts-title">Recently viewed</a>
               <a href="#followed-tags-title">Followed tags</a>
+              <a href="#email-settings-title">Email notifications</a>
               <a href="#blocked-accounts-title">Blocked accounts</a>
               <a href="#author-settings-title" data-author-settings-link hidden>Author profile</a>
             </nav>
@@ -422,6 +423,22 @@ pages.get('/account', (c) => {
             <h3 class="account-page__subheading">Latest from your tags</h3>
             <ul class="account-page__tag-posts" data-tag-follows-posts></ul>
             <p class="account-page__blocks-note">Follow tags from the <a href="/tags">tag directory</a> to see new matching stories here and get notified.</p>
+          </section>
+          <section class="account-card account-page__viewed account-page__email" aria-labelledby="email-settings-title">
+            <h2 id="email-settings-title">Email notifications</h2>
+            <p class="account-page__viewed-status" data-email-status role="status" aria-live="polite">Loading your email settings…</p>
+            <div data-email-settings hidden>
+              <label class="account-email__toggle"><input type="checkbox" data-email-enabled> Email me when people or tags I follow publish a story</label>
+              <ul class="account-email__list" data-email-list></ul>
+              <form class="account-email__form" data-email-form>
+                <label>Email address<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="you@example.com"></label>
+                <div class="account-profile-form__actions">
+                  <button class="auth-signout" type="submit">Add email</button>
+                  <button type="button" class="auth-signout" data-email-account-button hidden>Use my account email</button>
+                </div>
+              </form>
+              <p class="account-page__blocks-note">Your account email is ready right away. Any other address gets a confirmation link before it receives stories.</p>
+            </div>
           </section>
           <section class="account-card account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
             <h2 id="blocked-accounts-title">Blocked accounts</h2>
@@ -534,12 +551,15 @@ pages.get('/account/list', (c) => {
       <p class="account-page__viewed-status" data-lists-status role="status" aria-live="polite">Loading your lists…</p>
       <ul data-lists-list></ul>
       <p class="account-page__blocks-note">Lists are saved to your AT Protocol account and are public. Add stories to a list from the story page, or share a list link with anyone.</p>
-      <h3 class="account-page__subheading" id="list-create-title">Create a list</h3>
-      <form class="account-profile-form account-list-form" data-list-form aria-labelledby="list-create-title">
+      <h3 class="account-page__subheading" id="list-form-title" data-list-form-title>Create a list</h3>
+      <form class="account-profile-form account-list-form" data-list-form aria-labelledby="list-form-title">
         <label>Title<input name="title" maxlength="120" required placeholder="Required"></label>
         <label>About<textarea name="about" maxlength="2000" rows="3" placeholder="Optional — what belongs on this list?"></textarea></label>
         <label>Icon<input name="icon" maxlength="2048" placeholder="Optional — emoji or https image URL"></label>
-        <div class="account-profile-form__actions"><button class="auth-signout" type="submit">Create list</button></div>
+        <div class="account-profile-form__actions">
+          <button class="auth-signout" type="submit" data-list-submit>Create list</button>
+          <button class="account-author-form__cancel" type="button" data-list-cancel hidden>Cancel</button>
+        </div>
         <p class="account-profile-form__status" data-list-form-status role="status" aria-live="polite"></p>
       </form>
     </section>`;

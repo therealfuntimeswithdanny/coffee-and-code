@@ -4,6 +4,10 @@ export type Env = {
   OWNER_DID: string;
   OWNER_PDS: string;
   PUSH_TOKENS: KVNamespace;
+  // Optional Cloudflare Email Sending (`send_email`) binding.
+  EMAIL?: {
+    send(message: { from: string; to: string; raw: string | ArrayBuffer | ReadableStream }): Promise<void>;
+  };
 };
 
 export interface StandardDocument {

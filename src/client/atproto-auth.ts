@@ -263,6 +263,7 @@ function renderAccount() {
       void loadAccountSavedPosts(did);
       void loadAccountLists(did);
       void renderTagFollows(did);
+      void loadEmailSettings(did);
       void loadAuthorProfileEditor(did);
     }
 
@@ -528,6 +529,165 @@ async function renderTagFollows(did: string) {
   } catch (error) {
     status.textContent = errorMessage(error);
   }
+}
+
+type EmailAddressEntry = { address: string; verified: boolean; account: boolean };
+type EmailSettingsResponse = { enabled: boolean; emails: EmailAddressEntry[]; verificationSent?: boolean; alreadyVerified?: boolean };
+
+async function loadEmailSettings(did: string) {
+  if (!accountPage) return;
+  const section = accountPage.querySelector<HTMLElement>('[data-email-settings]');
+  const status = accountPage.querySelector<HTMLElement>('[data-email-status]');
+  const list = accountPage.querySelector<HTMLElement>('[data-email-list]');
+  const form = accountPage.querySelector<HTMLFormElement>('[data-email-form]');
+  const toggle = accountPage.querySelector<HTMLInputElement>('[data-email-enabled]');
+  const accountButton = accountPage.querySelector<HTMLButtonElement>('[data-email-account-button]');
+  if (!section || !status || !list || !form || !toggle || !accountButton) return;
+
+  const renderEmails = (settings: EmailSettingsResponse) => {
+    toggle.checked = settings.enabled;
+    list.replaceChildren();
+    settings.emails.forEach((entry) => {
+      const item = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = entry.address;
+      const badge = document.createElement('small');
+      badge.textContent = entry.verified
+        ? (entry.account ? 'account email' : 'verified')
+        : 'pending confirmation';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'auth-signout';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', async () => {
+        remove.disabled = true;
+        status.textContent = `Removing ${entry.address}…`;
+        try {
+          const response = await fetch('/api/email/addresses', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ did, email: entry.address }),
+          });
+          const result = await response.json() as EmailSettingsResponse & { error?: string };
+          if (!response.ok) throw new Error(result.error || `Could not remove ${entry.address}.`);
+          if (session?.did !== did) return;
+          renderEmails(result);
+          status.textContent = `Removed ${entry.address}.`;
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          remove.disabled = false;
+        }
+      });
+      item.append(label, badge, remove);
+      list.append(item);
+    });
+  };
+
+  try {
+    const response = await fetch(`/api/email/settings?did=${encodeURIComponent(did)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Could not load your email settings (${response.status}).`);
+    const settings = await response.json() as EmailSettingsResponse;
+    if (session?.did !== did) return;
+    renderEmails(settings);
+    section.hidden = false;
+    status.textContent = settings.emails.length
+      ? ''
+      : 'Add an email address to get new stories in your inbox.';
+  } catch (error) {
+    status.textContent = errorMessage(error);
+    return;
+  }
+
+  // The account's own email comes from its PDS session, so it needs no
+  // confirmation step. Reading it requires the account:email OAuth scope;
+  // when the session predates that scope the button simply stays hidden.
+  void requireSession().fetchHandler('/xrpc/com.atproto.server.getSession')
+    .then(async (response) => {
+      if (!response.ok) return;
+      const result = await response.json() as { email?: unknown };
+      if (session?.did !== did || typeof result.email !== 'string' || !result.email) return;
+      accountButton.hidden = false;
+      accountButton.textContent = `Use ${result.email}`;
+      accountButton.addEventListener('click', async () => {
+        accountButton.disabled = true;
+        status.textContent = `Adding ${result.email}…`;
+        try {
+          const addResponse = await fetch('/api/email/account-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ did, email: result.email }),
+          });
+          const payload = await addResponse.json() as EmailSettingsResponse & { error?: string };
+          if (!addResponse.ok) throw new Error(payload.error || 'Could not add your account email.');
+          if (session?.did !== did) return;
+          renderEmails(payload);
+          status.textContent = `${result.email} added — it is already verified through your account sign-in.`;
+          accountButton.hidden = true;
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          accountButton.disabled = false;
+        }
+      });
+    })
+    .catch(() => { /* Account email unavailable; manual addresses still work. */ });
+
+  toggle.addEventListener('change', async () => {
+    const enabled = toggle.checked;
+    toggle.disabled = true;
+    status.textContent = enabled ? 'Turning email notifications on…' : 'Turning email notifications off…';
+    try {
+      const response = await fetch('/api/email/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ did, enabled }),
+      });
+      const result = await response.json() as EmailSettingsResponse & { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Could not update your email settings.');
+      if (session?.did !== did) return;
+      renderEmails(result);
+      status.textContent = enabled
+        ? (result.emails.some((entry) => entry.verified)
+          ? 'Email notifications are on. New stories will arrive in your inbox.'
+          : 'Email notifications are on. Confirm or add an email address below to receive them.')
+        : 'Email notifications are off.';
+    } catch (error) {
+      status.textContent = errorMessage(error);
+      toggle.checked = !enabled;
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = form.elements.namedItem('email') as HTMLInputElement;
+    const address = input.value.trim();
+    if (!address) return;
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    status.textContent = `Sending a confirmation email to ${address}…`;
+    try {
+      const response = await fetch('/api/email/addresses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ did, email: address }),
+      });
+      const result = await response.json() as EmailSettingsResponse & { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Could not add that email address.');
+      if (session?.did !== did) return;
+      renderEmails(result);
+      input.value = '';
+      status.textContent = result.alreadyVerified
+        ? `${address} is already verified.`
+        : result.verificationSent
+          ? `Confirmation email sent to ${address}. Open the link in it to verify the address.`
+          : `${address} saved, but the confirmation email could not be sent. Try again shortly.`;
+    } catch (error) {
+      status.textContent = errorMessage(error);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
 }
 
 type BlueskyProfileSummary = { avatar?: string; displayName?: string; handle?: string; description?: string };
@@ -1924,17 +2084,27 @@ window.coffeeAndCodeAuth = {
     if (!title || title.length > 600) throw new Error('A list title is required (120 characters or fewer).');
     const about = input.about?.trim() || '';
     const icon = input.icon?.trim() || '';
+    // Preserve createdAt and any fields other tools may have written.
+    const getQuery = new URLSearchParams({ repo: activeSession.did, collection: listCollection, rkey });
+    const existing = await repoRequest(`com.atproto.repo.getRecord?${getQuery}`)
+      .then((response) => response.json() as Promise<{ value?: Record<string, unknown> }>)
+      .then((data) => data.value || {})
+      .catch(() => ({} as Record<string, unknown>));
+    const createdAt = typeof existing.createdAt === 'string' ? existing.createdAt : new Date().toISOString();
+    const record: Record<string, unknown> = {
+      ...existing,
+      $type: listCollection,
+      title,
+      createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    if (about) record.about = about; else delete record.about;
+    if (icon) record.icon = icon; else delete record.icon;
     await repoRequest('com.atproto.repo.putRecord', {
       repo: activeSession.did,
       collection: listCollection,
       rkey,
-      record: {
-        $type: listCollection,
-        title,
-        ...(about ? { about } : {}),
-        ...(icon ? { icon } : {}),
-        updatedAt: new Date().toISOString(),
-      },
+      record,
     });
   },
   deleteList: async (listUri: string) => {
@@ -3061,7 +3231,21 @@ async function loadAccountLists(did: string) {
   const count = accountPage.querySelector<HTMLElement>('[data-lists-count]');
   const form = accountPage.querySelector<HTMLFormElement>('[data-list-form]');
   const formStatus = accountPage.querySelector<HTMLElement>('[data-list-form-status]');
+  const formTitle = accountPage.querySelector<HTMLElement>('[data-list-form-title]');
+  const submitButton = accountPage.querySelector<HTMLButtonElement>('[data-list-submit]');
+  const cancelButton = accountPage.querySelector<HTMLButtonElement>('[data-list-cancel]');
   if (!section || !list || !status) return;
+
+  let editingUri: string | undefined;
+  const setFormMode = (editing: UserListSummary | undefined) => {
+    editingUri = editing?.uri;
+    if (formTitle) formTitle.textContent = editing ? `Edit “${editing.title}”` : 'Create a list';
+    if (submitButton) submitButton.textContent = editing ? 'Save changes' : 'Create list';
+    if (cancelButton) cancelButton.hidden = !editing;
+    if (!editing) form?.reset();
+    if (formStatus) formStatus.textContent = '';
+  };
+  cancelButton?.addEventListener('click', () => setFormMode(undefined));
 
   const renderLists = async () => {
     if (session?.did !== did) return;
@@ -3093,6 +3277,23 @@ async function loadAccountLists(did: string) {
 
         const actions = document.createElement('div');
         actions.className = 'account-list-item__actions';
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'account-page__remove-save';
+        edit.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i> Edit';
+        edit.setAttribute('aria-label', `Edit the list ${entry.title}`);
+        edit.addEventListener('click', () => {
+          if (!form) return;
+          const titleInput = form.elements.namedItem('title');
+          const aboutInput = form.elements.namedItem('about');
+          const iconInput = form.elements.namedItem('icon');
+          if (titleInput instanceof HTMLInputElement) titleInput.value = entry.title;
+          if (aboutInput instanceof HTMLTextAreaElement) aboutInput.value = entry.about || '';
+          if (iconInput instanceof HTMLInputElement) iconInput.value = entry.icon || '';
+          setFormMode(entry);
+          form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          if (titleInput instanceof HTMLInputElement) titleInput.focus();
+        });
         const share = document.createElement('button');
         share.type = 'button';
         share.className = 'account-page__remove-save';
@@ -3130,7 +3331,7 @@ async function loadAccountLists(did: string) {
             remove.disabled = false;
           }
         });
-        actions.append(share, remove);
+        actions.append(edit, share, remove);
         item.append(actions);
         list.append(item);
       });
@@ -3156,20 +3357,27 @@ async function loadAccountLists(did: string) {
     const icon = String(data.get('icon') || '');
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
     if (submit) submit.disabled = true;
-    if (formStatus) formStatus.textContent = 'Creating your list…';
+    const editing = editingUri;
+    if (formStatus) formStatus.textContent = editing ? 'Saving your changes…' : 'Creating your list…';
     try {
-      const uri = await window.coffeeAndCodeAuth.createList({ title, about, icon });
-      const rkey = uri.split('/').at(-1) || '';
-      form.reset();
-      if (formStatus) {
-        const link = `/user/${encodeURIComponent(did)}/list/${encodeURIComponent(rkey)}`;
-        formStatus.innerHTML = '';
-        const text = document.createElement('span');
-        text.textContent = 'List created. ';
-        const anchor = document.createElement('a');
-        anchor.href = link;
-        anchor.textContent = 'Open the public page';
-        formStatus.append(text, anchor);
+      if (editing) {
+        await window.coffeeAndCodeAuth.updateList(editing, { title, about, icon });
+        setFormMode(undefined);
+        if (formStatus) formStatus.textContent = 'List updated.';
+      } else {
+        const uri = await window.coffeeAndCodeAuth.createList({ title, about, icon });
+        const rkey = uri.split('/').at(-1) || '';
+        form.reset();
+        if (formStatus) {
+          const link = `/user/${encodeURIComponent(did)}/list/${encodeURIComponent(rkey)}`;
+          formStatus.innerHTML = '';
+          const text = document.createElement('span');
+          text.textContent = 'List created. ';
+          const anchor = document.createElement('a');
+          anchor.href = link;
+          anchor.textContent = 'Open the public page';
+          formStatus.append(text, anchor);
+        }
       }
       await renderLists();
     } catch (error) {
@@ -3308,4 +3516,34 @@ document.querySelectorAll<HTMLElement>('[data-list-page]').forEach((page) => {
       });
     });
   })();
+});
+
+// Article share buttons: native Web Share API (when available) and copy link.
+document.querySelectorAll<HTMLElement>('.article-share').forEach((shareSection) => {
+  const status = shareSection.closest('.article-engagement')?.querySelector<HTMLElement>('.article-reactions__status');
+  const title = shareSection.dataset.shareTitle || document.title;
+  const url = shareSection.dataset.shareUrl || window.location.href;
+
+  const nativeShare = shareSection.querySelector<HTMLButtonElement>('[data-share-native]');
+  if (nativeShare && typeof navigator.share === 'function') {
+    nativeShare.hidden = false;
+    nativeShare.addEventListener('click', async () => {
+      try {
+        await navigator.share({ title, url });
+        if (status) status.textContent = 'Thanks for sharing this story.';
+      } catch (error) {
+        if ((error as DOMException)?.name === 'AbortError') return;
+        if (status) status.textContent = errorMessage(error);
+      }
+    });
+  }
+
+  shareSection.querySelector<HTMLButtonElement>('[data-share-copy]')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      if (status) status.textContent = 'Story link copied to your clipboard.';
+    } catch {
+      window.prompt('Copy this story link:', url);
+    }
+  });
 });

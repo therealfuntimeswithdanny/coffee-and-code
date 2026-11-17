@@ -330,6 +330,10 @@ export function renderLayout(
     .article-engagement .article-reactions__buttons [data-save-post] { grid-column: 2; grid-row: 2; }
     .article-engagement .article-reactions__buttons a { grid-column: 1 / -1; grid-row: 3; }
     .article-engagement .article-reactions__status { min-height: 0; }
+    .article-share { display: grid; gap: 8px; }
+    .article-share__label { color: var(--muted); font: 700 11px 'Source Sans 3', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+    .article-share__buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+    .article-share__buttons .reaction-button { text-decoration: none; }
     .article-rail li a { font-size: 14px; }
     .recommendations { margin-top: 76px; }
     .recommendations .section-heading { margin-bottom: 4px; }
@@ -406,6 +410,15 @@ export function renderLayout(
     .account-page__blocks li { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
     .account-page__blocks li a { font: 14px 'Source Sans 3', sans-serif; overflow-wrap: anywhere; }
     .account-page__blocks-note { color: var(--muted); font-size: 14px; }
+    .account-email__toggle { align-items: start; display: flex; gap: 10px; margin: 0 0 16px; }
+    .account-email__toggle input { accent-color: var(--accent); margin-top: 4px; }
+    .account-email__list li { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; }
+    .account-email__list li span { font: 14px 'Source Sans 3', sans-serif; overflow-wrap: anywhere; }
+    .account-email__list li small { display: inline; margin: 0; }
+    .account-email__form { display: grid; gap: 12px; margin-top: 18px; }
+    .account-email__form label { display: grid; font-size: 14px; gap: 6px; }
+    .account-email__form input[type="email"] { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: 15px 'Source Sans 3', sans-serif; padding: 10px 12px; }
+    .account-email__form .account-profile-form__actions { display: flex; flex-wrap: wrap; gap: 10px; }
     .forum-post-card[data-block-author-did][hidden], .forum-thread[data-block-author-did][hidden], .user-forum-post[data-block-author-did][hidden] { display: none !important; }
     .forum-reply.is-blocked > :not(.forum-replies) { display: none !important; }
     .block-dialog { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--ink); margin: auto; max-width: min(460px, calc(100% - 32px)); padding: 24px; width: 100%; }
