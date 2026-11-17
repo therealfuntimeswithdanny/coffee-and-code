@@ -357,6 +357,7 @@ pages.get('/auth', (c) => {
       <div class="auth-options" data-auth-options>
         <section class="auth-option auth-option--coffee" aria-labelledby="existing-account-title">
           <h2 id="existing-account-title">Sign in</h2>
+          <div class="account-switcher" data-account-switcher hidden></div>
           <form class="auth-form" data-auth-form>
             <label for="auth-handle">Handle</label>
             <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
@@ -394,39 +395,41 @@ pages.get('/account', (c) => {
               <label>Display name<input name="displayName" maxlength="64" autocomplete="nickname"></label>
               <label>Pronouns<input name="pronouns" maxlength="40" placeholder="Optional"></label>
               <label>Bio<textarea name="description" maxlength="256" rows="4"></textarea></label>
-              <div class="account-profile-form__actions"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-user-profile>Cancel</button></div>
+              <div class="account-profile-form__actions"><button class="auth-signout" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-user-profile>Cancel</button></div>
             </form>
             <p class="account-profile-form__status" data-user-profile-status role="status" aria-live="polite"></p>
             <div class="account-page__actions">
-              <button type="button" class="auth-signout" data-edit-user-profile disabled>Edit profile</button>
-              <button type="button" class="auth-signout" data-auth-signout>Log out</button>
+              <button type="button" class="auth-signout" data-edit-user-profile disabled><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit profile</button>
+              <button type="button" class="auth-signout" data-auth-signout><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Log out</button>
             </div>
             <nav class="account-page__section-nav" aria-label="Account sections">
-              <a href="#saved-posts-title">Reading list</a>
-              <a href="#viewed-posts-title">Recently viewed</a>
-              <a href="#followed-tags-title">Followed tags</a>
-              <a href="#appearance-title">Appearance</a>
-              <a href="#email-settings-title">Email notifications</a>
-              <a href="#blocked-accounts-title">Blocked accounts</a>
-              <a href="#author-settings-title" data-author-settings-link hidden>Author profile</a>
+              <a href="#saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</a>
+              <a href="#viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</a>
+              <a href="#followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</a>
+              <a href="#appearance-title"><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</a>
+              <a href="#email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</a>
+              <a href="#blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</a>
+              <a href="/account/list"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</a>
+              <a href="#author-settings-title" data-author-settings-link hidden><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</a>
             </nav>
           </section>
+          <section class="account-card account-switcher-card" data-account-switcher hidden aria-label="Switch account"></section>
         </aside>
         <div class="account-layout__column account-layout__main">
-          <section class="account-card account-page__viewed" aria-labelledby="saved-posts-title"><div class="account-card__header"><h2 id="saved-posts-title">Reading list</h2><span class="account-card__count" data-saved-count></span></div><p class="account-page__viewed-status" data-saved-status role="status" aria-live="polite">Loading your saved posts…</p><ul data-saved-posts></ul></section>
-          <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title">Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
+          <section class="account-card account-page__viewed" aria-labelledby="saved-posts-title"><div class="account-card__header"><h2 id="saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</h2><span class="account-card__count" data-saved-count></span></div><p class="account-page__viewed-status" data-saved-status role="status" aria-live="polite">Loading your saved posts…</p><ul data-saved-posts></ul></section>
+          <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
         </div>
         <div class="account-layout__column account-layout__secondary">
           <section class="account-card account-page__viewed" aria-labelledby="followed-tags-title">
-            <h2 id="followed-tags-title">Followed tags</h2>
-            <p class="account-page__viewed-status" data-tag-follows-status role="status" aria-live="polite">Loading your followed tags…</p>
-            <ul data-tag-follows-list></ul>
-            <h3 class="account-page__subheading">Latest from your tags</h3>
+            <h2 id="followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</h2>
+            <p class="account-page__viewed-status" data-tag-follows-status role="status" aria-live="polite">Loading who you follow…</p>
+            <ul class="account-follows-list" data-tag-follows-list></ul>
+            <h3 class="account-page__subheading"><i class="fa-solid fa-newspaper" aria-hidden="true"></i> Latest from your tags</h3>
             <ul class="account-page__tag-posts" data-tag-follows-posts></ul>
-            <p class="account-page__blocks-note">Follow tags from the <a href="/tags">tag directory</a> to see new matching stories here and get notified.</p>
+            <p class="account-page__blocks-note">Follow authors on their pages and tags from the <a href="/tags">tag directory</a> to see new matching stories here and get notified.</p>
           </section>
           <section class="account-card account-page__viewed account-page__preferences" aria-labelledby="appearance-title">
-            <h2 id="appearance-title">Appearance</h2>
+            <h2 id="appearance-title"><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</h2>
             <div class="account-preferences" data-preferences>
               <fieldset>
                 <legend>Theme</legend>
@@ -455,7 +458,7 @@ pages.get('/account', (c) => {
             </div>
           </section>
           <section class="account-card account-page__viewed account-page__email" aria-labelledby="email-settings-title">
-            <h2 id="email-settings-title">Email notifications</h2>
+            <h2 id="email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</h2>
             <p class="account-page__viewed-status" data-email-status role="status" aria-live="polite">Loading your email settings…</p>
             <div data-email-settings hidden>
               <label class="account-email__toggle"><input type="checkbox" data-email-enabled> Email me when people or tags I follow publish a story</label>
@@ -463,24 +466,24 @@ pages.get('/account', (c) => {
               <form class="account-email__form" data-email-form>
                 <label>Email address<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="you@example.com"></label>
                 <div class="account-profile-form__actions">
-                  <button class="auth-signout" type="submit">Add email</button>
-                  <button type="button" class="auth-signout" data-email-account-button hidden>Use my account email</button>
+                  <button class="auth-signout" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add email</button>
+                  <button type="button" class="auth-signout" data-email-account-button hidden><i class="fa-solid fa-at" aria-hidden="true"></i> Use my account email</button>
                 </div>
               </form>
               <p class="account-page__blocks-note">Your account email is ready right away. Any other address gets a confirmation link before it receives stories.</p>
             </div>
           </section>
           <section class="account-card account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
-            <h2 id="blocked-accounts-title">Blocked accounts</h2>
+            <h2 id="blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</h2>
             <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
             <ul data-blocks-list></ul>
             <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s forum posts and replies for you. Stories and comments remain visible. Bluesky blocks are managed separately in Bluesky settings.</p>
           </section>
         </div>
-        <section class="account-card account-author-settings account-page__wide" data-author-settings hidden aria-labelledby="author-settings-title">
-          <h2 id="author-settings-title">Author profile</h2>
+        <section class="account-card account-author-settings account-layout__author" data-author-settings hidden aria-labelledby="author-settings-title">
+          <h2 id="author-settings-title"><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</h2>
           <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
-          <button type="button" class="auth-signout" data-edit-author-profile hidden>Edit author profile</button>
+          <button type="button" class="auth-signout" data-edit-author-profile hidden><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit author profile</button>
           <form class="account-author-form" data-author-profile-form hidden>
             <div class="account-author-form__workspace">
               <div class="account-author-form__fields">
@@ -493,8 +496,8 @@ pages.get('/account', (c) => {
                 <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
                 <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
                 <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-                <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
-                <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
+                <fieldset class="account-author-form__pins account-author-form__wide"><legend><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
+                <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
                 <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
               </div>
               <aside class="account-author-preview" aria-label="Author profile preview">
@@ -511,7 +514,7 @@ pages.get('/account', (c) => {
             </div>
           </form>
           <div class="account-post-metadata" data-post-metadata>
-            <h3 class="account-page__subheading" id="post-metadata-title">Post metadata</h3>
+            <h3 class="account-page__subheading" id="post-metadata-title"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Post metadata</h3>
             <p class="account-post-metadata__intro">Attach sources and a backing document to stories published in your repository. Metadata appears on the story page.</p>
             <input type="search" class="account-search-input" data-post-metadata-search placeholder="Search your stories to edit metadata…" aria-label="Search your stories to edit metadata">
             <p class="account-post-metadata__status" data-post-metadata-status role="status" aria-live="polite"></p>
@@ -612,9 +615,9 @@ pages.get('/account/author', (c) => {
   const inner = `
     ${accountSubNav}
     <section class="account-card account-author-settings account-page__wide" data-author-settings hidden aria-labelledby="author-settings-title">
-      <h2 id="author-settings-title">Author profile</h2>
+      <h2 id="author-settings-title"><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</h2>
       <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
-      <button type="button" class="auth-signout" data-edit-author-profile hidden>Edit author profile</button>
+      <button type="button" class="auth-signout" data-edit-author-profile hidden><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit author profile</button>
       <form class="account-author-form" data-author-profile-form hidden>
         <div class="account-author-form__workspace">
           <div class="account-author-form__fields">
@@ -627,8 +630,8 @@ pages.get('/account/author', (c) => {
             <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
             <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
             <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-            <fieldset class="account-author-form__pins account-author-form__wide"><legend>Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
-            <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit">Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
+            <fieldset class="account-author-form__pins account-author-form__wide"><legend><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
+            <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
             <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
           </div>
           <aside class="account-author-preview" aria-label="Author profile preview">
@@ -645,7 +648,7 @@ pages.get('/account/author', (c) => {
         </div>
       </form>
       <div class="account-post-metadata" data-post-metadata>
-        <h3 class="account-page__subheading" id="post-metadata-title">Post metadata</h3>
+        <h3 class="account-page__subheading" id="post-metadata-title"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Post metadata</h3>
         <p class="account-post-metadata__intro">Attach sources and a backing document to stories published in your repository. Metadata appears on the story page.</p>
         <input type="search" class="account-search-input" data-post-metadata-search placeholder="Search your stories to edit metadata…" aria-label="Search your stories to edit metadata">
         <p class="account-post-metadata__status" data-post-metadata-status role="status" aria-live="polite"></p>

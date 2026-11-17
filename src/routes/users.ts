@@ -17,7 +17,9 @@ import { fetchAuthorForumPosts } from './forum';
 const users = new Hono<{ Bindings: Env }>();
 const commentCollection = 'cc.coffeencode.comment';
 const listCollection = 'cc.coffeencode.list';
-const listItemCollection = 'cc.coffeencode.cclist.item';
+const listItemCollection = 'cc.coffeencode.list.item';
+const legacyListItemCollection = 'cc.coffeencode.cclist.item';
+const listItemCollections = [listItemCollection, legacyListItemCollection];
 const maxComments = 300;
 const maxListItems = 500;
 
@@ -34,6 +36,7 @@ type UserListRecord = {
 type UserListItem = {
   uri: string;
   rkey: string;
+  collection: string;
   document: string;
   createdAt: string;
 };
@@ -182,32 +185,37 @@ async function fetchUserLists(pds: string, did: string): Promise<UserListRecord[
 
 async function fetchListItems(pds: string, did: string, listUri: string): Promise<UserListItem[]> {
   const items: UserListItem[] = [];
-  let cursor: string | undefined;
-  const seenCursors = new Set<string>();
-  do {
-    const url = new URL(`${pds}/xrpc/com.atproto.repo.listRecords`);
-    url.searchParams.set('repo', did);
-    url.searchParams.set('collection', listItemCollection);
-    url.searchParams.set('limit', '100');
-    if (cursor) url.searchParams.set('cursor', cursor);
-    const response = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error(`List item records returned ${response.status}`);
-    const page = await response.json() as {
-      records?: Array<{ uri?: unknown; value?: { list?: unknown; document?: unknown; createdAt?: unknown } }>;
-      cursor?: string;
-    };
-    for (const record of page.records || []) {
-      const value = record.value;
-      if (!validAtUri(record.uri) || value?.list !== listUri || !validAtUri(value?.document)
-        || typeof value?.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) continue;
-      const rkey = record.uri.split('/').at(-1) || '';
-      if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) continue;
-      items.push({ uri: record.uri, rkey, document: value.document, createdAt: value.createdAt });
-    }
-    if (!page.cursor || page.cursor === cursor || seenCursors.has(page.cursor) || !page.records?.length) break;
-    seenCursors.add(page.cursor);
-    cursor = page.cursor;
-  } while (cursor && items.length < maxListItems);
+  for (const collection of listItemCollections) {
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    do {
+      const url = new URL(`${pds}/xrpc/com.atproto.repo.listRecords`);
+      url.searchParams.set('repo', did);
+      url.searchParams.set('collection', collection);
+      url.searchParams.set('limit', '100');
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        if (collection === legacyListItemCollection) break;
+        throw new Error(`List item records returned ${response.status}`);
+      }
+      const page = await response.json() as {
+        records?: Array<{ uri?: unknown; value?: { list?: unknown; document?: unknown; createdAt?: unknown } }>;
+        cursor?: string;
+      };
+      for (const record of page.records || []) {
+        const value = record.value;
+        if (!validAtUri(record.uri) || value?.list !== listUri || !validAtUri(value?.document)
+          || typeof value?.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) continue;
+        const rkey = record.uri.split('/').at(-1) || '';
+        if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) continue;
+        items.push({ uri: record.uri, rkey, collection, document: value.document, createdAt: value.createdAt });
+      }
+      if (!page.cursor || page.cursor === cursor || seenCursors.has(page.cursor) || !page.records?.length) break;
+      seenCursors.add(page.cursor);
+      cursor = page.cursor;
+    } while (cursor && items.length < maxListItems);
+  }
   const unique = new Map<string, UserListItem>();
   items.forEach((item) => { if (!unique.has(item.document)) unique.set(item.document, item); });
   return [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, maxListItems);
@@ -376,7 +384,7 @@ users.get('/:identifier/list/:rkey', async (c) => {
     const title = article?.title || 'Story on AT Protocol';
     return `<li class="account-page__saved-item list-page__item">
       <a href="${escapeHtml(link)}">${escapeHtml(title)}<small>Added ${escapeHtml(formatCommentDate(item.createdAt))}</small></a>
-      <button type="button" class="account-page__remove-save" data-list-remove-item data-item-rkey="${escapeHtml(item.rkey)}" data-item-title="${escapeHtml(title)}" hidden>
+      <button type="button" class="account-page__remove-save" data-list-remove-item data-item-rkey="${escapeHtml(item.rkey)}" data-item-collection="${escapeHtml(item.collection)}" data-item-title="${escapeHtml(title)}" hidden>
         <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Remove
       </button>
     </li>`;

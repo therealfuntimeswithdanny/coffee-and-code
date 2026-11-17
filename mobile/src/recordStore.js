@@ -12,6 +12,20 @@ export async function listRepoRecords(agent, did, collection) {
   return records;
 }
 
+// Reads every collection in `collections` and merges the records. Collections
+// that fail (e.g. missing scope on an older session) are skipped.
+export async function listRepoRecordsFromCollections(agent, did, collections) {
+  const results = await Promise.all(
+    collections.map((collection) => listRepoRecords(agent, did, collection).catch(() => [])),
+  );
+  return results.flat();
+}
+
+// "at://did/collection/rkey" -> "collection"
+export function recordCollection(uri) {
+  return uri?.match(/^at:\/\/[^/]+\/([^/]+)\//)?.[1];
+}
+
 export function storyRecordKey(uri) {
   return uri?.match(/^at:\/\/[^/]+\/[^/]+\/([^/]+)$/)?.[1];
 }

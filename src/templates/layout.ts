@@ -404,6 +404,24 @@ export function renderLayout(
     .header-account-menu__nav a { color: var(--ink); font-size: 13px; font-weight: 700; letter-spacing: .06em; padding: 11px 16px; text-transform: uppercase; }
     .header-account-menu__nav a:hover, .header-account-menu__nav a:focus-visible { background: var(--paper); color: var(--accent); }
     .header-account-menu__nav a[aria-current="page"] { color: var(--accent); }
+    .header-account-menu__switcher { border-top: 1px solid var(--line); margin-top: 4px; padding: 6px 0; }
+    .account-switcher__title { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; margin: 4px 16px 6px; text-transform: uppercase; }
+    .account-switcher__title i { margin-right: 6px; }
+    .account-switcher__list { display: grid; gap: 2px; list-style: none; margin: 0; padding: 0; }
+    .account-switcher__row { align-items: center; background: none; border: 0; color: var(--ink); cursor: pointer; display: flex; font: inherit; gap: 10px; padding: 8px 16px; text-align: left; width: 100%; }
+    .account-switcher__row:hover, .account-switcher__row:focus-visible { background: var(--paper); color: var(--accent); }
+    .account-switcher__row:disabled { cursor: wait; opacity: .6; }
+    .account-switcher__avatar { align-items: center; background: var(--paper); border: 1px solid var(--line-strong); border-radius: 50%; color: var(--accent); display: inline-flex; flex: 0 0 28px; font-size: 12px; height: 28px; justify-content: center; object-fit: cover; width: 28px; }
+    .account-switcher__copy { display: grid; min-width: 0; }
+    .account-switcher__copy strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-switcher__copy small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-switcher__add { color: var(--accent); display: block; font-size: 13px; font-weight: 700; letter-spacing: .06em; padding: 10px 16px 6px; text-transform: uppercase; }
+    .account-switcher__add i { margin-right: 6px; }
+    .account-switcher__add:hover, .account-switcher__add:focus-visible { color: var(--ink); }
+    .account-card .account-switcher__title { margin: 0 0 10px; }
+    .account-card .account-switcher__row { border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; }
+    .account-card .account-switcher__row:hover, .account-card .account-switcher__row:focus-visible { border-color: var(--accent); }
+    .account-card .account-switcher__add { padding: 12px 0 0; }
     .header-account[hidden] { display: none; }
     .header-account:not([hidden]) { display: inline-flex; }
     .header-account img { border-radius: 50%; height: 100%; object-fit: cover; width: 100%; }
@@ -837,6 +855,23 @@ export function renderLayout(
     .account-page__actions .auth-signout { width: 100%; }
     .account-page__section-nav { border-top: 1px solid var(--line); display: grid; gap: 2px; margin-top: 18px; padding-top: 14px; }
     .account-page__section-nav a { color: var(--muted); font-size: 14px; font-weight: 700; letter-spacing: .04em; padding: 6px 0; text-transform: uppercase; }
+    .account-page__section-nav a i { color: var(--accent); display: inline-block; font-size: 13px; margin-right: 8px; text-align: center; width: 16px; }
+    .account-card h2 i, .account-page__subheading i { color: var(--accent); font-size: .85em; margin-right: 8px; }
+    .account-card .auth-signout i, .account-card button i { margin-right: 7px; }
+    .account-email__list { display: grid; gap: 12px; list-style: none; margin: 14px 0; padding: 0; }
+    .account-email__list li { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 10px; }
+    .account-email__list li span { flex: 1 1 180px; }
+    .account-follows-list { display: grid; gap: 4px; list-style: none; margin: 12px 0 0; padding: 0; }
+    .account-follows-list__item { align-items: center; border-bottom: 1px solid var(--line); display: flex; gap: 10px; padding: 8px 0; }
+    .account-follows-list__item:last-child { border-bottom: 0; }
+    .account-follows-list__item > a { align-items: center; color: var(--ink); display: inline-flex; flex: 1 1 auto; gap: 8px; min-width: 0; }
+    .account-follows-list__item > a i { color: var(--accent); }
+    .account-follows-list__item > a:hover { color: var(--accent); }
+    .account-follows-list__author img { border-radius: 50%; flex: 0 0 28px; height: 28px; object-fit: cover; width: 28px; }
+    .account-follows-list__author small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+    .account-follows-list__unfollow { align-items: center; background: transparent; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); cursor: pointer; display: inline-flex; flex: 0 0 30px; font-size: 13px; height: 30px; justify-content: center; padding: 0; width: 30px; }
+    .account-follows-list__unfollow:hover { border-color: var(--accent); color: var(--accent); }
+    .account-follows-list__unfollow:disabled { cursor: wait; opacity: .6; }
     .account-page__section-nav a:hover { color: var(--accent); }
     .account-page__section-nav a[hidden] { display: none; }
     .account-profile-form { display: grid; gap: 12px; margin-top: 16px; }
@@ -847,6 +882,8 @@ export function renderLayout(
     .account-profile-form__status { color: var(--muted); font-size: 14px; margin: 0; min-height: 1em; }
     .account-page__remove-save { align-items: center; display: inline-flex; gap: 6px; }
     .account-page__wide { grid-column: 1 / -1; }
+    .account-layout__author { grid-column: 2 / -1; }
+    .account-layout .account-author-preview { position: static; }
     @media (max-width: 1100px) {
       .account-layout { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
       .account-layout__secondary { grid-column: 2; }
@@ -854,7 +891,7 @@ export function renderLayout(
     @media (max-width: 760px) {
       .account-layout { grid-template-columns: 1fr; }
       .account-layout__sidebar { position: static; }
-      .account-layout__secondary { grid-column: auto; }
+      .account-layout__secondary, .account-layout__author { grid-column: auto; }
       .account-page .account-card .account-page__profile { align-items: center; flex-direction: row; }
     }
     .account-preferences { display: grid; gap: 14px; }
@@ -903,7 +940,7 @@ export function renderLayout(
   </script>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><div class="header-icon-actions"><a href="/search" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></a><a href="/notifications" class="search-button-icon header-notifications-icon" data-notifications-link aria-label="Notifications" title="Notifications" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i><span class="notification-badge" data-notifications-badge hidden></span></a><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a></div><a href="/auth" class="login-button" data-login-link>Log in</a><div class="header-account-menu" data-account-link hidden><button type="button" class="header-account" data-account-menu-button aria-label="Your account" title="Your account" aria-haspopup="true" aria-expanded="false"><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></button><nav class="header-account-menu__nav" data-account-menu aria-label="Account menu" hidden><a href="/account">Account</a><a href="/account/saves">Reading list</a><a href="/account/reads">Recently viewed</a><a href="/account/feed">Your feed</a><a href="/account/author">Author profile</a></nav></div></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a><a href="/search" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/notifications" data-notifications-link hidden>Notifications <span class="notification-badge" data-notifications-badge hidden></span></a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
+  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><div class="header-icon-actions"><a href="/search" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></a><a href="/notifications" class="search-button-icon header-notifications-icon" data-notifications-link aria-label="Notifications" title="Notifications" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i><span class="notification-badge" data-notifications-badge hidden></span></a><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a></div><a href="/auth" class="login-button" data-login-link>Log in</a><div class="header-account-menu" data-account-link hidden><button type="button" class="header-account" data-account-menu-button aria-label="Your account" title="Your account" aria-haspopup="true" aria-expanded="false"><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></button><nav class="header-account-menu__nav" data-account-menu aria-label="Account menu" hidden><a href="/account">Account</a><a href="/account/saves">Reading list</a><a href="/account/reads">Recently viewed</a><a href="/account/feed">Your feed</a><a href="/account/author">Author profile</a><div class="header-account-menu__switcher" data-account-switcher hidden></div></nav></div></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a><a href="/search" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/notifications" data-notifications-link hidden>Notifications <span class="notification-badge" data-notifications-badge hidden></span></a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
   <dialog class="block-dialog" data-block-dialog aria-labelledby="block-dialog-title" aria-describedby="block-dialog-description">
     <h2 id="block-dialog-title" data-block-dialog-title>Block this account?</h2>

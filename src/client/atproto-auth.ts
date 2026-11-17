@@ -69,6 +69,126 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'An unexpected sign-in error occurred.';
 }
 
+// Accounts that have signed in on this device, for the account switcher.
+type KnownAccount = { did: string; handle?: string; displayName?: string; avatar?: string };
+const KNOWN_ACCOUNTS_KEY = 'cc:known-accounts';
+
+function loadKnownAccounts(): KnownAccount[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KNOWN_ACCOUNTS_KEY) || '[]') as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is KnownAccount =>
+      Boolean(entry) && typeof entry === 'object'
+      && typeof (entry as KnownAccount).did === 'string'
+      && (entry as KnownAccount).did.startsWith('did:'));
+  } catch {
+    return [];
+  }
+}
+
+function saveKnownAccounts(accounts: KnownAccount[]) {
+  try {
+    localStorage.setItem(KNOWN_ACCOUNTS_KEY, JSON.stringify(accounts.slice(0, 12)));
+  } catch {
+    // Storage can be unavailable in private browsing; the switcher just won't persist.
+  }
+}
+
+function rememberAccount(did: string, patch: Partial<KnownAccount> = {}) {
+  const accounts = loadKnownAccounts();
+  const existing = accounts.find((account) => account.did === did);
+  if (existing) {
+    Object.assign(existing, patch);
+  } else {
+    accounts.unshift({ did, ...patch });
+  }
+  saveKnownAccounts(accounts);
+}
+
+function forgetAccount(did: string) {
+  saveKnownAccounts(loadKnownAccounts().filter((account) => account.did !== did));
+}
+
+async function switchToAccount(did: string, trigger?: HTMLButtonElement) {
+  if (!client || session?.did === did) return;
+  if (trigger) trigger.disabled = true;
+  try {
+    const restored = await client.restore(did);
+    rememberAccount(restored.did);
+    if (window.location.pathname === '/auth') {
+      const returnTo = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
+      window.location.assign(returnTo);
+    } else {
+      // Reload so every view picks up the new session cleanly.
+      window.location.reload();
+    }
+  } catch (error) {
+    // The stored session is gone (revoked or expired); drop it from the list.
+    forgetAccount(did);
+    renderAccountSwitchers();
+    showAuthError(`Could not switch accounts: ${errorMessage(error)}`);
+    if (trigger) trigger.disabled = false;
+  }
+}
+
+function renderAccountSwitchers() {
+  const accounts = loadKnownAccounts();
+  const activeDid = session?.did;
+  const returnTo = safeReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  document.querySelectorAll<HTMLElement>('[data-account-switcher]').forEach((container) => {
+    container.replaceChildren();
+    const entries = session ? accounts.filter((account) => account.did !== activeDid) : accounts;
+    if (!entries.length && !session) {
+      container.hidden = true;
+      return;
+    }
+    const title = document.createElement('p');
+    title.className = 'account-switcher__title';
+    title.innerHTML = '<i class="fa-solid fa-users" aria-hidden="true"></i> Switch account';
+    const list = document.createElement('ul');
+    list.className = 'account-switcher__list';
+    for (const account of entries) {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'account-switcher__row';
+      const avatar = document.createElement(account.avatar ? 'img' : 'span');
+      if (avatar instanceof HTMLImageElement) {
+        avatar.src = account.avatar || '';
+        avatar.alt = '';
+      } else {
+        avatar.setAttribute('aria-hidden', 'true');
+        avatar.innerHTML = '<i class="fa-solid fa-user"></i>';
+      }
+      avatar.className = 'account-switcher__avatar';
+      const copy = document.createElement('span');
+      copy.className = 'account-switcher__copy';
+      const name = document.createElement('strong');
+      name.textContent = account.displayName || account.handle || `${account.did.slice(0, 18)}…`;
+      copy.append(name);
+      if (account.handle) {
+        const handle = document.createElement('small');
+        handle.textContent = `@${account.handle}`;
+        copy.append(handle);
+      }
+      button.append(avatar, copy);
+      button.setAttribute('aria-label', `Switch to ${account.displayName || account.handle || 'this account'}`);
+      button.addEventListener('click', () => switchToAccount(account.did, button));
+      item.append(button);
+      list.append(item);
+    }
+    container.append(title, list);
+    if (session) {
+      const add = document.createElement('a');
+      add.className = 'account-switcher__add';
+      add.href = `/auth?returnTo=${encodeURIComponent(returnTo)}&add=1`;
+      add.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i> Add account';
+      container.append(add);
+    }
+    container.hidden = false;
+  });
+}
+
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
 const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
@@ -257,7 +377,10 @@ function renderAccount() {
     applyBlockedUserFilter(new Set());
   }
 
-  if (session) {
+  // /auth?add=1 keeps the sign-in form visible so another account can be added.
+  const addingAccount = window.location.pathname === '/auth'
+    && new URLSearchParams(window.location.search).get('add') === '1';
+  if (session && !addingAccount) {
     if (authOptions) authOptions.hidden = true;
     if (authAccount) authAccount.hidden = false;
     if (authName) authName.textContent = 'Your account';
@@ -266,6 +389,8 @@ function renderAccount() {
     if (authAccount) authAccount.hidden = true;
     if (authName) authName.textContent = '';
   }
+
+  renderAccountSwitchers();
 
   if (accountPage) {
     if (signedOutAccount) signedOutAccount.hidden = Boolean(session);
@@ -294,6 +419,12 @@ function renderAccount() {
     .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
       if (session?.did !== did) return;
       const avatar = profile.avatar ? accountAvatarUrl(profile.avatar) : undefined;
+      rememberAccount(did, {
+        ...(profile.handle ? { handle: profile.handle } : {}),
+        ...(profile.displayName ? { displayName: profile.displayName } : {}),
+        ...(avatar ? { avatar } : {}),
+      });
+      renderAccountSwitchers();
       if (headerAccountAvatar && avatar) {
         headerAccountAvatar.src = avatar;
         headerAccountAvatar.alt = `${profile.displayName || profile.handle || 'Account'} profile picture`;
@@ -497,26 +628,166 @@ async function renderTagFollowPosts(did: string, records: TagFollowRecord[], pos
   });
 }
 
+type GraphFollowRecord = { uri: string; subject: string; createdAt: string };
+type SubscriptionRecord = { uri: string; publication: string };
+
+const graphFollowCollection = 'app.bsky.graph.follow';
+const subscriptionCollection = 'site.standard.graph.subscription';
+
+async function listGraphFollows(did: string): Promise<GraphFollowRecord[]> {
+  const records: GraphFollowRecord[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({ repo: did, collection: graphFollowCollection, limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { subject?: unknown; createdAt?: unknown } }>;
+      cursor?: unknown;
+    };
+    for (const record of page.records || []) {
+      if (typeof record.uri !== 'string' || typeof record.value?.subject !== 'string' || !record.value.subject.startsWith('did:')) continue;
+      records.push({
+        uri: record.uri,
+        subject: record.value.subject,
+        createdAt: typeof record.value.createdAt === 'string' ? record.value.createdAt : '',
+      });
+    }
+    if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+    seenCursors.add(page.cursor);
+    cursor = page.cursor;
+  } while (cursor);
+  return [...new Map(records.map((record) => [record.subject.toLowerCase(), record])).values()]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function listPublicationSubscriptions(did: string): Promise<SubscriptionRecord[]> {
+  const records: SubscriptionRecord[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const query = new URLSearchParams({ repo: did, collection: subscriptionCollection, limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const page = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: { publication?: unknown } }>;
+      cursor?: unknown;
+    };
+    for (const record of page.records || []) {
+      if (typeof record.uri !== 'string' || typeof record.value?.publication !== 'string') continue;
+      records.push({ uri: record.uri, publication: record.value.publication });
+    }
+    if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+    seenCursors.add(page.cursor);
+    cursor = page.cursor;
+  } while (cursor);
+  return records;
+}
+
+type SiteAuthor = { did: string; handle: string; displayName: string; avatar?: string };
+
+async function listSiteAuthors(): Promise<Map<string, SiteAuthor>> {
+  const authors = new Map<string, SiteAuthor>();
+  const response = await fetch('/api/documents?limit=100', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not load publication authors.');
+  const payload = await response.json() as {
+    documents?: Array<{ author?: { did?: unknown; handle?: unknown; displayName?: unknown; avatar?: unknown } }>;
+  };
+  for (const doc of payload.documents || []) {
+    const author = doc.author;
+    if (!author || typeof author.did !== 'string' || typeof author.handle !== 'string') continue;
+    const key = author.did.toLowerCase();
+    if (authors.has(key)) continue;
+    authors.set(key, {
+      did: author.did,
+      handle: author.handle,
+      displayName: typeof author.displayName === 'string' && author.displayName ? author.displayName : author.handle,
+      avatar: typeof author.avatar === 'string' ? author.avatar : undefined,
+    });
+  }
+  return authors;
+}
+
 async function renderTagFollows(did: string) {
   if (!accountPage) return;
   const list = accountPage.querySelector<HTMLElement>('[data-tag-follows-list]');
   const status = accountPage.querySelector<HTMLElement>('[data-tag-follows-status]');
   const postsList = accountPage.querySelector<HTMLElement>('[data-tag-follows-posts]');
   if (!list || !status) return;
-  status.textContent = 'Loading your followed tags…';
+  status.textContent = 'Loading who you follow…';
   try {
-    const records = await listTagFollows(did);
+    const [tagRecords, followRecords, siteAuthors] = await Promise.all([
+      listTagFollows(did),
+      listGraphFollows(did).catch(() => [] as GraphFollowRecord[]),
+      listSiteAuthors().catch(() => new Map<string, SiteAuthor>()),
+    ]);
     if (session?.did !== did) return;
+    const followedAuthors = followRecords
+      .map((record) => ({ record, author: siteAuthors.get(record.subject.toLowerCase()) }))
+      .filter((entry): entry is { record: GraphFollowRecord; author: SiteAuthor } => Boolean(entry.author));
     list.replaceChildren();
-    records.forEach((record) => {
-      const item = document.createElement('li');
-      const tagLink = document.createElement('a');
-      tagLink.href = `/tags?tag=${encodeURIComponent(record.tag)}`;
-      tagLink.textContent = record.tag;
+
+    const unfollowButton = (label: string) => {
       const unfollow = document.createElement('button');
       unfollow.type = 'button';
-      unfollow.className = 'auth-signout';
-      unfollow.textContent = 'Unfollow';
+      unfollow.className = 'account-follows-list__unfollow';
+      unfollow.setAttribute('aria-label', `Unfollow ${label}`);
+      unfollow.title = `Unfollow ${label}`;
+      unfollow.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+      return unfollow;
+    };
+
+    followedAuthors.forEach(({ record, author }) => {
+      const item = document.createElement('li');
+      item.className = 'account-follows-list__item';
+      const authorLink = document.createElement('a');
+      authorLink.href = `/author/${encodeURIComponent(author.handle)}`;
+      authorLink.className = 'account-follows-list__author';
+      const avatar = document.createElement('img');
+      avatar.src = author.avatar || '/favicon.png';
+      avatar.alt = '';
+      avatar.loading = 'lazy';
+      const name = document.createElement('span');
+      name.innerHTML = `<i class="fa-solid fa-user-pen" aria-hidden="true"></i> ${author.displayName}`;
+      const handle = document.createElement('small');
+      handle.textContent = `@${author.handle}`;
+      authorLink.append(avatar, name, handle);
+      const unfollow = unfollowButton(author.displayName);
+      unfollow.addEventListener('click', async () => {
+        unfollow.disabled = true;
+        status.textContent = `Unfollowing ${author.displayName}…`;
+        try {
+          await deleteFollowRecord(graphFollowCollection, record.uri, did);
+          // The publication subscription is shared by all author follows, so
+          // only remove it once no other followed site authors remain.
+          const [remainingFollows, subscriptions] = await Promise.all([
+            listGraphFollows(did).catch(() => [] as GraphFollowRecord[]),
+            listPublicationSubscriptions(did).catch(() => [] as SubscriptionRecord[]),
+          ]);
+          const stillFollowingAuthor = remainingFollows.some((entry) => siteAuthors.has(entry.subject.toLowerCase()));
+          if (!stillFollowingAuthor) {
+            for (const subscription of subscriptions) {
+              await deleteFollowRecord(subscriptionCollection, subscription.uri, did);
+            }
+          }
+          await renderTagFollows(did);
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          unfollow.disabled = false;
+        }
+      });
+      item.append(authorLink, unfollow);
+      list.append(item);
+    });
+
+    tagRecords.forEach((record) => {
+      const item = document.createElement('li');
+      item.className = 'account-follows-list__item';
+      const tagLink = document.createElement('a');
+      tagLink.href = `/tags?tag=${encodeURIComponent(record.tag)}`;
+      tagLink.innerHTML = `<i class="fa-solid fa-tag" aria-hidden="true"></i> ${record.tag}`;
+      const unfollow = unfollowButton(record.tag);
       unfollow.addEventListener('click', async () => {
         unfollow.disabled = true;
         status.textContent = `Unfollowing ${record.tag}…`;
@@ -531,11 +802,13 @@ async function renderTagFollows(did: string) {
       item.append(tagLink, unfollow);
       list.append(item);
     });
-    status.textContent = records.length
-      ? `Following ${records.length} ${records.length === 1 ? 'tag' : 'tags'}.`
-      : 'You are not following any tags.';
+
+    const total = followedAuthors.length + tagRecords.length;
+    status.textContent = total
+      ? `Following ${followedAuthors.length ? `${followedAuthors.length} ${followedAuthors.length === 1 ? 'author' : 'authors'}` : ''}${followedAuthors.length && tagRecords.length ? ' and ' : ''}${tagRecords.length ? `${tagRecords.length} ${tagRecords.length === 1 ? 'tag' : 'tags'}` : ''}.`
+      : 'You are not following any authors or tags.';
     if (postsList) {
-      void renderTagFollowPosts(did, records, postsList).catch((error) => {
+      void renderTagFollowPosts(did, tagRecords, postsList).catch((error) => {
         console.error('Could not load stories for followed tags:', error);
       });
     }
@@ -571,7 +844,34 @@ async function loadEmailSettings(did: string) {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'auth-signout';
-      remove.textContent = 'Remove';
+      remove.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i> Remove';
+      const resend = !entry.verified ? document.createElement('button') : null;
+      if (resend) {
+        resend.type = 'button';
+        resend.className = 'auth-signout';
+        resend.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Resend';
+        resend.addEventListener('click', async () => {
+          resend.disabled = true;
+          status.textContent = `Resending the confirmation email to ${entry.address}…`;
+          try {
+            const response = await fetch('/api/email/addresses', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ did, email: entry.address }),
+            });
+            const result = await response.json() as EmailSettingsResponse & { error?: string };
+            if (!response.ok) throw new Error(result.error || `Could not resend to ${entry.address}.`);
+            if (session?.did !== did) return;
+            renderEmails(result);
+            status.textContent = result.verificationSent
+              ? `Confirmation email sent to ${entry.address}. Open the link in it to verify the address.`
+              : `The confirmation email could not be sent right now. Try again shortly.`;
+          } catch (error) {
+            status.textContent = errorMessage(error);
+            resend.disabled = false;
+          }
+        });
+      }
       remove.addEventListener('click', async () => {
         remove.disabled = true;
         status.textContent = `Removing ${entry.address}…`;
@@ -591,7 +891,7 @@ async function loadEmailSettings(did: string) {
           remove.disabled = false;
         }
       });
-      item.append(label, badge, remove);
+      item.append(label, badge, ...(resend ? [resend] : []), remove);
       list.append(item);
     });
   };
@@ -624,9 +924,9 @@ async function loadEmailSettings(did: string) {
       const accountEmail = result.email;
       const confirmedOnPds = result.emailConfirmed === true;
       accountButton.hidden = false;
-      accountButton.textContent = confirmedOnPds
+      accountButton.innerHTML = `<i class="fa-solid fa-at" aria-hidden="true"></i> ${confirmedOnPds
         ? `Use ${accountEmail}`
-        : `Use ${accountEmail} (confirmation email required)`;
+        : `Use ${accountEmail} (confirmation email required)`}`;
       accountButton.addEventListener('click', async () => {
         accountButton.disabled = true;
         status.textContent = `Adding ${accountEmail}…`;
@@ -1629,7 +1929,11 @@ try {
     clientMetadata: oauthMetadata,
     handleResolver,
     onSessionDeleted: (did) => {
-      if (session?.did !== did) return;
+      forgetAccount(did);
+      if (session?.did !== did) {
+        renderAccountSwitchers();
+        return;
+      }
       session = undefined;
       renderAccount();
     },
@@ -1650,6 +1954,7 @@ const oauthReady = (async () => {
       const initialized = await initializeOAuthClient(client);
       if (initialized) {
         session = initialized.session;
+        rememberAccount(session.did);
         if ('state' in initialized) callbackState = initialized.state;
       }
     } catch (error) {
@@ -1768,7 +2073,8 @@ async function listOwnForumVotes(activeSession: OAuthSession) {
 }
 
 const listCollection = 'cc.coffeencode.list';
-const listItemCollection = 'cc.coffeencode.cclist.item';
+const listItemCollection = 'cc.coffeencode.list.item';
+const legacyListItemCollection = 'cc.coffeencode.cclist.item';
 const listUriPattern = /^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/cc\.coffeencode\.list\/([a-zA-Z0-9._~:-]+)$/;
 
 function ownListRkey(listUri: string, did: string) {
@@ -1815,34 +2121,47 @@ async function listOwnLists(did: string): Promise<UserListSummary[]> {
   return lists.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-async function listOwnListItems(did: string): Promise<Array<{ uri: string; rkey: string; list: string; document: string }>> {
-  const items: Array<{ uri: string; rkey: string; list: string; document: string }> = [];
-  let cursor: string | undefined;
-  const seenCursors = new Set<string>();
-  do {
-    const query = new URLSearchParams({ repo: did, collection: listItemCollection, limit: '100' });
-    if (cursor) query.set('cursor', cursor);
-    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
-    const page = await response.json() as {
-      records?: Array<{ uri?: unknown; value?: { list?: unknown; document?: unknown } }>;
-      cursor?: unknown;
-    };
-    for (const record of page.records || []) {
-      if (typeof record.uri !== 'string' || !record.uri.startsWith(`at://${did}/`)
-        || typeof record.value?.list !== 'string' || !listUriPattern.test(record.value.list)
-        || typeof record.value?.document !== 'string' || !record.value.document.startsWith('at://')) continue;
-      items.push({
-        uri: record.uri,
-        rkey: record.uri.split('/').at(-1) || '',
-        list: record.value.list,
-        document: record.value.document,
-      });
+type OwnListItem = { uri: string; rkey: string; collection: string; list: string; document: string };
+
+async function listOwnListItems(did: string): Promise<OwnListItem[]> {
+  const items: OwnListItem[] = [];
+  // Older sessions wrote items to cc.coffeencode.cclist.item; keep reading those
+  // records so existing lists keep working. New items are always written to
+  // cc.coffeencode.list.item.
+  for (const collection of [listItemCollection, legacyListItemCollection]) {
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    try {
+    do {
+      const query = new URLSearchParams({ repo: did, collection, limit: '100' });
+      if (cursor) query.set('cursor', cursor);
+      const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+      const page = await response.json() as {
+        records?: Array<{ uri?: unknown; value?: { list?: unknown; document?: unknown } }>;
+        cursor?: unknown;
+      };
+      for (const record of page.records || []) {
+        if (typeof record.uri !== 'string' || !record.uri.startsWith(`at://${did}/`)
+          || typeof record.value?.list !== 'string' || !listUriPattern.test(record.value.list)
+          || typeof record.value?.document !== 'string' || !record.value.document.startsWith('at://')) continue;
+        items.push({
+          uri: record.uri,
+          rkey: record.uri.split('/').at(-1) || '',
+          collection,
+          list: record.value.list,
+          document: record.value.document,
+        });
+      }
+      if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+      seenCursors.add(page.cursor);
+      if (seenCursors.size > 100) break;
+      cursor = page.cursor;
+    } while (cursor);
+    } catch (error) {
+      // Missing scope or an empty legacy collection should not hide the rest.
+      if (collection !== legacyListItemCollection) throw error;
     }
-    if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
-    seenCursors.add(page.cursor);
-    if (seenCursors.size > 100) break;
-    cursor = page.cursor;
-  } while (cursor);
+  }
   return items;
 }
 
@@ -2250,7 +2569,7 @@ window.coffeeAndCodeAuth = {
     for (const item of items) {
       await repoRequest('com.atproto.repo.deleteRecord', {
         repo: activeSession.did,
-        collection: listItemCollection,
+        collection: item.collection,
         rkey: item.rkey,
       });
     }
@@ -2279,11 +2598,13 @@ window.coffeeAndCodeAuth = {
     }
     const rkey = await listItemKey(listUri, documentUri);
     if (inList) {
-      await repoRequest('com.atproto.repo.deleteRecord', {
-        repo: activeSession.did,
-        collection: listItemCollection,
-        rkey,
-      });
+      // Remove any matching item in both the current and legacy collections.
+      await Promise.all([listItemCollection, legacyListItemCollection].map((collection) =>
+        repoRequest('com.atproto.repo.deleteRecord', {
+          repo: activeSession.did,
+          collection,
+          rkey,
+        }).catch(() => undefined)));
       return;
     }
     await repoRequest('com.atproto.repo.createRecord', {
@@ -2416,9 +2737,11 @@ if (authForm) {
 signoutButton?.addEventListener('click', async () => {
   await oauthReady;
   if (!session) return;
+  const signedOutDid = session.did;
   signoutButton.disabled = true;
   try {
     await session.signOut();
+    forgetAccount(signedOutDid);
     window.location.reload();
   } catch (error) {
     showAuthError(`Could not sign out: ${errorMessage(error)}`);
@@ -3682,13 +4005,16 @@ document.querySelectorAll<HTMLElement>('[data-list-page]').forEach((page) => {
         if (session?.did !== ownerDid) return;
         const rkey = remove.dataset.itemRkey || '';
         const title = remove.dataset.itemTitle || 'story';
+        const itemCollection = remove.dataset.itemCollection === legacyListItemCollection
+          ? legacyListItemCollection
+          : listItemCollection;
         if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) return;
         remove.disabled = true;
         if (status) status.textContent = `Removing “${title}”…`;
         try {
           await repoRequest('com.atproto.repo.deleteRecord', {
             repo: ownerDid,
-            collection: listItemCollection,
+            collection: itemCollection,
             rkey,
           });
           remove.closest('li')?.remove();

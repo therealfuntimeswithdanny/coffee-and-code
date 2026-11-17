@@ -24,7 +24,7 @@ import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
 import { articleReadingTime, formatDate, storyAuthor } from './src/utils';
 import { ArticleBody, ArticleTagRow, SectionBar, SkeletonImage, StoryRow, SwipeableDeleteRow, TabButton } from './src/components';
 import { cdnBlobImageUrl, imageUrlForPreset } from './src/imageUrls';
-import { listRepoRecords, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
+import { listRepoRecords, listRepoRecordsFromCollections, recordCollection, resolvePdsEndpoint, storiesFromRecords, storyRecordKey } from './src/recordStore';
 import AccountSettings, { accountSettingsPages, publicSettingsPageIds, SettingsRow } from './src/AccountSettings';
 import { cachePost, getApiBase, getCachedPost, log, registerImageUrl } from './src/developer';
 import { onNotificationResponse, registerForPushNotifications, unregisterForPushNotifications } from './src/push';
@@ -46,7 +46,9 @@ const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
 const NOTIFICATION_READ_COLLECTION = 'cc.coffeencode.notifications.read';
 const TAG_FOLLOW_COLLECTION = 'cc.coffeencode.tag.follow';
 const LIST_COLLECTION = 'cc.coffeencode.list';
-const LIST_ITEM_COLLECTION = 'cc.coffeencode.cclist.item';
+const LIST_ITEM_COLLECTION = 'cc.coffeencode.list.item';
+const LEGACY_LIST_ITEM_COLLECTION = 'cc.coffeencode.cclist.item';
+const LIST_ITEM_COLLECTIONS = [LIST_ITEM_COLLECTION, LEGACY_LIST_ITEM_COLLECTION];
 const AUTHOR_FOLLOW_COLLECTION = 'cc.coffeencode.author.follow';
 
 function profileBlobUrl(blob, did, preset) {
@@ -617,7 +619,7 @@ export default function App() {
       try {
         const [listRecords, itemRecords] = await Promise.all([
           listRepoRecords(activeAccount.agent, activeAccount.session.did, LIST_COLLECTION),
-          listRepoRecords(activeAccount.agent, activeAccount.session.did, LIST_ITEM_COLLECTION).catch(() => []),
+          listRepoRecordsFromCollections(activeAccount.agent, activeAccount.session.did, LIST_ITEM_COLLECTIONS),
         ]);
         if (cancelled) return;
         const lists = listRecords.map((record) => parseListRecord(record, activeAccount.session.did)).filter(Boolean)
@@ -644,7 +646,7 @@ export default function App() {
     if (!account?.agent || !list?.uri) return;
     setActiveList({ list, items: null, loading: true, error: '' });
     try {
-      const records = await listRepoRecords(account.agent, account.session.did, LIST_ITEM_COLLECTION);
+      const records = await listRepoRecordsFromCollections(account.agent, account.session.did, LIST_ITEM_COLLECTIONS);
       const seen = new Set();
       const items = records
         .filter((record) => record.value?.list === list.uri && typeof record.value?.document === 'string'
@@ -753,10 +755,10 @@ export default function App() {
     if (!account?.agent || !list?.uri || listBusy) return;
     setListBusy(true);
     try {
-      const itemRecords = await listRepoRecords(account.agent, account.session.did, LIST_ITEM_COLLECTION);
+      const itemRecords = await listRepoRecordsFromCollections(account.agent, account.session.did, LIST_ITEM_COLLECTIONS);
       for (const record of itemRecords) {
         if (record.value?.list === list.uri && typeof record.uri === 'string') {
-          await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: LIST_ITEM_COLLECTION, rkey: record.uri.split('/').pop() });
+          await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: recordCollection(record.uri) || LIST_ITEM_COLLECTION, rkey: record.uri.split('/').pop() });
         }
       }
       await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: LIST_COLLECTION, rkey: list.rkey });
@@ -796,7 +798,7 @@ export default function App() {
     if (!account?.agent || !list?.uri || !story?.listItemUri || listBusy) return;
     setListBusy(true);
     try {
-      await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: LIST_ITEM_COLLECTION, rkey: story.listItemUri.split('/').pop() });
+      await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: recordCollection(story.listItemUri) || LIST_ITEM_COLLECTION, rkey: story.listItemUri.split('/').pop() });
       setActiveList((current) => current ? { ...current, items: (current.items || []).filter((item) => item.listItemUri !== story.listItemUri) } : current);
       setUserListCounts((current) => ({ ...current, [list.uri]: Math.max(0, (current[list.uri] || 0) - 1) }));
     } catch (removeError) {

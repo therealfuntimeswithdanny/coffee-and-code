@@ -43,6 +43,16 @@
             "cc.coffeencode.interact.dislike",
             "cc.coffeencode.save",
             "cc.coffeencode.user.block",
+            "cc.coffeencode.list.item"
+          ]
+        },
+        {
+          "type": "permission",
+          "action": [
+            "delete"
+          ],
+          "resource": "repo",
+          "collection": [
             "cc.coffeencode.cclist.item"
           ]
         },
