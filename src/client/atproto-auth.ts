@@ -598,31 +598,40 @@ async function loadEmailSettings(did: string) {
     return;
   }
 
-  // The account's own email comes from its PDS session, so it needs no
-  // confirmation step. Reading it requires the transition:email OAuth scope;
-  // when the session predates that scope the button simply stays hidden.
+  // The account's own email comes from its PDS session (granted by the
+  // transition:email scope), so a PDS-confirmed address needs no further
+  // verification. An unconfirmed account email falls back to our own
+  // confirmation email, like any manually added address. When the session
+  // predates the scope the button simply stays hidden.
   void requireSession().fetchHandler('/xrpc/com.atproto.server.getSession')
     .then(async (response) => {
       if (!response.ok) return;
-      const result = await response.json() as { email?: unknown };
+      const result = await response.json() as { email?: unknown; emailConfirmed?: unknown };
       if (session?.did !== did || typeof result.email !== 'string' || !result.email) return;
+      const accountEmail = result.email;
+      const confirmedOnPds = result.emailConfirmed === true;
       accountButton.hidden = false;
-      accountButton.textContent = `Use ${result.email}`;
+      accountButton.textContent = confirmedOnPds
+        ? `Use ${accountEmail}`
+        : `Use ${accountEmail} (confirmation email required)`;
       accountButton.addEventListener('click', async () => {
         accountButton.disabled = true;
-        status.textContent = `Adding ${result.email}…`;
+        status.textContent = `Adding ${accountEmail}…`;
         try {
-          const addResponse = await fetch('/api/email/account-email', {
+          const addResponse = await fetch(confirmedOnPds ? '/api/email/account-email' : '/api/email/addresses', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ did, email: result.email }),
+            body: JSON.stringify({ did, email: accountEmail }),
           });
           const payload = await addResponse.json() as EmailSettingsResponse & { error?: string };
           if (!addResponse.ok) throw new Error(payload.error || 'Could not add your account email.');
           if (session?.did !== did) return;
           renderEmails(payload);
-          status.textContent = `${result.email} added — it is already verified through your account sign-in.`;
-          accountButton.hidden = true;
+          status.textContent = confirmedOnPds
+            ? `${accountEmail} added — it is already verified through your account.`
+            : `Confirmation email sent to ${accountEmail}. Open the link in it to verify the address.`;
+          if (confirmedOnPds) accountButton.hidden = true;
+          else accountButton.disabled = false;
         } catch (error) {
           status.textContent = errorMessage(error);
           accountButton.disabled = false;
