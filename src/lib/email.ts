@@ -1,26 +1,33 @@
 import type { Env } from '../types';
 import type { Notification } from './notifications';
-import layoutTemplate from '../../cloudflare/email/templates/layout.html';
 import verificationTemplate from '../../cloudflare/email/templates/verification.html';
-import verificationFooterTemplate from '../../cloudflare/email/templates/verification-footer.html';
 import digestTemplate from '../../cloudflare/email/templates/digest.html';
-import digestItemTemplate from '../../cloudflare/email/templates/digest-item.html';
-import digestFooterTemplate from '../../cloudflare/email/templates/digest-footer.html';
 
 // Email is sent through a Cloudflare `send_email` binding (see wrangler.toml).
 // The binding is optional so `wrangler dev` keeps working without one; sends
 // are logged and skipped when it is absent.
 export type SendEmailBinding = {
-  send(message: { from: string; to: string; raw: string | ArrayBuffer | ReadableStream }): Promise<void>;
+  send(message: EmailMessage): Promise<void>;
 };
 
 const FROM_ADDRESS = 'newsletter@coffeencode.cc';
 const SITE_ORIGIN = 'https://coffeencode.cc';
 
-// Templates in cloudflare/email/templates use {{name}} placeholders; every
-// value passed here is already HTML-escaped or a trusted URL.
+// Templates in cloudflare/email/templates are complete documents using
+// {{name}} placeholders; every value passed here is already HTML-escaped or
+// a trusted URL. A repeating block is written once at the bottom of the
+// template between {{#item}} and {{/item}} markers and expanded by render().
 function fill(template: string, vars: Record<string, string>) {
   return template.replace(/\{\{([a-zA-Z]+)\}\}/g, (match, key: string) => vars[key] ?? match);
+}
+
+// Splits a template into its document and the {{#item}} repeating block.
+function splitItemBlock(template: string) {
+  const match = template.match(/\{\{#item\}\}([\s\S]*?)\{\{\/item\}\}/);
+  return {
+    document: match ? template.replace(match[0], '') : template,
+    item: match ? match[1] : '',
+  };
 }
 
 export function escapeHtml(value: string) {
@@ -77,18 +84,17 @@ export async function sendEmail(env: Env, options: {
     return false;
   }
   try {
-    await env.EMAIL.send({
-      from: FROM_ADDRESS,
+    // EmailMessage is a runtime-provided class, not a plain object.
+    const { EmailMessage } = await import('cloudflare:email');
+    const raw = buildMime({
+      fromName: env.PUB_NAME || 'Coffee & Code',
       to: options.to,
-      raw: buildMime({
-        fromName: env.PUB_NAME || 'Coffee & Code',
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-        unsubscribeUrl: options.unsubscribeUrl,
-      }),
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+      unsubscribeUrl: options.unsubscribeUrl,
     });
+    await env.EMAIL.send(new EmailMessage(FROM_ADDRESS, options.to, raw));
     return true;
   } catch (error) {
     console.error(`Email send to ${options.to} failed:`, error);
@@ -96,29 +102,13 @@ export async function sendEmail(env: Env, options: {
   }
 }
 
-// The shared chrome mirrors the site's coffee-brown palette (see
-// SITE-DESIGN.md) with table markup and inline styles for email-client
-// compatibility.
-function renderEmailPage(pubName: string, preheader: string, bodyHtml: string, footerHtml: string) {
-  return fill(layoutTemplate, { pubName, preheader, body: bodyHtml, footer: footerHtml });
-}
-
 export function verificationEmail(env: Env, verifyUrl: string) {
   const pubName = env.PUB_NAME || 'Coffee & Code';
-  const body = fill(verificationTemplate, {
+  const html = fill(verificationTemplate, {
     pubName: escapeHtml(pubName),
     verifyUrl: escapeHtml(verifyUrl),
-  });
-  const footer = fill(verificationFooterTemplate, {
-    pubName: escapeHtml(pubName),
     siteUrl: SITE_ORIGIN,
   });
-  const html = renderEmailPage(
-    escapeHtml(pubName),
-    'Confirm this email address for Coffee & Code story notifications.',
-    body,
-    footer,
-  );
   const text = `Confirm your email address\n\n`
     + `Someone added this address to ${pubName} story notifications. Confirm it within 24 hours to start receiving new stories:\n\n${verifyUrl}\n\n`
     + `If you did not request this, you can ignore this email — the address will not be used.`;
@@ -138,23 +128,20 @@ export function followedPostsEmail(env: Env, notifications: Notification[], unsu
       url, title, reason,
     };
   });
-  const itemsHtml = items.map((item) => fill(digestItemTemplate, {
+  const digest = splitItemBlock(digestTemplate);
+  const itemsHtml = items.map((item) => fill(digest.item, {
     url: escapeHtml(item.url),
     title: escapeHtml(item.title),
     reason: escapeHtml(item.reason),
   })).join('');
   const heading = items.length === 1 ? '1 new story for you' : `${items.length} new stories for you`;
-  const body = fill(digestTemplate, {
+  const html = fill(digest.document, {
     heading: escapeHtml(heading),
     pubName: escapeHtml(pubName),
     items: itemsHtml,
-  });
-  const footer = fill(digestFooterTemplate, {
-    pubName: escapeHtml(pubName),
     manageUrl: escapeHtml(manageUrl),
     unsubscribeUrl: escapeHtml(unsubscribeUrl),
   });
-  const html = renderEmailPage(escapeHtml(pubName), `${heading} from the people and tags you follow.`, body, footer);
   const text = `${heading}\n\n`
     + items.map((item) => `${item.title}\n${item.reason}\n${item.url}`).join('\n\n')
     + `\n\nManage email settings: ${manageUrl}\nUnsubscribe: ${unsubscribeUrl}`;

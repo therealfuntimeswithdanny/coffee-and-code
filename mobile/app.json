@@ -27,7 +27,13 @@
     "plugins": [
       "expo-web-browser",
       "expo-dev-client",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Let Coffee & Code use your photos as a list image."
+        }
+      ]
     ]
   }
 }

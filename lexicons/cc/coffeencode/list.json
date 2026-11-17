@@ -25,6 +25,12 @@
             "description": "An emoji or an https image URL shown next to the list title.",
             "maxLength": 2048
           },
+          "image": {
+            "type": "blob",
+            "accept": ["image/*"],
+            "maxSize": 2000000,
+            "description": "An uploaded image shown next to the list title. Takes precedence over icon when both are set."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime"

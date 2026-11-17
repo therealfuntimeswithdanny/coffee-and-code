@@ -16,7 +16,7 @@ import { LegalSettings } from './legal';
 export const accountSettingsPages = [
   { id: 'account', title: 'Manage Identity', subtitle: 'Manage your identity and perform destructive actions', icon: 'person.crop.circle' },
   { id: 'reading', title: 'Public activity', subtitle: 'View and delete public records. Likes, views, saves, etc.', icon: 'book' },
-  { id: 'follows', title: 'Following', subtitle: 'Tags you follow for new-story notifications', icon: 'tag' },
+  { id: 'follows', title: 'Following', subtitle: 'Authors and tags you follow for new-story notifications', icon: 'tag' },
   { id: 'blocked', title: 'Moderation', subtitle: 'Manage your blocked accounts and moderation preferences', icon: 'hand.raised' },
   { id: 'ads', title: 'Ads and Marketing', subtitle: 'Manage your ads and marketing preferences', icon: 'bag' },
   { id: 'legal', title: 'Legal', subtitle: 'Terms of service and Privacy Policy', icon: 'hand.raised.slash' },
@@ -27,10 +27,11 @@ export const accountSettingsPages = [
 
 export const publicSettingsPageIds = ['ads', 'legal', 'feedback', 'about', 'developer'];
 
-export function SettingsRow({ icon, title, subtitle, onPress, destructive = false }) {
+export function SettingsRow({ icon, title, subtitle, onPress, destructive = false, badge = 0 }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={styles.settingsRow}>
     <View style={styles.settingsIcon}><SymbolView name={icon} size={17} tintColor={destructive ? C.error : C.muted} /></View>
     <View style={styles.settingsCopy}><Text style={[styles.authorName, destructive && { color: C.error }]}>{title}</Text>{!!subtitle && <Text style={styles.meta}>{subtitle}</Text>}</View>
+    {badge > 0 && <View style={styles.settingsRowBadge}><Text style={styles.settingsRowBadgeText}>{badge > 99 ? '99+' : badge}</Text></View>}
     <SymbolView name="chevron.right" size={15} tintColor={C.muted} />
   </Pressable>;
 }
@@ -158,7 +159,7 @@ function DeveloperSettings() {
   </View>;
 }
 
-export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, tagFollows = [], savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onToggleTagFollow, onSignOut }) {
+export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, tagFollows = [], authors = [], authorFollows = [], savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onToggleTagFollow, onToggleAuthorFollow, onSignOut }) {
   const [page, setPage] = useState(initialPage);
   const pages = account ? accountSettingsPages : accountSettingsPages.filter((item) => publicSettingsPageIds.includes(item.id));
   const selected = pages.find((item) => item.id === page);
@@ -191,7 +192,37 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
         <Text style={styles.settingsMetric}>{savedCount}<Text style={styles.meta}>  SAVED STORIES</Text></Text>
       </View>}
       {page === 'follows' && <View style={styles.settingsCard}>
-        <Text style={styles.accountDescription}>Stories published under tags you follow appear in your notifications. Follow a tag from the search tab.</Text>
+        <Text style={styles.accountDescription}>New posts from authors and tags you follow appear in your notifications.</Text>
+        <Text style={styles.fieldLabel}>AUTHORS</Text>
+        {(() => {
+          const isFollowed = (did) => authorFollows.some((follow) => follow.did?.toLowerCase() === did?.toLowerCase());
+          const knownDids = new Set(authors.map((author) => author.did));
+          const extraFollows = authorFollows.filter((follow) => !knownDids.has(follow.did));
+          const authorRow = (author) => {
+            const followed = isFollowed(author.did);
+            return <View key={author.did} style={styles.blockedAccountRow}>
+              {author.avatar
+                ? <Image source={{ uri: author.avatar }} accessibilityLabel={`${author.displayName || author.handle} profile photo`} style={styles.followAuthorAvatar} />
+                : <View style={[styles.followAuthorAvatar, styles.followAuthorAvatarPlaceholder]}><Text style={styles.avatarInitial}>{(author.displayName || author.handle || 'C')[0].toUpperCase()}</Text></View>}
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={styles.accountIdentityValue}>{author.displayName || author.handle || author.did}</Text>
+                {!!author.handle && <Text numberOfLines={1} style={styles.meta}>@{author.handle}</Text>}
+              </View>
+              <Pressable accessibilityRole="button" accessibilityState={{ selected: followed }} accessibilityLabel={`${followed ? 'Unfollow' : 'Follow'} ${author.displayName || author.handle || author.did}`} disabled={accountBusy} onPress={() => onToggleAuthorFollow?.(author)} style={styles.accountRemoveButton}>
+                <Text style={styles.action}>{followed ? 'FOLLOWING' : 'FOLLOW'}</Text>
+              </Pressable>
+            </View>;
+          };
+          return <>
+            {authors.length ? authors.map(authorRow) : extraFollows.length ? extraFollows.map(authorRow) : <Text style={styles.emptyText}>Authors will appear here once the feed loads.</Text>}
+            {!!authors.length && !!extraFollows.length && extraFollows.map((follow) => <View key={follow.did} style={styles.blockedAccountRow}>
+              <View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.accountIdentityValue}>{follow.did}</Text></View>
+              <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => onToggleAuthorFollow?.(follow)} style={styles.accountRemoveButton}><Text style={styles.action}>FOLLOWING</Text></Pressable>
+            </View>)}
+          </>;
+        })()}
+        <Text style={[styles.fieldLabel, { marginTop: 16 }]}>TAGS</Text>
+        <Text style={styles.accountDescription}>Follow a tag from the Archive tab.</Text>
         {tagFollows.length ? tagFollows.map((follow) => <View key={follow.rkey || follow.tag} style={styles.blockedAccountRow}>
           <View style={{ flex: 1 }}><Text style={styles.accountIdentityValue}>{follow.tag}</Text><Text style={styles.meta}>Following since {formatDate(follow.createdAt) || 'recently'}</Text></View>
           <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => onToggleTagFollow?.(follow.tag)} style={styles.accountRemoveButton}><Text style={styles.action}>UNFOLLOW</Text></Pressable>

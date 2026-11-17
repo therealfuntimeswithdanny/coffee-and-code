@@ -6,6 +6,7 @@ import {
   fetchUserProfileFields,
   getPdsEndpoint,
   proxyAvatarUrl,
+  proxyBlobUrl,
   proxyImageUrl,
   resolveAtprotoIdentifier,
 } from '../lib/atproto';
@@ -26,6 +27,7 @@ type UserListRecord = {
   title: string;
   about?: string;
   icon?: string;
+  image?: { ref: { $link: string }; mimeType?: string; size?: number };
   createdAt: string;
 };
 
@@ -125,7 +127,15 @@ function validListRecord(uri: unknown, value: { title?: unknown; createdAt?: unk
     && typeof rkey === 'string' && /^[a-zA-Z0-9._~:-]+$/.test(rkey);
 }
 
-function parseListRecord(uri: unknown, value: { title?: unknown; about?: unknown; icon?: unknown; createdAt?: unknown } | undefined): UserListRecord | undefined {
+function validListImage(image: unknown): image is { ref: { $link: string }; mimeType?: string; size?: number } {
+  if (typeof image !== 'object' || image === null) return false;
+  const value = image as { ref?: { $link?: unknown }; mimeType?: unknown; size?: unknown };
+  return typeof value.ref?.$link === 'string' && Boolean(value.ref.$link)
+    && (value.mimeType === undefined || (typeof value.mimeType === 'string' && value.mimeType.startsWith('image/')))
+    && (value.size === undefined || (typeof value.size === 'number' && value.size <= 2_000_000));
+}
+
+function parseListRecord(uri: unknown, value: { title?: unknown; about?: unknown; icon?: unknown; image?: unknown; createdAt?: unknown } | undefined): UserListRecord | undefined {
   if (!validAtUri(uri)) return undefined;
   let rkey: string;
   try {
@@ -134,12 +144,14 @@ function parseListRecord(uri: unknown, value: { title?: unknown; about?: unknown
   if (!validListRecord(uri, value, rkey)) return undefined;
   const icon = typeof value?.icon === 'string' ? value.icon.trim() : '';
   const about = typeof value?.about === 'string' ? value.about.trim() : '';
+  const image = validListImage(value?.image) ? value!.image : undefined;
   return {
     uri,
     rkey,
     title: (value!.title as string).trim(),
     ...(about ? { about: about.slice(0, 2000) } : {}),
     ...(icon && (icon.length <= 8 || /^https:\/\//i.test(icon)) ? { icon } : {}),
+    ...(image ? { image } : {}),
     createdAt: value!.createdAt as string,
   };
 }
@@ -213,7 +225,10 @@ async function fetchListRecord(pds: string, did: string, rkey: string): Promise<
   return parseListRecord(record.uri, record.value);
 }
 
-function renderListIcon(icon: string | undefined, extraClass = '') {
+function renderListIcon(list: UserListRecord, did: string, extraClass = '') {
+  const blobCid = list.image?.ref?.$link;
+  if (blobCid) return `<img class="list-page__icon${extraClass ? ` ${extraClass}` : ''}" src="${escapeHtml(proxyBlobUrl({ did, cid: blobCid }, 'avatar_small'))}" alt="" width="64" height="64" loading="lazy" decoding="async">`;
+  const icon = list.icon;
   if (!icon) return `<span class="list-page__icon list-page__icon--empty${extraClass ? ` ${extraClass}` : ''}" aria-hidden="true"><i class="fa-solid fa-list"></i></span>`;
   if (/^https:\/\//i.test(icon)) return `<img class="list-page__icon${extraClass ? ` ${extraClass}` : ''}" src="${escapeHtml(proxyImageUrl(icon))}" alt="" width="64" height="64" loading="lazy" decoding="async">`;
   return `<span class="list-page__icon list-page__icon--emoji${extraClass ? ` ${extraClass}` : ''}" aria-hidden="true">${escapeHtml(icon)}</span>`;
@@ -269,7 +284,7 @@ users.get('/:identifier/lists', async (c) => {
   const items = lists.map((list) => {
     const href = `/user/${encodeURIComponent(profile.handle)}/list/${encodeURIComponent(list.rkey)}`;
     return `<li class="list-card">
-      ${renderListIcon(list.icon, 'list-card__icon')}
+      ${renderListIcon(list, did, 'list-card__icon')}
       <div class="list-card__body">
         <h2><a href="${escapeHtml(href)}">${escapeHtml(list.title)}</a></h2>
         ${list.about ? `<p>${escapeHtml(list.about)}</p>` : ''}
@@ -370,7 +385,7 @@ users.get('/:identifier/list/:rkey', async (c) => {
   const body = `
     <section class="user-page list-page" aria-labelledby="list-title" data-list-page data-list-uri="${escapeHtml(list.uri)}" data-list-owner-did="${escapeHtml(did)}">
       <header class="list-page__header">
-        ${renderListIcon(list.icon)}
+        ${renderListIcon(list, did)}
         <div class="list-page__heading">
           <h1 id="list-title">${escapeHtml(list.title)}</h1>
           <p class="list-page__owner">A list by <a href="/user/${encodeURIComponent(profile.handle)}">${escapeHtml(name)}</a></p>

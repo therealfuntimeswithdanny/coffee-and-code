@@ -1,13 +1,14 @@
-const VERSION = "5.0.0";
+const VERSION = "5.1.0";
 const ADMIN_DID = "did:plc:l37td5yhxl2irrzrgvei4qay";
 const CONTACT_EMAIL = "atcdn@danielmorrisey.com";
 const SERVICE_NAME = "atCDN for Bluesky & the AT Protocol by the BlueAT Network";
 const PLC_DIRECTORIES = ["https://plc.eurosky.network", "https://plc.directory"];
 const DID_TTL_MS = 86_400_000; // 24 hours
 const NEGATIVE_TTL_S = 60;     // remember missing blobs briefly
-const IMG_CACHE_VERSION = "original-feed-thumbnails-v1";
+const IMG_CACHE_VERSION = "imgproxy-v1";
 const PDS_TIMEOUT_MS = 10_000;
 const PLC_TIMEOUT_MS = 5_000;
+const MAX_DIM = 4000;
 
 const DID_RE = /^did:(?:plc:[a-z2-7]{24}|web:[A-Za-z0-9._:%-]+)$/;
 const CID_RE = /^[A-Za-z0-9]{10,128}$/;
@@ -56,48 +57,23 @@ const PRESETS = {
   wide_large:  { width: 1920, height: 1080, fit: "cover" },
 };
 
-// Default transforms for /img/{type}/ (matching cdn.bsky.app behavior)
+// /img/{type} sizes (matches the landing page table).
+// *_fullsize and feed_thumbnail are not listed, so they serve the original.
 const IMG_TYPES = {
   avatar_thumbnail: { width: 64,   height: 64,   fit: "cover"  },
   avatar_thumb:     { width: 128,  height: 128,  fit: "cover"  },
   avatar_small:     { width: 240,  height: 240,  fit: "cover"  },
   avatar_medium:    { width: 400,  height: 400,  fit: "cover"  },
   avatar_large:     { width: 640,  height: 640,  fit: "cover"  },
-
-  banner_thumbnail: { width: 300,  height: 100,  fit: "cover"  },
   banner_thumb:     { width: 600,  height: 200,  fit: "cover"  },
   banner_small:     { width: 900,  height: 300,  fit: "cover"  },
   banner_medium:    { width: 1200, height: 400,  fit: "cover"  },
   banner_large:     { width: 1500, height: 500,  fit: "cover"  },
-
-  feed_thumbnail:   { width: 200,  height: 200,  fit: "cover"  },
-  feed_thumb:       { width: 400,  height: 400,  fit: "cover"  },
-  feed_card:        { width: 360,  height: 240,  fit: "cover"  },
-  feed_small:       { width: 600,  height: 600,  fit: "cover"  },
-  feed_medium:      { width: 800,  height: 800,  fit: "cover"  },
-  feed_large:       { width: 1200, height: 1200, fit: "cover"  },
-
-  thumb:  { width: 150,  height: 150,  fit: "cover"  },
-  small:  { width: 320,  height: 320,  fit: "inside" },
-  medium: { width: 640,  height: 640,  fit: "inside" },
-  large:  { width: 1024, height: 1024, fit: "inside" },
-  full:   { width: 2000, height: 2000, fit: "inside" },
-
-  wide_thumb:  { width: 320,  height: 180,  fit: "cover" },
-  wide_small:  { width: 640,  height: 360,  fit: "cover" },
-  wide_card:   { width: 800,  height: 450,  fit: "cover" },
-  wide_medium: { width: 1280, height: 720, fit: "cover" },
-  wide_large:  { width: 1920, height: 1080, fit: "cover" },
+  feed_thumb:       { width: 400,  height: 400,  fit: "inside" },
+  feed_small:       { width: 600,  height: 600,  fit: "inside" },
+  feed_medium:      { width: 800,  height: 800,  fit: "inside" },
+  feed_large:       { width: 1200, height: 1200, fit: "inside" },
 };
-
-const IMG_ORIGINAL_TYPES = new Set([
-  "avatar",
-  "avatar_fullsize",
-  "banner",
-  "banner_fullsize",
-  "feed_thumbnail",
-  "feed_fullsize",
-]);
 
 const LANDING_PAGE = `<!DOCTYPE html>
 <html>
@@ -122,6 +98,7 @@ const LANDING_PAGE = `<!DOCTYPE html>
         <p>PLC Directories:</p>
         <ul id="plc-health"><li>Loading...</li></ul>
         <p>D1 Cache: <span id="d1-status">-</span></p>
+        <p>Image proxy: <span id="imgproxy-status">-</span></p>
         <p id="db-stats"></p>
     </div>
     <hr>
@@ -203,7 +180,7 @@ const LANDING_PAGE = `<!DOCTYPE html>
     <ul>
         <li><code>GET /img/{type}/plain/{did}/{cid}[@ext]</code> - Bluesky social-app format</li>
         <li><code>GET /blob/{did}/{cid}[@ext]/{preset}</code> - Generic AT Protocol format</li>
-        <li><code>GET /blob/{did}/{cid}?w=256&h=256&fit=crop</code> - Custom transforms</li>
+        <li><code>GET /blob/{did}/{cid}?w=256&h=256&fit=crop</code> - Resize via query params (WebP when the browser accepts it)</li>
         <li><code>GET /presets</code> - List all presets</li>
         <li><code>GET /xrpc/_health</code> - Health check</li>
         <li><code>GET /clear</code> - Clear DID cache</li>
@@ -256,6 +233,13 @@ const LANDING_PAGE = `<!DOCTYPE html>
 
                 // D1 cache status
                 document.getElementById("d1-status").textContent = data.d1_cache_enabled ? "Enabled" : "Disabled";
+
+                // Image proxy status
+                const ip = data.imgproxy;
+                document.getElementById("imgproxy-status").textContent = !ip.configured
+                    ? "Not configured (serving originals)"
+                    : ip.ok ? "OK (" + ip.status + ")" : "DOWN (" + ip.status + ") - serving originals";
+                document.getElementById("imgproxy-status").style.color = !ip.configured ? "" : ip.ok ? "green" : "red";
 
                 // DB stats
                 if (data.db && !data.db.disabled) {
@@ -359,6 +343,7 @@ export default {
           service: SERVICE_NAME,
           usage: "/blob/{did}/{cid}/{preset}",
           query_params: "Or use /blob/{did}/{cid}?w=256&h=256&fit=crop",
+          note: "Resized by imgproxy. WebP when the client sends Accept: image/webp, otherwise JPEG. Unknown presets serve the original.",
           presets: PRESETS,
         });
       case "/clear": {
@@ -377,12 +362,14 @@ export default {
     if (!DID_RE.test(route.did)) return new Response("Invalid DID", { status: 400 });
     if (!CID_RE.test(route.cid)) return new Response("Invalid CID", { status: 400 });
 
+    route.fmt = pickFormat(request);
+    route.size = imgproxyReady(env) ? resolveSize(route, url) : null;
+
     const cache = caches.default;
-    const cacheHeaders = new Headers();
-    if (route.transform) cacheHeaders.set("Accept", request.headers.get("Accept") || "");
     const cacheUrl = new URL(request.url);
-    if (route.format === "img") cacheUrl.searchParams.set("__cache", IMG_CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl, { method: "GET", headers: cacheHeaders });
+    cacheUrl.searchParams.set("__cache", IMG_CACHE_VERSION);
+    cacheUrl.searchParams.set("__fmt", route.size ? route.fmt : "orig");
+    const cacheKey = new Request(cacheUrl, { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
       const age = Date.now() - Date.parse(cached.headers.get("X-Cached-At") || 0);
@@ -393,7 +380,7 @@ export default {
     }
 
     try {
-      const res = await fetchBlob(env, ctx, route, d1, request.headers.get("Accept"));
+      const res = await fetchBlob(env, ctx, route, d1);
 
       if (res === null) return new Response("PDS Not Found", { status: 404 });
 
@@ -430,15 +417,83 @@ export default {
   },
 };
 
+// ── imgproxy ──────────────────────────────────────────────────────────────────
+
+function imgproxyReady(env) {
+  return !!(env.IMGPROXY_URL && env.IMGPROXY_KEY && env.IMGPROXY_SALT);
+}
+
+// WebP when the client accepts it, otherwise JPEG
+function pickFormat(request) {
+  return (request.headers.get("Accept") || "").includes("image/webp") ? "webp" : "jpeg";
+}
+
+// Returns { width, height, fit } or null (serve the original)
+function resolveSize(route, url) {
+  if (route.format === "img") return IMG_TYPES[route.type] ?? null;
+
+  if (route.preset && PRESETS[route.preset]) return PRESETS[route.preset];
+
+  const q = url.searchParams;
+  const w = parseInt(q.get("w"), 10) || 0;
+  const h = parseInt(q.get("h"), 10) || 0;
+  if (w > 0 || h > 0) {
+    const f = q.get("fit");
+    return {
+      width: Math.min(w, MAX_DIM),
+      height: Math.min(h, MAX_DIM),
+      fit: f === "crop" || f === "cover" ? "cover" : "inside",
+    };
+  }
+  return null;
+}
+
+const hex = (s) => Uint8Array.from(s.match(/../g), (h) => parseInt(h, 16));
+const b64url = (buf) =>
+  btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function imgproxyUrl(env, sourceUrl, size, fmt) {
+  const resizeType = size.fit === "cover" ? "fill" : "fit";
+  const path = `/rs:${resizeType}:${size.width}:${size.height}/f:${fmt}/plain/${encodeURIComponent(sourceUrl)}`;
+
+  const key = await crypto.subtle.importKey(
+    "raw", hex(env.IMGPROXY_KEY), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const salt = hex(env.IMGPROXY_SALT);
+  const pathBytes = new TextEncoder().encode(path);
+  const data = new Uint8Array(salt.length + pathBytes.length);
+  data.set(salt);
+  data.set(pathBytes, salt.length);
+  const sig = b64url(await crypto.subtle.sign("HMAC", key, data));
+
+  return `${env.IMGPROXY_URL.replace(/\/$/, "")}/${sig}${path}`;
+}
+
+// Fetch the blob via imgproxy when a size applies; fall back to the original if imgproxy fails.
+async function fetchSource(env, blobUrl, route) {
+  if (route.size) {
+    try {
+      const res = await fetch(await imgproxyUrl(env, blobUrl, route.size, route.fmt), {
+        signal: AbortSignal.timeout(PDS_TIMEOUT_MS + 5_000),
+      });
+      if (res.ok || res.status === 404) return res; // 404 keeps the stale avatar/banner retry working
+      res.body?.cancel();
+    } catch {}
+    route.size = null; // fallback: serve the original and label the response honestly
+  }
+  return pdsFetch(blobUrl);
+}
+
 // ── Origin fetch ──────────────────────────────────────────────────────────────
 
-// Returns a Response from the PDS, or null if the DID can't be resolved.
-async function fetchBlob(env, ctx, { did, cid, format, type, transform }, d1, accept) {
+// Returns a Response from imgproxy/the PDS, or null if the DID can't be resolved.
+async function fetchBlob(env, ctx, route, d1) {
+  const { did, cid, format, type } = route;
   const pds = await resolvePds(env, ctx, did, d1);
   if (!pds) return null;
 
   const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${cid}`;
-  let res = await fetchBlobResponse(blobUrl, transform, accept);
+  let res = await fetchSource(env, blobUrl, route);
 
   // Avatar/banner CIDs go stale when a profile changes: retry with the current one
   const field = type?.startsWith("avatar") ? "avatar" : type?.startsWith("banner") ? "banner" : null;
@@ -446,50 +501,26 @@ async function fetchBlob(env, ctx, { did, cid, format, type, transform }, d1, ac
     res.body?.cancel();
     const current = await currentProfileCid(pds, did, field);
     if (current && current !== cid) {
-      res = await fetchBlobResponse(
+      res = await fetchSource(
+        env,
         `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${current}`,
-        transform,
-        accept,
+        route
       );
     }
   }
   return res;
 }
 
-async function fetchBlobResponse(url, transform, accept) {
-  const res = await pdsFetch(url, transform, accept);
-  if (!transform || ![400, 415, 500, 502, 503].includes(res.status)) return res;
-  res.body?.cancel();
-  return pdsFetch(url);
-}
-
 async function refresh(env, ctx, route, cache, cacheKey, d1) {
   try {
-    const res = await fetchBlob(env, ctx, route, d1, cacheKey.headers.get("Accept"));
+    const res = await fetchBlob(env, ctx, route, d1);
     if (res?.ok) await cache.put(cacheKey, buildResponse(res, route));
     else res?.body?.cancel(); // keep the existing copy
   } catch {}
 }
 
-function pdsFetch(url, transform, accept) {
-  const options = { signal: AbortSignal.timeout(PDS_TIMEOUT_MS) };
-  if (transform) {
-    const fit = transform.fit === "inside"
-      ? "scale-down"
-      : transform.fit === "outside"
-        ? "cover"
-        : transform.fit;
-    options.cf = {
-      image: {
-        ...transform,
-        fit,
-        quality: transform.quality || 80,
-        format: "auto",
-      },
-    };
-    options.headers = { Accept: accept || "image/avif,image/webp,image/*,*/*" };
-  }
-  return fetch(url, options);
+function pdsFetch(url) {
+  return fetch(url, { signal: AbortSignal.timeout(PDS_TIMEOUT_MS) });
 }
 
 async function currentProfileCid(pds, did, field) {
@@ -500,8 +531,8 @@ async function currentProfileCid(pds, did, field) {
   return (await res.json()).value?.[field]?.ref?.$link ?? null;
 }
 
-function buildResponse(source, { format, transform }) {
-  const cacheControl = format === "img"
+function buildResponse(source, route) {
+  const cacheControl = route.format === "img"
     ? "public, max-age=86400"
     : "public, max-age=31536000, immutable";
   const headers = new Headers({
@@ -511,14 +542,13 @@ function buildResponse(source, { format, transform }) {
     "Content-Security-Policy": "default-src 'none'; sandbox", // blobs are user-controlled
     "X-Content-Type-Options": "nosniff",
     "X-Cached-At": new Date().toUTCString(),
-    "X-Format": format,
+    "X-Format": route.format,
   });
-  if (transform) headers.set("Vary", "Accept");
+  if (route.size) headers.set("Vary", "Accept");
   for (const h of ["etag", "last-modified"]) {
     const v = source.headers.get(h);
     if (v) headers.set(h, v);
   }
-  if (transform) headers.set("X-Transform", JSON.stringify(transform));
   return new Response(source.body, { status: 200, headers });
 }
 
@@ -572,33 +602,17 @@ function extractPds(doc) {
   }
 }
 
-// ── Routing / transforms ──────────────────────────────────────────────────────
+// ── Routing ───────────────────────────────────────────────────────────────────
 
 function parseRoute(url) {
   const img = url.pathname.match(IMG_PATH_RE);
   if (img) {
-    const transform = parseTransformParams(url.searchParams)
-      || (IMG_ORIGINAL_TYPES.has(img[1]) ? null : IMG_TYPES[img[1]] || null);
-    return {
-      format: "img",
-      type: img[1],
-      did: decodeDid(img[2]),
-      cid: img[3],
-      transform: transform
-        ? { ...transform, quality: transform.quality || 92 }
-        : null,
-    };
+    return { format: "img", type: img[1], did: decodeDid(img[2]), cid: img[3] };
   }
 
   const blob = url.pathname.match(BLOB_PATH_RE);
   if (blob) {
-    const params = blob[3];
-    const transform = !params
-      ? parseTransformParams(url.searchParams)
-      : Object.hasOwn(PRESETS, params)
-        ? PRESETS[params]
-        : parseTransformParams(new URLSearchParams(params));
-    return { format: "blob", type: null, did: decodeDid(blob[1]), cid: blob[2], transform };
+    return { format: "blob", type: null, did: decodeDid(blob[1]), cid: blob[2], preset: blob[3] || null };
   }
   return null;
 }
@@ -607,25 +621,10 @@ function decodeDid(s) {
   try { return decodeURIComponent(s); } catch { return s; }
 }
 
-function parseTransformParams(sp) {
-  if (!sp || sp.size === 0) return null;
-  const width = parseInt(sp.get("w") || sp.get("width"), 10);
-  const height = parseInt(sp.get("h") || sp.get("height"), 10);
-  const fit = sp.get("fit") || sp.get("f");
-  const quality = parseInt(sp.get("q") || sp.get("quality"), 10);
-
-  const t = {};
-  if (width) t.width = Math.min(width, 4000);
-  if (height) t.height = Math.min(height, 4000);
-  if (["cover", "contain", "inside", "outside"].includes(fit)) t.fit = fit;
-  if (quality) t.quality = Math.min(Math.max(quality, 1), 100);
-  return Object.keys(t).length ? t : null;
-}
-
 // ── Health ────────────────────────────────────────────────────────────────────
 
 async function health(env, d1) {
-  const [plc, db] = await Promise.all([
+  const [plc, db, imgproxy] = await Promise.all([
     Promise.all(PLC_DIRECTORIES.map(async (directory) => {
       try {
         const res = await fetch(`${directory}/${ADMIN_DID}`, { method: "HEAD", signal: AbortSignal.timeout(PLC_TIMEOUT_MS) });
@@ -648,6 +647,16 @@ async function health(env, d1) {
           last_cache_clear: c?.value ?? null,
         })).catch(() => ({ error: true }))
       : { disabled: true },
+    (async () => {
+      if (!imgproxyReady(env)) return { configured: false, ok: false, status: 0 };
+      try {
+        const res = await fetch(`${env.IMGPROXY_URL.replace(/\/$/, "")}/health`, { signal: AbortSignal.timeout(PLC_TIMEOUT_MS) });
+        res.body?.cancel();
+        return { configured: true, ok: res.ok, status: res.status };
+      } catch {
+        return { configured: true, ok: false, status: 0 };
+      }
+    })(),
   ]);
 
   return json({
@@ -659,6 +668,7 @@ async function health(env, d1) {
     primary_plc_directory: PLC_DIRECTORIES[0],
     backup_plc_directory: PLC_DIRECTORIES[1],
     d1_cache_enabled: d1,
+    imgproxy,
     features: {
       img_format: "/img/{type}/plain/{did}/{cid}[@ext]",
       blob_format: "/blob/{did}/{cid}[@ext]/{params}",

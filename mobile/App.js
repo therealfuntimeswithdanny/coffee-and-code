@@ -8,6 +8,16 @@ import { Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+
+// expo-image-picker is a native module: it only exists in builds made after it
+// was installed. Require it lazily so older dev-client builds keep working.
+let ImagePicker = null;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch (pickerError) {
+  log.warn('expo-image-picker native module unavailable', pickerError?.message);
+}
 import SymbolView from './src/Icon';
 import { createAccount, restoreSession, signIn, signOut } from './oauth';
 import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
@@ -35,6 +45,9 @@ const LIKE_COLLECTION = 'cc.coffeencode.interact.like';
 const DISLIKE_COLLECTION = 'cc.coffeencode.interact.dislike';
 const NOTIFICATION_READ_COLLECTION = 'cc.coffeencode.notifications.read';
 const TAG_FOLLOW_COLLECTION = 'cc.coffeencode.tag.follow';
+const LIST_COLLECTION = 'cc.coffeencode.list';
+const LIST_ITEM_COLLECTION = 'cc.coffeencode.cclist.item';
+const AUTHOR_FOLLOW_COLLECTION = 'cc.coffeencode.author.follow';
 
 function profileBlobUrl(blob, did, preset) {
   const cid = blob?.ref?.$link;
@@ -64,6 +77,19 @@ async function readNotificationMarker(agent, did) {
     }
     throw new Error(`Could not load your notification read status${status ? ` (${status})` : ''}.`);
   }
+}
+
+function parseListRecord(record, did) {
+  const uri = record?.uri;
+  const value = record?.value;
+  if (typeof uri !== 'string' || !uri.startsWith('at://')) return null;
+  const rkey = uri.split('/').pop();
+  if (!rkey || typeof value?.title !== 'string' || !value.title.trim()
+    || typeof value?.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) return null;
+  const icon = typeof value.icon === 'string' ? value.icon.trim() : '';
+  const about = typeof value.about === 'string' ? value.about.trim() : '';
+  const imageCid = typeof value.image?.ref?.$link === 'string' ? value.image.ref.$link : '';
+  return { uri, rkey, title: value.title.trim(), about, icon, imageUrl: imageCid && did ? cdnBlobImageUrl(did, imageCid, 'avatar_small') : '', createdAt: value.createdAt };
 }
 
 function relativeNotificationTime(value) {
@@ -108,6 +134,7 @@ export default function App() {
   const [authorProfile, setAuthorProfile] = useState(null);
   const [activeTag, setActiveTag] = useState('');
   const [tagFollows, setTagFollows] = useState([]);
+  const [authorFollows, setAuthorFollows] = useState([]);
   const [archiveStories, setArchiveStories] = useState([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [savedLoaded, setSavedLoaded] = useState(false);
@@ -159,6 +186,15 @@ export default function App() {
   const [accountDataError, setAccountDataError] = useState('');
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [settingsPage, setSettingsPage] = useState(null);
+  const [accountView, setAccountView] = useState(null);
+  const [userLists, setUserLists] = useState(null);
+  const [userListCounts, setUserListCounts] = useState({});
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState('');
+  const [activeList, setActiveList] = useState(null);
+  const [listPicker, setListPicker] = useState(false);
+  const [listDraft, setListDraft] = useState({ title: '', about: '', icon: '', image: null });
+  const [listBusy, setListBusy] = useState(false);
   const [loginHandle, setLoginHandle] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -270,9 +306,9 @@ export default function App() {
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
   useEffect(() => {
-    if (tab === 'Notifications' && account?.agent) void loadNotifications();
+    if ((tab === 'Notifications' || accountView === 'notifications') && account?.agent) void loadNotifications();
     else notificationsRequestId.current += 1;
-  }, [tab, account, loadNotifications]);
+  }, [tab, accountView, account, loadNotifications]);
   useEffect(() => {
     if (!account?.agent) {
       notificationInitialLoadDid.current = null;
@@ -281,13 +317,18 @@ export default function App() {
       setNotificationsReadAt(undefined);
       setNotificationMarkerExists(false);
       setNotificationsLoadedAt(null);
+      setAccountView(null);
+      setActiveList(null);
+      setListPicker(false);
+      setUserLists(null);
+      setUserListCounts({});
       return;
     }
     const did = account.session.did;
-    if (tab === 'Notifications' || notificationInitialLoadDid.current === did) return;
+    if (tab === 'Notifications' || accountView === 'notifications' || notificationInitialLoadDid.current === did) return;
     notificationInitialLoadDid.current = did;
     void loadNotifications();
-  }, [tab, account, loadNotifications]);
+  }, [tab, accountView, account, loadNotifications]);
 
   const loadForum = useCallback(async ({ page = 1, sort = forumSort, tag = forumTag, append = false } = {}) => {
     const requestId = ++forumRequestId.current;
@@ -542,7 +583,10 @@ export default function App() {
   }, [account?.session?.did]);
   useEffect(() => onNotificationResponse(() => {
     setSelected(null);
-    setTab('Notifications');
+    setSettingsPage(null);
+    setActiveList(null);
+    setAccountView('notifications');
+    setTab('Account');
   }), []);
 
   const stories = useMemo(() => {
@@ -555,6 +599,205 @@ export default function App() {
   }, [feed]);
 
   useEffect(() => {
+    if (accountView !== 'lists' || !account?.agent || userLists !== null) return undefined;
+    let cancelled = false;
+    const activeAccount = account;
+    setListsLoading(true);
+    setListsError('');
+    (async () => {
+      try {
+        const [listRecords, itemRecords] = await Promise.all([
+          listRepoRecords(activeAccount.agent, activeAccount.session.did, LIST_COLLECTION),
+          listRepoRecords(activeAccount.agent, activeAccount.session.did, LIST_ITEM_COLLECTION).catch(() => []),
+        ]);
+        if (cancelled) return;
+        const lists = listRecords.map((record) => parseListRecord(record, activeAccount.session.did)).filter(Boolean)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const counts = {};
+        for (const record of itemRecords) {
+          const listUri = record.value?.list;
+          if (typeof listUri === 'string' && typeof record.value?.document === 'string') {
+            counts[listUri] = (counts[listUri] || 0) + 1;
+          }
+        }
+        setUserLists(lists);
+        setUserListCounts(counts);
+      } catch (loadError) {
+        if (!cancelled) setListsError(loadError.message || 'Could not load your lists.');
+      } finally {
+        if (!cancelled) setListsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [accountView, account, userLists]);
+
+  const openList = useCallback(async (list) => {
+    if (!account?.agent || !list?.uri) return;
+    setActiveList({ list, items: null, loading: true, error: '' });
+    try {
+      const records = await listRepoRecords(account.agent, account.session.did, LIST_ITEM_COLLECTION);
+      const seen = new Set();
+      const items = records
+        .filter((record) => record.value?.list === list.uri && typeof record.value?.document === 'string'
+          && record.value.document.startsWith('at://'))
+        .sort((a, b) => (b.value.createdAt || '').localeCompare(a.value.createdAt || ''))
+        .filter((record) => {
+          if (seen.has(record.value.document)) return false;
+          seen.add(record.value.document);
+          return true;
+        })
+        .slice(0, 100);
+      const known = new Map();
+      [...stories, ...saved, ...viewedStories, ...archiveStories].forEach((story) => {
+        if (story?.uri) known.set(story.uri, story);
+      });
+      const resolved = await Promise.all(items.map(async (record) => {
+        const uri = record.value.document;
+        const base = { uri, listItemUri: record.uri, savedAt: record.value.createdAt };
+        const cached = known.get(uri) || getCachedPost(uri);
+        if (cached?.title) return { ...cached, ...base };
+        try {
+          const response = await fetch(`${getApiBase()}/documents?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
+          if (!response.ok) return { title: 'Story', ...base };
+          const post = await response.json();
+          cachePost(uri, post);
+          return { ...post, ...base };
+        } catch {
+          return { title: 'Story', ...base };
+        }
+      }));
+      setActiveList({ list, items: resolved, loading: false, error: '' });
+    } catch (openError) {
+      setActiveList({ list, items: null, loading: false, error: openError.message || 'Could not load this list.' });
+    }
+  }, [account, stories, saved, viewedStories, archiveStories]);
+
+  const pickListImage = async () => {
+    if (listBusy) return;
+    if (!ImagePicker) {
+      setListsError('Image picking needs a newer app build. Rebuild the app to use it.');
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+      if (asset.fileSize && asset.fileSize > 2_000_000) {
+        setListsError('List images must be smaller than 2 MB. Choose a smaller image.');
+        return;
+      }
+      const mimeType = asset.mimeType
+        || `image/${/\.(png)$/i.test(asset.uri) ? 'png' : /\.(gif)$/i.test(asset.uri) ? 'gif' : /\.(webp)$/i.test(asset.uri) ? 'webp' : 'jpeg'}`;
+      if (!/^image\/(jpeg|png|gif|webp)$/.test(mimeType)) {
+        setListsError('List images must be JPEG, PNG, GIF, or WebP.');
+        return;
+      }
+      setListsError('');
+      setListDraft((draft) => ({ ...draft, image: { uri: asset.uri, mimeType } }));
+    } catch (pickError) {
+      setListsError(pickError.message || 'Could not open the image picker.');
+    }
+  };
+
+  const createList = async () => {
+    const title = listDraft.title.trim();
+    if (!account?.agent || !title || listBusy) return;
+    setListBusy(true);
+    setListsError('');
+    try {
+      const record = {
+        $type: LIST_COLLECTION,
+        title: title.slice(0, 600),
+        createdAt: new Date().toISOString(),
+      };
+      const about = listDraft.about.trim();
+      if (about) record.about = about.slice(0, 2000);
+      const icon = listDraft.icon.trim();
+      if (icon && (icon.length <= 8 || /^https:\/\//i.test(icon))) record.icon = icon;
+      if (listDraft.image?.uri) {
+        const base64 = await FileSystem.readAsStringAsync(listDraft.image.uri, { encoding: FileSystem.EncodingType.Base64 });
+        const bytes = Uint8Array.fromBase64(base64);
+        if (bytes.length > 2_000_000) throw new Error('List images must be smaller than 2 MB. Choose a smaller image.');
+        const uploaded = await account.agent.com.atproto.repo.uploadBlob(bytes, { encoding: listDraft.image.mimeType || 'image/jpeg' });
+        const blob = uploaded?.data?.blob;
+        if (!blob?.ref?.$link) throw new Error('The account provider did not return the uploaded image.');
+        record.image = blob;
+      }
+      await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: LIST_COLLECTION, record });
+      setListDraft({ title: '', about: '', icon: '', image: null });
+      setUserLists(null);
+      setAccountView('lists');
+    } catch (createError) {
+      setListsError(createError.message || 'Could not create the list.');
+    } finally {
+      setListBusy(false);
+    }
+  };
+
+  const deleteList = async (list) => {
+    if (!account?.agent || !list?.uri || listBusy) return;
+    setListBusy(true);
+    try {
+      const itemRecords = await listRepoRecords(account.agent, account.session.did, LIST_ITEM_COLLECTION);
+      for (const record of itemRecords) {
+        if (record.value?.list === list.uri && typeof record.uri === 'string') {
+          await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: LIST_ITEM_COLLECTION, rkey: record.uri.split('/').pop() });
+        }
+      }
+      await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: LIST_COLLECTION, rkey: list.rkey });
+      setActiveList(null);
+      setListPicker(false);
+      setUserLists(null);
+    } catch (deleteError) {
+      setActiveList((current) => current ? { ...current, error: deleteError.message || 'Could not delete this list.' } : current);
+    } finally {
+      setListBusy(false);
+    }
+  };
+
+  const addToList = async (story) => {
+    const list = activeList?.list;
+    if (!account?.agent || !list?.uri || !story?.uri || listBusy) return;
+    if (activeList.items?.some((item) => item.uri === story.uri)) return;
+    setListBusy(true);
+    try {
+      const createdAt = new Date().toISOString();
+      const result = await account.agent.com.atproto.repo.createRecord({
+        repo: account.session.did,
+        collection: LIST_ITEM_COLLECTION,
+        record: { $type: LIST_ITEM_COLLECTION, list: list.uri, document: story.uri, createdAt },
+      });
+      setActiveList((current) => current ? { ...current, items: [{ ...story, listItemUri: result?.data?.uri, savedAt: createdAt }, ...(current.items || [])] } : current);
+      setUserListCounts((current) => ({ ...current, [list.uri]: (current[list.uri] || 0) + 1 }));
+    } catch (addError) {
+      setListsError(addError.message || 'Could not add this story to the list.');
+    } finally {
+      setListBusy(false);
+    }
+  };
+
+  const removeListItem = async (story) => {
+    const list = activeList?.list;
+    if (!account?.agent || !list?.uri || !story?.listItemUri || listBusy) return;
+    setListBusy(true);
+    try {
+      await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: LIST_ITEM_COLLECTION, rkey: story.listItemUri.split('/').pop() });
+      setActiveList((current) => current ? { ...current, items: (current.items || []).filter((item) => item.listItemUri !== story.listItemUri) } : current);
+      setUserListCounts((current) => ({ ...current, [list.uri]: Math.max(0, (current[list.uri] || 0) - 1) }));
+    } catch (removeError) {
+      setActiveList((current) => current ? { ...current, error: removeError.message || 'Could not remove this story from the list.' } : current);
+    } finally {
+      setListBusy(false);
+    }
+  };
+
+  useEffect(() => {
     if (!account?.agent || !savedLoaded) {
       if (!account) {
         setAccountDataLoading(false);
@@ -565,6 +808,7 @@ export default function App() {
         setBlockedAccounts([]);
         setCoffeeProfile(null);
         setTagFollows([]);
+        setAuthorFollows([]);
       }
       return;
     }
@@ -579,15 +823,17 @@ export default function App() {
       setBlockedAccounts([]);
       setCoffeeProfile(null);
       setTagFollows([]);
+      setAuthorFollows([]);
       setAccountDataLoading(true);
       setAccountDataError('');
       try {
-        const [profileResponse, postsResponse, viewRecords, blockRecords, followRecords, ownerValue, pdsEndpoint] = await Promise.all([
+        const [profileResponse, postsResponse, viewRecords, blockRecords, followRecords, authorFollowRecords, ownerValue, pdsEndpoint] = await Promise.all([
           fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`).catch(() => null),
           fetch(`${getApiBase()}/account/posts`, { cache: 'no-store' }).catch(() => null),
           listRepoRecords(activeAccount.agent, did, VIEW_COLLECTION),
           listRepoRecords(activeAccount.agent, did, BLOCK_COLLECTION),
           listRepoRecords(activeAccount.agent, did, TAG_FOLLOW_COLLECTION),
+          listRepoRecords(activeAccount.agent, did, AUTHOR_FOLLOW_COLLECTION),
           AsyncStorage.getItem(SAVED_OWNER_KEY),
           resolvePdsEndpoint(did),
         ]);
@@ -620,6 +866,9 @@ export default function App() {
         setTagFollows(followRecords
           .filter((record) => typeof record.uri === 'string' && typeof record.value?.tag === 'string' && record.value.tag.trim())
           .map((record) => ({ rkey: record.uri.split('/').pop(), tag: record.value.tag.trim(), createdAt: record.value.createdAt })));
+        setAuthorFollows(authorFollowRecords
+          .filter((record) => typeof record.uri === 'string' && typeof record.value?.subject === 'string')
+          .map((record) => ({ rkey: record.uri.split('/').pop(), did: record.value.subject, createdAt: record.value.createdAt })));
 
         const storedSaved = await AsyncStorage.getItem(SAVED_KEY);
         const cachedSaved = storedSaved ? JSON.parse(storedSaved) : [];
@@ -878,6 +1127,35 @@ export default function App() {
     }
   };
 
+  const toggleAuthorFollow = async (author) => {
+    const did = author?.did;
+    if (!did) return;
+    if (!account?.agent) {
+      setError('Sign in to follow authors and get notified about new stories.');
+      return;
+    }
+    if (accountBusy) return;
+    setAccountBusy(true);
+    setError('');
+    try {
+      const existing = authorFollows.filter((item) => item.did.toLowerCase() === did.toLowerCase());
+      if (existing.length) {
+        for (const item of existing) {
+          await account.agent.com.atproto.repo.deleteRecord({ repo: account.session.did, collection: AUTHOR_FOLLOW_COLLECTION, rkey: item.rkey });
+        }
+        setAuthorFollows((current) => current.filter((item) => item.did.toLowerCase() !== did.toLowerCase()));
+      } else {
+        const result = await account.agent.com.atproto.repo.createRecord({ repo: account.session.did, collection: AUTHOR_FOLLOW_COLLECTION, record: { $type: AUTHOR_FOLLOW_COLLECTION, subject: did, createdAt: new Date().toISOString() } });
+        const rkey = result?.data?.uri?.split('/').pop();
+        if (rkey) setAuthorFollows((current) => [{ rkey, did, createdAt: new Date().toISOString() }, ...current]);
+      }
+    } catch (e) {
+      setError(e.message || 'Could not update this author follow.');
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
   const unblockAccount = async (blockedDid) => {
     if (!account?.agent || !blockedDid || accountBusy) return;
     const blocked = blockedAccounts.find((item) => item.did === blockedDid);
@@ -1003,7 +1281,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (tab !== 'Notifications' || !account?.agent || !notificationsLoadedAt || notificationsLoading) return undefined;
+    if ((tab !== 'Notifications' && accountView !== 'notifications') || !account?.agent || !notificationsLoadedAt || notificationsLoading) return undefined;
     const cutoff = notificationsReadAt ? Date.parse(notificationsReadAt) : Number.NEGATIVE_INFINITY;
     const hasUnread = notifications.some((item) => {
       const timestamp = Date.parse(item.createdAt || '');
@@ -1015,7 +1293,7 @@ export default function App() {
       void markNotificationsRead();
     }, 5000);
     return () => clearTimeout(timeout);
-  }, [tab, account, notificationsLoadedAt, notificationsLoading, notificationsMarkingRead, notifications, notificationsReadAt]);
+  }, [tab, accountView, account, notificationsLoadedAt, notificationsLoading, notificationsMarkingRead, notifications, notificationsReadAt]);
 
   const toggleCommentLike = async (comment) => {
     if (!account?.agent) { setSelected(null); setTab('Account'); setError('Sign in to like a comment.'); return; }
@@ -1116,7 +1394,7 @@ export default function App() {
   const pinnedStories = feed?.pinned || [];
   const notificationBadgeCount = account?.agent ? notificationsUnreadCount : 0;
   const openContributor = (author) => { setActiveAuthor(author); setTab('Authors'); };
-  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') setSettingsPage(null); animateArticleNav(false); };
+  const selectMainTab = (destination) => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setReplyTarget(null); setTab(destination); setActiveAuthor(null); if (destination === 'Account') { setSettingsPage(null); setAccountView(null); setActiveList(null); setListPicker(false); } animateArticleNav(false); };
 
   const onArticleTouchStart = (event) => {
     const touch = event.nativeEvent.touches?.[0] || event.nativeEvent;
@@ -1394,7 +1672,7 @@ export default function App() {
     </ScrollView>;
   };
 
-  const renderNotifications = () => {
+  const renderNotifications = (onBack) => {
     if (!account?.agent) return <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.pageTitle}>Notifications</Text>
       <View style={styles.empty}>
@@ -1420,7 +1698,8 @@ export default function App() {
 
     return <ScrollView contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={notificationsRefreshing} onRefresh={() => loadNotifications(true)} tintColor={C.muted} />}>
-      <Text style={styles.pageTitle}>Notifications</Text>
+      {!!onBack && <Pressable accessibilityRole="button" onPress={onBack} style={styles.backLink}><Text style={styles.action}>‹  BACK</Text></Pressable>}
+      <Text style={[styles.pageTitle, onBack && { marginTop: 0 }]}>Notifications</Text>
       <Text style={styles.pageSubtitle}>Notifications are in beta testing, expect a slow response and degraded experience. Notifications API is in development.</Text>
       {!!notificationsError && <View><Text accessibilityRole="alert" style={styles.error}>{notificationsError}</Text><Pressable accessibilityRole="button" onPress={() => loadNotifications()}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>}
       {notificationsLoading
@@ -1477,57 +1756,168 @@ export default function App() {
     </React.Fragment>;
   };
 
-  const renderAccount = () => settingsPage ? <AccountSettings
-    key={settingsPage}
-    account={account}
-    accountProfile={accountProfile}
-    coffeeProfile={coffeeProfile}
-    accountPds={accountPds}
-    blockedAccounts={blockedAccounts}
-    tagFollows={tagFollows}
-    savedCount={saved.length}
-    viewedCount={viewedStories.length}
-    accountBusy={accountBusy}
-    initialPage={settingsPage}
-    onBack={() => setSettingsPage(null)}
-    onUnblock={unblockAccount}
-    onToggleTagFollow={toggleTagFollow}
-    onSignOut={async () => { await signOut(account); void unregisterForPushNotifications(AsyncStorage); log.info('Signed out'); setAccount(null); setSettingsPage(null); }}
-  /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
+  const handleSignOut = async () => {
+    await signOut(account);
+    void unregisterForPushNotifications(AsyncStorage);
+    log.info('Signed out');
+    setAccount(null);
+    setSettingsPage(null);
+    setAccountView(null);
+    setActiveList(null);
+  };
+
+  const renderAccountSubpage = (title, onBack, children) => <ScrollView contentContainerStyle={styles.content}
+    refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
+    <Pressable accessibilityRole="button" onPress={onBack} style={styles.backLink}><Text style={styles.action}>‹  BACK</Text></Pressable>
+    <Text style={[styles.pageTitle, { marginTop: 0 }]}>{title}</Text>
+    {children}
+  </ScrollView>;
+
+  const renderListPicker = () => renderAccountSubpage(`Add to ${activeList.list.title}`, () => setListPicker(false), <>
+    <Text style={styles.pageSubtitle}>Tap a story to add it to this list.</Text>
+    {!!listsError && <Text accessibilityRole="alert" style={styles.error}>{listsError}</Text>}
+    {!archiveLoaded && <Pressable accessibilityRole="button" onPress={loadArchive}><Text style={styles.action}>LOAD FULL ARCHIVE</Text></Pressable>}
+    {allArchiveStories.map((story, index) => {
+      const added = activeList.items?.some((item) => item.uri === story.uri);
+      return <View key={story.uri || index} style={styles.blockedAccountRow}>
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={2} style={styles.accountIdentityValue}>{story.title}</Text>
+          <Text style={styles.meta}>{storyAuthor(story)}</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(added) }} accessibilityLabel={`${added ? 'Added' : 'Add'} ${story.title}`} disabled={listBusy || added} onPress={() => addToList(story)} style={styles.accountRemoveButton}>
+          <Text style={styles.action}>{added ? 'ADDED' : 'ADD'}</Text>
+        </Pressable>
+      </View>;
+    })}
+    {listBusy && <ActivityIndicator color={C.muted} style={{ marginVertical: 12 }} />}
+  </>);
+
+  const renderListDetail = () => renderAccountSubpage(activeList.list.title, () => { setActiveList(null); setListPicker(false); }, <>
+    {!!activeList.list.about && <Text style={styles.pageSubtitle}>{activeList.list.about}</Text>}
+    {activeList.loading && <ActivityIndicator color={C.muted} style={{ marginVertical: 28 }} />}
+    {!!activeList.error && <View><Text accessibilityRole="alert" style={styles.error}>{activeList.error}</Text><Pressable accessibilityRole="button" onPress={() => openList(activeList.list)}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>}
+    {activeList.items && (activeList.items.length
+      ? activeList.items.map((story, index) => <SwipeableDeleteRow key={story.listItemUri || story.uri || index} accessibilityLabel={`Remove ${story.title} from ${activeList.list.title}`} onDelete={() => removeListItem(story)}><StoryRow key={story.uri || index} story={story} compact onPress={() => openStory(story)} /></SwipeableDeleteRow>)
+      : <Text style={styles.emptyText}>This list does not have any stories yet.</Text>)}
+    {!activeList.loading && <>
+      <Pressable accessibilityRole="button" disabled={listBusy} onPress={() => { setListsError(''); setListPicker(true); if (!archiveLoaded) loadArchive(); }} style={styles.secondaryButton}><Text style={styles.action}>ADD STORIES</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${activeList.list.title}`} disabled={listBusy} onPress={() => deleteList(activeList.list)} style={styles.secondaryButton}><Text style={[styles.action, { color: C.error }]}>{listBusy ? 'PLEASE WAIT…' : 'DELETE LIST'}</Text></Pressable>
+    </>}
+  </>);
+
+  const renderNewListView = () => renderAccountSubpage('New list', () => setAccountView('lists'), <>
+    <Text style={styles.pageSubtitle}>Create a curated list of stories. Lists are public records on your account.</Text>
+    {!!listsError && <Text accessibilityRole="alert" style={styles.error}>{listsError}</Text>}
+    <Text style={styles.fieldLabel}>TITLE</Text>
+    <TextInput value={listDraft.title} onChangeText={(title) => setListDraft((draft) => ({ ...draft, title }))} placeholder="Give your list a name" placeholderTextColor={C.muted} maxLength={600} style={styles.commentInput} />
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>DESCRIPTION (OPTIONAL)</Text>
+    <TextInput value={listDraft.about} onChangeText={(about) => setListDraft((draft) => ({ ...draft, about }))} placeholder="What belongs on this list?" placeholderTextColor={C.muted} multiline maxLength={2000} style={[styles.commentInput, { minHeight: 80 }]} />
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>LIST IMAGE (OPTIONAL)</Text>
+    <View style={styles.listImagePickerRow}>
+      {listDraft.image?.uri
+        ? <Image source={{ uri: listDraft.image.uri }} accessibilityLabel="Selected list image" style={styles.listImagePreview} />
+        : <View style={[styles.listImagePreview, styles.listImagePreviewEmpty]}><SymbolView name="photo" size={18} tintColor={C.muted} /></View>}
+      <View style={{ flex: 1 }}>
+        <Pressable accessibilityRole="button" disabled={listBusy} onPress={pickListImage} style={styles.secondaryButton}><Text style={styles.action}>{listDraft.image?.uri ? 'CHANGE IMAGE' : 'CHOOSE IMAGE'}</Text></Pressable>
+        {!!listDraft.image?.uri && <Pressable accessibilityRole="button" disabled={listBusy} onPress={() => setListDraft((draft) => ({ ...draft, image: null }))}><Text style={[styles.action, { color: C.error, marginTop: 8 }]}>REMOVE IMAGE</Text></Pressable>}
+      </View>
+    </View>
+    <Text style={styles.meta}>Uploaded to your account, up to 2 MB. It is shown instead of the icon.</Text>
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>ICON EMOJI OR IMAGE URL (OPTIONAL)</Text>
+    <TextInput value={listDraft.icon} onChangeText={(icon) => setListDraft((draft) => ({ ...draft, icon }))} placeholder="For example: 📚" placeholderTextColor={C.muted} maxLength={2048} autoCapitalize="none" autoCorrect={false} style={styles.commentInput} />
+    <Pressable accessibilityRole="button" disabled={listBusy || !listDraft.title.trim()} onPress={createList} style={[styles.primaryButton, (listBusy || !listDraft.title.trim()) && styles.disabledButton, { marginTop: 16 }]}>
+      <Text style={styles.primaryButtonText}>{listBusy ? 'CREATING…' : 'CREATE LIST'}</Text>
+    </Pressable>
+  </>);
+
+  const renderListsView = () => renderAccountSubpage('Your lists', () => { setAccountView(null); }, <>
+    <Pressable accessibilityRole="button" onPress={() => { setListsError(''); setAccountView('new-list'); }} style={[styles.primaryButton, { marginTop: 8, marginBottom: 14 }]}>
+      <Text style={styles.primaryButtonText}>NEW LIST</Text>
+    </Pressable>
+    {listsLoading && <ActivityIndicator color={C.muted} style={{ marginVertical: 28 }} />}
+    {!!listsError && <View><Text accessibilityRole="alert" style={styles.error}>{listsError}</Text><Pressable accessibilityRole="button" onPress={() => setUserLists(null)}><Text style={styles.action}>TRY AGAIN</Text></Pressable></View>}
+    {!listsLoading && !listsError && userLists && (userLists.length
+      ? userLists.map((list) => <Pressable key={list.uri} accessibilityRole="button" accessibilityLabel={`Open list ${list.title}`} onPress={() => openList(list)} style={styles.settingsRow}>
+        {!!list.imageUrl
+          ? <SkeletonImage source={{ uri: list.imageUrl }} imagePreset="avatar_thumb" accessibilityLabel="" style={styles.listIconImage} />
+          : /^https:\/\//i.test(list.icon)
+            ? <SkeletonImage source={{ uri: list.icon }} imagePreset="avatar_thumb" accessibilityLabel="" style={styles.listIconImage} />
+            : <View style={styles.settingsIcon}>{list.icon ? <Text style={styles.listIconEmoji}>{list.icon}</Text> : <SymbolView name="list.bullet" size={17} tintColor={C.muted} />}</View>}
+        <View style={styles.settingsCopy}>
+          <Text style={styles.authorName}>{list.title}</Text>
+          <Text style={styles.meta}>{userListCounts[list.uri] || 0} {userListCounts[list.uri] === 1 ? 'STORY' : 'STORIES'}{list.about ? `  ·  ${list.about}` : ''}</Text>
+        </View>
+        <SymbolView name="chevron.right" size={15} tintColor={C.muted} />
+      </Pressable>)
+      : <Text style={styles.emptyText}>You have not created any lists yet.</Text>)}
+    {!!accountProfile?.handle && <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://coffeencode.cc/user/${encodeURIComponent(accountProfile.handle)}/lists`)} style={styles.profileLink}><Text style={styles.action}>MANAGE LISTS ON THE WEB  ↗</Text></Pressable>}
+  </>);
+
+  const renderAccount = () => {
+    if (settingsPage) return <AccountSettings
+      key={settingsPage}
+      account={account}
+      accountProfile={accountProfile}
+      coffeeProfile={coffeeProfile}
+      accountPds={accountPds}
+      blockedAccounts={blockedAccounts}
+      tagFollows={tagFollows}
+      authors={authors}
+      authorFollows={authorFollows}
+      savedCount={saved.length}
+      viewedCount={viewedStories.length}
+      accountBusy={accountBusy}
+      initialPage={settingsPage}
+      onBack={() => setSettingsPage(null)}
+      onUnblock={unblockAccount}
+      onToggleTagFollow={toggleTagFollow}
+      onToggleAuthorFollow={toggleAuthorFollow}
+      onSignOut={handleSignOut}
+    />;
+    if (account) {
+      if (accountView === 'notifications') return renderNotifications(() => setAccountView(null));
+      if (activeList) return listPicker ? renderListPicker() : renderListDetail();
+      if (accountView === 'new-list') return renderNewListView();
+      if (accountView === 'lists') return renderListsView();
+      if (accountView === 'read') return renderAccountSubpage('Read posts', () => setAccountView(null), <>
+        {renderAccountStoryList(showAllViewed ? viewedStories : viewedStories.slice(0, 20), 'Posts you read while signed in will appear here.')}
+        {viewedStories.length > 20 && !showAllViewed && <Pressable accessibilityRole="button" onPress={() => setShowAllViewed(true)} style={styles.viewedExpandButton}>
+          <Text style={styles.action}>{`SHOW ALL ${viewedStories.length} POSTS`}</Text><SymbolView name="chevron.down" size={13} tintColor={C.muted} />
+        </Pressable>}
+      </>);
+      if (accountView === 'saved') return renderAccountSubpage('Saved posts', () => setAccountView(null),
+        renderAccountStoryList(saved, 'Stories you save will appear here. Your saved list syncs with your Coffee & Code account.', true));
+    }
+    return <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
     <Text style={styles.pageTitle}>{account ? 'Your account' : 'Sign in'}</Text>
     {account ? <>
-      <View style={styles.accountCard}>
-        {!!coffeeProfile?.bannerUrl && <SkeletonImage source={{ uri: coffeeProfile.bannerUrl }} imagePreset="banner_medium" accessibilityLabel="Coffee & Code profile banner" resizeMode="cover" style={{ width: '100%', height: 120, borderRadius: 10, marginBottom: 14, backgroundColor: C.panelLight }} />}
-        {!!coffeeProfile?.avatarUrl || !!accountProfile?.avatar ? <SkeletonImage source={{ uri: coffeeProfile?.avatarUrl || accountProfile.avatar }} imagePreset="avatar_medium" accessibilityLabel="Profile photo" style={styles.accountProfileAvatar} /> : <View style={styles.accountAvatar}><SymbolView name="person.fill" size={25} tintColor={C.ink} /></View>}
-        <Text style={styles.accountProfileName}>{coffeeProfile?.displayName || accountProfile?.displayName || accountProfile?.handle || 'Your account'}</Text>
-        {!!coffeeProfile?.pronouns && <Text style={styles.meta}>{coffeeProfile.pronouns}</Text>}
-        <View style={styles.accountIdentityDetails}>
-          <Text style={styles.accountIdentityLabel}>HANDLE</Text><Text selectable style={styles.accountIdentityValue}>{accountProfile?.handle ? `@${accountProfile.handle}` : 'Unavailable'}</Text>
-          <Text style={styles.accountIdentityLabel}>DID</Text><Text selectable style={styles.accountIdentityValue}>{account.session.did}</Text>
-          <Text style={styles.accountIdentityLabel}>PDS</Text><Text selectable style={styles.accountIdentityValue}>{accountPds === null ? 'Resolving…' : accountPds || 'Unavailable'}</Text>
+      <View style={styles.accountCardCompact}>
+        {!!coffeeProfile?.avatarUrl || !!accountProfile?.avatar
+          ? <SkeletonImage source={{ uri: coffeeProfile?.avatarUrl || accountProfile.avatar }} imagePreset="avatar_medium" accessibilityLabel="Profile photo" style={styles.accountCompactAvatar} />
+          : <View style={[styles.accountCompactAvatar, styles.accountCompactAvatarPlaceholder]}><SymbolView name="person.fill" size={22} tintColor={C.ink} /></View>}
+        <View style={styles.accountCompactCopy}>
+          <Text numberOfLines={1} style={styles.accountCompactName}>{coffeeProfile?.displayName || accountProfile?.displayName || accountProfile?.handle || 'Your account'}</Text>
+          {!!coffeeProfile?.pronouns && <Text numberOfLines={1} style={styles.meta}>{coffeeProfile.pronouns}</Text>}
+          <Text numberOfLines={1} style={styles.meta}>@{accountProfile?.handle || account.session.did}</Text>
         </View>
-        {!!coffeeProfile?.description && <Text style={styles.accountDescription}>{coffeeProfile.description}</Text>}
-        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(accountProfile?.handle || account.session.did)}`)} style={styles.profileLink}><Text style={styles.action}>VIEW PROFILE  ↗</Text></Pressable>
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={async () => { await signOut(account); void unregisterForPushNotifications(AsyncStorage); log.info('Signed out'); setAccount(null); setSettingsPage(null); }} style={styles.secondaryButton}><Text style={styles.action}>SIGN OUT</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Sign out" disabled={accountBusy} onPress={handleSignOut} style={styles.accountSignOut}>
+          <SymbolView name="rectangle.portrait.and.arrow.right" size={18} tintColor={C.muted} />
+        </Pressable>
       </View>
+      <View style={styles.settingsCard}>
+        <SettingsRow icon="bell" title="Notifications" subtitle="Check your notifications" badge={notificationBadgeCount} onPress={() => setAccountView('notifications')} />
+        <SettingsRow icon="tag" title="Following" subtitle="Tags you follow" onPress={() => setSettingsPage('follows')} />
+        <SettingsRow icon="clock.arrow.circlepath" title="Read posts" subtitle={`${viewedStories.length} ${viewedStories.length === 1 ? 'story' : 'stories'} viewed`} onPress={() => setAccountView('read')} />
+        <SettingsRow icon="list.bullet" title="Your lists" subtitle="Curated lists of stories" onPress={() => { setActiveList(null); setAccountView('lists'); }} />
+        <SettingsRow icon="bookmark" title="Saved posts" subtitle={`${saved.length} saved ${saved.length === 1 ? 'story' : 'stories'}`} onPress={() => setAccountView('saved')} />
+        <SettingsRow icon="person.crop.circle" title="Your posts" subtitle="View your posts on the web" onPress={() => Linking.openURL(`https://coffeencode.cc/user/${encodeURIComponent(accountProfile?.handle || account.session.did)}`)} />
+      </View>
+      {!!accountDataError && <Text accessibilityRole="alert" style={[styles.error, { marginTop: 12 }]}>{accountDataError}</Text>}
+      {accountDataLoading && <View style={styles.accountSyncing}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Syncing your account…</Text></View>}
       <SectionBar title="Settings" />
       <View style={styles.settingsCard}>
         {accountSettingsPages.map((page) => <SettingsRow key={page.id} {...page} onPress={() => setSettingsPage(page.id)} />)}
       </View>
-      {!!accountDataError && <Text accessibilityRole="alert" style={[styles.error, { marginTop: 12 }]}>{accountDataError}</Text>}
-      {accountDataLoading && <View style={styles.accountSyncing}><ActivityIndicator color={C.muted} /><Text style={styles.muted}>Syncing your account…</Text></View>}
-      <SectionBar title="Read posts" detail={`${viewedStories.length} STORIES`} />
-      {renderAccountStoryList(showAllViewed ? viewedStories : viewedStories.slice(0, 3), 'Posts you read while signed in will appear here.')}
-      {viewedStories.length > 3 && <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAllViewed }} onPress={() => setShowAllViewed((visible) => !visible)} style={styles.viewedExpandButton}>
-        <Text style={styles.action}>{showAllViewed ? 'SHOW LESS' : `SHOW ALL ${viewedStories.length} POSTS`}</Text><SymbolView name={showAllViewed ? 'chevron.up' : 'chevron.down'} size={13} tintColor={C.muted} />
-      </Pressable>}
-      <SectionBar title="Saved list" detail={`${saved.length} STORIES`} />
-      {renderAccountStoryList(saved, 'Stories you save will appear here. Your saved list syncs with your Coffee & Code account.', true)}
-      <SectionBar title="Blocked accounts" detail={`${blockedAccounts.length} ACCOUNTS`} />
-      {blockedAccounts.length ? blockedAccounts.map((blocked) => <View key={blocked.did} style={styles.blockedAccountRow}>
-        <View style={{ flex: 1 }}><Text style={styles.authorName}>{blocked.did}</Text><Text style={styles.meta}>Blocked {formatDate(blocked.createdAt)}</Text></View>
-        <Pressable accessibilityRole="button" disabled={accountBusy} onPress={() => unblockAccount(blocked.did)} style={styles.accountRemoveButton}><Text style={styles.action}>UNBLOCK</Text></Pressable>
-      </View>) : <Text style={styles.emptyText}>You have not blocked any accounts on Coffee & Code.</Text>}
       {account.author && <>
         <SectionBar title="Author profile" detail="COFFEE & CODE" />
         <View style={styles.accountCard}>
@@ -1550,6 +1940,7 @@ export default function App() {
       </View>
     </>}
   </ScrollView>;
+  };
 
   if (welcomed === false) {
     return <SafeAreaView style={styles.safe}>
@@ -1572,12 +1963,7 @@ export default function App() {
     <View style={styles.header}>
       {selected ? <Pressable accessibilityRole="button" accessibilityLabel="Back to stories" onPress={closeStory} style={styles.headerSide}><SymbolView name="chevron.left" size={20} tintColor={C.muted} /><Text style={styles.action}>BACK</Text></Pressable> : <View style={styles.headerSide} />}
       <Text style={styles.brand}>Coffee & Code</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Notifications" accessibilityState={{ selected: tab === 'Notifications' }} onPress={() => selectMainTab('Notifications')} style={[styles.headerSide, styles.headerBell]}>
-        <View style={styles.tabIconWrap}>
-          <SymbolView name={tab === 'Notifications' ? 'bell.fill' : 'bell'} size={20} tintColor={tab === 'Notifications' ? C.ink : C.muted} />
-          {notificationBadgeCount > 0 && <View style={styles.notificationTabBadge}><Text style={styles.notificationTabBadgeText}>{notificationBadgeCount > 99 ? '99+' : notificationBadgeCount}</Text></View>}
-        </View>
-      </Pressable>
+      <View style={styles.headerSide} />
     </View>
     {loading ? <View style={styles.launchLoading}>
         <Image source={require('./assets/SplashScreen.png')} accessibilityLabel="Coffee & Code splash screen" style={styles.launchMark} resizeMode="contain" />
@@ -1648,7 +2034,7 @@ export default function App() {
       <TabButton label="Archive" icon="magnifyingglass" active={tab === 'Archive'} onPress={() => { selectMainTab('Archive'); if (!archiveLoaded) loadArchive(); }} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Forum" icon="bubble.left.and.bubble.right.fill" active={tab === 'Forum'} onPress={() => selectMainTab('Forum')} compactProgress={selected ? navCompactProgress : null} />
       <TabButton label="Saved" icon="bookmark.fill" active={tab === 'Saved'} onPress={() => selectMainTab('Saved')} compactProgress={selected ? navCompactProgress : null} />
-      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
+      <TabButton label="Account" icon="person.crop.circle.fill" imageUri={accountProfile?.avatar} badgeCount={notificationBadgeCount} active={tab === 'Account'} onPress={() => selectMainTab('Account')} compactProgress={selected ? navCompactProgress : null} />
     </Animated.View>
   </SafeAreaView>;
 }

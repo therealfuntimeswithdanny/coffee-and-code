@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "cc.coffeencode.cclist.item",
+  "id": "cc.coffeencode.list.item",
   "defs": {
     "main": {
       "type": "record",

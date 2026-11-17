@@ -1,4 +1,25 @@
-<h1 style="margin:0 0 12px;font-size:22px;color:#ffffff;">Confirm your email address</h1>
-<p style="margin:0 0 16px;">Someone added this address to {{pubName}} story notifications. Confirm it to start receiving new stories from the people and tags that account follows.</p>
-<p style="margin:0 0 16px;"><a href="{{verifyUrl}}" style="display:inline-block;margin-top:8px;padding:12px 22px;background-color:#b2ac88;color:#281914;text-decoration:none;border-radius:8px;font-weight:bold;">Confirm email address</a></p>
-<p style="margin:0;font-size:14px;color:#b2ac88;">If you did not request this, you can ignore this email — the address will not be used. The link expires in 24 hours.</p>
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{pubName}}</title></head>
+<body style="margin:0;padding:0;background-color:#1d1310;">
+  <span style="display:none;max-height:0;overflow:hidden;">Confirm this email address for {{pubName}} story notifications.</span>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#1d1310;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#281914;border:1px solid #4b3a2a;border-radius:12px;overflow:hidden;">
+        <tr><td style="padding:28px 32px 8px;border-bottom:1px solid #4b3a2a;">
+          <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:26px;color:#ffffff;">{{pubName}}</p>
+        </td></tr>
+        <tr><td style="padding:24px 32px;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.6;color:#f2ede4;">
+          <h1 style="margin:0 0 12px;font-size:22px;color:#ffffff;">Confirm your email address</h1>
+          <p style="margin:0 0 16px;">Someone added this address to {{pubName}} story notifications. Confirm it to start receiving new stories from the people and tags that account follows.</p>
+          <p style="margin:0 0 16px;"><a href="{{verifyUrl}}" style="display:inline-block;margin-top:8px;padding:12px 22px;background-color:#b2ac88;color:#281914;text-decoration:none;border-radius:8px;font-weight:bold;">Confirm email address</a></p>
+          <p style="margin:0;font-size:14px;color:#b2ac88;">If you did not request this, you can ignore this email — the address will not be used. The link expires in 24 hours.</p>
+        </td></tr>
+        <tr><td style="padding:16px 32px 24px;border-top:1px solid #4b3a2a;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.5;color:#b2ac88;">
+          <a href="{{siteUrl}}" style="color:#b2ac88;">{{pubName}}</a> · A small tech news publication on the AT Protocol
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

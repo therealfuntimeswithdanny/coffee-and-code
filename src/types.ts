@@ -6,7 +6,7 @@ export type Env = {
   PUSH_TOKENS: KVNamespace;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
-    send(message: { from: string; to: string; raw: string | ArrayBuffer | ReadableStream }): Promise<void>;
+    send(message: EmailMessage): Promise<void>;
   };
 };
 
