@@ -599,7 +599,7 @@ async function loadEmailSettings(did: string) {
   }
 
   // The account's own email comes from its PDS session, so it needs no
-  // confirmation step. Reading it requires the account:email OAuth scope;
+  // confirmation step. Reading it requires the transition:email OAuth scope;
   // when the session predates that scope the button simply stays hidden.
   void requireSession().fetchHandler('/xrpc/com.atproto.server.getSession')
     .then(async (response) => {
