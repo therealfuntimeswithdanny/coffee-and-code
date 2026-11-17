@@ -405,6 +405,7 @@ pages.get('/account', (c) => {
               <a href="#saved-posts-title">Reading list</a>
               <a href="#viewed-posts-title">Recently viewed</a>
               <a href="#followed-tags-title">Followed tags</a>
+              <a href="#appearance-title">Appearance</a>
               <a href="#email-settings-title">Email notifications</a>
               <a href="#blocked-accounts-title">Blocked accounts</a>
               <a href="#author-settings-title" data-author-settings-link hidden>Author profile</a>
@@ -423,6 +424,35 @@ pages.get('/account', (c) => {
             <h3 class="account-page__subheading">Latest from your tags</h3>
             <ul class="account-page__tag-posts" data-tag-follows-posts></ul>
             <p class="account-page__blocks-note">Follow tags from the <a href="/tags">tag directory</a> to see new matching stories here and get notified.</p>
+          </section>
+          <section class="account-card account-page__viewed account-page__preferences" aria-labelledby="appearance-title">
+            <h2 id="appearance-title">Appearance</h2>
+            <div class="account-preferences" data-preferences>
+              <fieldset>
+                <legend>Theme</legend>
+                <div class="account-preferences__options" role="radiogroup" aria-label="Theme">
+                  <label><input type="radio" name="pref-theme" value="system"> System</label>
+                  <label><input type="radio" name="pref-theme" value="dark"> Dark</label>
+                  <label><input type="radio" name="pref-theme" value="light"> Light</label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Story font</legend>
+                <div class="account-preferences__options" role="radiogroup" aria-label="Story font">
+                  <label><input type="radio" name="pref-font" value="sans"> Sans</label>
+                  <label><input type="radio" name="pref-font" value="serif"> Serif</label>
+                  <label><input type="radio" name="pref-font" value="monospace"> Mono</label>
+                </div>
+              </fieldset>
+              <label>Story text size
+                <span class="account-preferences__size">
+                  <input type="range" name="pref-font-size" min="14" max="26" step="1" value="19" data-pref-font-size>
+                  <output data-pref-font-size-output for="pref-font-size">19px</output>
+                </span>
+              </label>
+              <p class="account-preferences__status" data-preferences-status role="status" aria-live="polite"></p>
+              <p class="account-preferences__note">Saved to your AT Protocol account and synced anywhere you sign in.</p>
+            </div>
           </section>
           <section class="account-card account-page__viewed account-page__email" aria-labelledby="email-settings-title">
             <h2 id="email-settings-title">Email notifications</h2>

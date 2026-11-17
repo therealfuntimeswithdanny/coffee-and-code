@@ -88,6 +88,18 @@
             "create",
             "delete"
           ]
+        },
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "cc.coffeencode.preferences"
+          ],
+          "action": [
+            "create",
+            "update",
+            "delete"
+          ]
         }
       ]
     }

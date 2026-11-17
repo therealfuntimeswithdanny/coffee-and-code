@@ -19,7 +19,8 @@
             "cc.coffeencode.comment",
             "cc.coffeencode.profile",
             "cc.coffeencode.list",
-            "cc.coffeencode.author.profile"
+            "cc.coffeencode.author.profile",
+            "cc.coffeencode.preferences"
           ]
         },
         {

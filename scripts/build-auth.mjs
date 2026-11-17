@@ -119,6 +119,7 @@ const expectedRepoActions = new Map([
   ['cc.coffeencode.handle.claim', ['create']],
   ['cc.coffeencode.comment', ['create', 'update', 'delete']],
   ['cc.coffeencode.author.profile', ['create', 'update']],
+  ['cc.coffeencode.preferences', ['create', 'update', 'delete']],
   ['cc.coffeencode.user.block', ['create', 'delete']],
   ['app.bsky.graph.follow', ['create', 'delete']],
   ['site.standard.graph.subscription', ['create', 'delete']],

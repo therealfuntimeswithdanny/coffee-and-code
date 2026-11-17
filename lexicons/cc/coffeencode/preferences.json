@@ -1,0 +1,33 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.preferences",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A reader's Coffee & Code display preferences. Synced across the website and app.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string",
+            "description": "Color theme for the site.",
+            "knownValues": ["system", "dark", "light"]
+          },
+          "postFont": {
+            "type": "string",
+            "description": "Font used when reading stories.",
+            "knownValues": ["sans", "serif", "monospace"]
+          },
+          "postFontSize": {
+            "type": "integer",
+            "description": "Story text size in pixels.",
+            "minimum": 14,
+            "maximum": 26
+          },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

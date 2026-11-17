@@ -276,11 +276,20 @@ export default function App() {
         params.set('refresh', '1');
         countParams.set('refresh', '1');
       }
-      const response = await fetch(`${getApiBase()}/notifications?${params}`, { cache: 'no-store' });
+      let authHeaders = {};
+      try {
+        const { token } = await account.agent.com.atproto.server.getServiceAuth({
+          aud: 'did:web:api.coffeencode.cc',
+          lxm: 'app.bsky.notification.listNotifications',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        });
+        if (token) authHeaders = { Authorization: `Bearer ${token}` };
+      } catch { /* Without service auth the API falls back to the public activity index. */ }
+      const response = await fetch(`${getApiBase()}/notifications?${params}`, { cache: 'no-store', headers: authHeaders });
       if (!response.ok) throw new Error('Notifications are temporarily unavailable. Please try again.');
       const payload = await response.json();
       if (!Array.isArray(payload.notifications)) throw new Error('The notifications service returned an invalid response.');
-      const countResponse = await fetch(`${getApiBase()}/notifications?${countParams}`, { cache: 'no-store' });
+      const countResponse = await fetch(`${getApiBase()}/notifications?${countParams}`, { cache: 'no-store', headers: authHeaders });
       if (!countResponse.ok) throw new Error('Could not load the unread notification count.');
       const countPayload = await countResponse.json();
       if (!Number.isInteger(countPayload.unreadCount) || countPayload.unreadCount < 0) {
@@ -1460,6 +1469,11 @@ export default function App() {
       : item.type === 'post.like' ? 'liked your story'
         : item.type === 'post.view' ? 'viewed your story'
         : item.type === 'comment.reply' ? 'replied to your comment on'
+        : item.type === 'follow' ? 'followed you'
+        : item.type === 'mention' ? 'mentioned you in'
+        : item.type === 'quote' ? 'quoted your story'
+        : item.type === 'repost' ? 'reposted your story'
+        : item.type === 'other' ? 'interacted with'
           : 'commented on';
     const story = stories.find((candidate) => candidate.uri === item.documentUri)
       || { uri: item.documentUri, title: item.documentTitle || 'Story' };

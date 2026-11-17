@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { fetchArticleByUri, fetchArticles, fetchPostMetadata, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
 import { toPlainText } from '../lib/contentRenderer';
-import { loadNotificationsForUser } from '../lib/notifications';
+import { loadNotificationsForUser, loadNotificationsFromAppview, validateServiceAuthToken } from '../lib/notifications';
 import legal from '../legal.json';
 
 const api = new Hono<{ Bindings: Env }>();
@@ -203,7 +203,21 @@ api.get('/notifications', async (c) => {
   }
 
   try {
-    const notifications = await loadNotificationsForUser(c.env, did);
+    // Signed-in clients send a service-auth JWT minted by their PDS for the
+    // HappyView appview (did:web:api.coffeencode.cc); the worker proxies the
+    // request since the appview only accepts authenticated calls. Without a
+    // token the endpoint falls back to the public-record activity index.
+    const authHeader = c.req.header('Authorization') || '';
+    const serviceAuthToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    let notifications;
+    if (serviceAuthToken) {
+      if (!validateServiceAuthToken(serviceAuthToken, did)) {
+        return c.json({ error: 'The notification session token is invalid for this account.' }, 401, { 'Cache-Control': 'no-store' });
+      }
+      notifications = await loadNotificationsFromAppview(serviceAuthToken);
+    } else {
+      notifications = await loadNotificationsForUser(c.env, did);
+    }
     if (countOnly) {
       const cutoff = lastRead ? Date.parse(lastRead) : Number.NEGATIVE_INFINITY;
       const unreadCount = notifications.filter((notification) => {

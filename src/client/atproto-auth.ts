@@ -100,6 +100,8 @@ let accountAuthorDid: string | undefined;
 let accountUserProfileRecord: Record<string, unknown> | undefined;
 let accountUserProfileDid: string | undefined;
 const blockCollection = 'cc.coffeencode.user.block';
+const PREFERENCES_COLLECTION = 'cc.coffeencode.preferences';
+const PREFERENCES_RKEY = 'self';
 type UserBlockRecord = { uri: string; rkey: string; subject: string; createdAt: string };
 let blockedRecords: UserBlockRecord[] = [];
 let blockedRecordsDid: string | undefined;
@@ -132,8 +134,18 @@ if (accountMenuButton && accountMenu && headerAccount) {
   });
 }
 
+type ReaderPreferences = {
+  theme: 'system' | 'dark' | 'light';
+  postFont: 'sans' | 'serif' | 'monospace';
+  postFontSize?: number;
+};
+
 declare global {
   interface Window {
+    coffeeAndCodePreferences?: {
+      get: () => ReaderPreferences;
+      apply: (prefs: { theme?: unknown; postFont?: unknown; postFontSize?: unknown }) => void;
+    };
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
       getNotificationsReadAt: () => Promise<string | undefined>;
@@ -227,6 +239,7 @@ function renderAccount() {
   if (notificationsPage && oauthInitialized) void loadNotificationsPage();
   if (session) {
     const activeDid = session.did;
+    void loadReaderPreferences(activeDid);
     void loadUserBlocks(activeDid).then(() => renderBlockManager(activeDid)).catch((error) => {
       console.error('Could not load the signed-in user’s block list:', error);
       const status = accountPage?.querySelector<HTMLElement>('[data-blocks-status]');
@@ -1835,6 +1848,119 @@ async function listOwnListItems(did: string): Promise<Array<{ uri: string; rkey:
 
 async function listItemKey(listUri: string, documentUri: string) {
   return recordKey(`${listUri} ${documentUri}`, 'item');
+}
+
+const preferencesSection = document.querySelector<HTMLElement>('[data-preferences]');
+const preferencesStatus = preferencesSection?.querySelector<HTMLElement>('[data-preferences-status]');
+const preferencesFontSize = preferencesSection?.querySelector<HTMLInputElement>('[data-pref-font-size]');
+const preferencesFontSizeOutput = preferencesSection?.querySelector<HTMLOutputElement>('[data-pref-font-size-output]');
+let readerPreferencesDid: string | undefined;
+let preferencesSaveTimer: number | undefined;
+let preferencesSaveQueue: Promise<void> = Promise.resolve();
+
+function setPreferencesStatus(message: string) {
+  if (preferencesStatus) preferencesStatus.textContent = message;
+}
+
+function syncPreferencesForm() {
+  if (!preferencesSection) return;
+  const prefs = window.coffeeAndCodePreferences?.get();
+  if (!prefs) return;
+  preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-theme"]').forEach((input) => {
+    input.checked = input.value === prefs.theme;
+  });
+  preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-font"]').forEach((input) => {
+    input.checked = input.value === prefs.postFont;
+  });
+  const size = prefs.postFontSize ?? 19;
+  if (preferencesFontSize) preferencesFontSize.value = String(size);
+  if (preferencesFontSizeOutput) preferencesFontSizeOutput.textContent = `${size}px`;
+}
+
+function readPreferencesForm(): { theme?: unknown; postFont?: unknown; postFontSize?: unknown } {
+  return {
+    theme: preferencesSection?.querySelector<HTMLInputElement>('input[name="pref-theme"]:checked')?.value,
+    postFont: preferencesSection?.querySelector<HTMLInputElement>('input[name="pref-font"]:checked')?.value,
+    postFontSize: preferencesFontSize ? Number(preferencesFontSize.value) : undefined,
+  };
+}
+
+function schedulePreferencesSave(did: string) {
+  window.clearTimeout(preferencesSaveTimer);
+  preferencesSaveTimer = window.setTimeout(() => {
+    preferencesSaveQueue = preferencesSaveQueue.then(async () => {
+      if (session?.did !== did) return;
+      const active = window.coffeeAndCodePreferences?.get();
+      if (!active) return;
+      setPreferencesStatus('Saving your appearance…');
+      const record: Record<string, unknown> = {
+        $type: PREFERENCES_COLLECTION,
+        theme: active.theme,
+        postFont: active.postFont,
+        updatedAt: new Date().toISOString(),
+      };
+      if (active.postFontSize !== undefined) record.postFontSize = active.postFontSize;
+      try {
+        await repoRequest('com.atproto.repo.putRecord', {
+          repo: did,
+          collection: PREFERENCES_COLLECTION,
+          rkey: PREFERENCES_RKEY,
+          record,
+        });
+        if (session?.did !== did) return;
+        setPreferencesStatus('Appearance saved.');
+      } catch (error) {
+        setPreferencesStatus(errorMessage(error));
+      }
+    });
+  }, 500);
+}
+
+if (preferencesSection) {
+  preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-theme"], input[name="pref-font"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const did = session?.did;
+      window.coffeeAndCodePreferences?.apply(readPreferencesForm());
+      if (did) schedulePreferencesSave(did);
+    });
+  });
+  preferencesFontSize?.addEventListener('input', () => {
+    if (preferencesFontSizeOutput) preferencesFontSizeOutput.textContent = `${preferencesFontSize.value}px`;
+    const did = session?.did;
+    window.coffeeAndCodePreferences?.apply(readPreferencesForm());
+    if (did) schedulePreferencesSave(did);
+  });
+}
+syncPreferencesForm();
+
+async function loadReaderPreferences(did: string) {
+  if (readerPreferencesDid === did) return;
+  try {
+    const query = new URLSearchParams({ repo: did, collection: PREFERENCES_COLLECTION, rkey: PREFERENCES_RKEY });
+    const response = await requireSession().fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+    let value: Record<string, unknown> | undefined;
+    if (response.ok) {
+      const result = await response.json() as { value?: Record<string, unknown> };
+      if (result.value && result.value.$type !== PREFERENCES_COLLECTION) {
+        throw new Error('Your preferences record has an unexpected record type.');
+      }
+      value = result.value;
+    } else {
+      const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+      if (!isMissingRecordResponse(response.status, payload)) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Your account needs updated appearance permissions. Sign out, then sign in again and approve the requested permissions.');
+        }
+        throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Could not load your appearance preferences (${response.status}).`);
+      }
+    }
+    if (session?.did !== did) return;
+    readerPreferencesDid = did;
+    window.coffeeAndCodePreferences?.apply(value || {});
+    syncPreferencesForm();
+  } catch (error) {
+    setPreferencesStatus(errorMessage(error));
+  }
 }
 
 window.coffeeAndCodeAuth = {
