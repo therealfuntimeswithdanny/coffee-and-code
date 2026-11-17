@@ -3,6 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-04-01"
 compatibility_flags = ["nodejs_compat"]
 
+# HTML email templates under cloudflare/email/templates are imported as text.
+rules = [
+  { type = "Text", globs = ["**/*.html"], fallthrough = false },
+]
+
 [assets]
 directory = "media"
 binding = "ASSETS"
