@@ -3579,9 +3579,7 @@ async function readNotificationsMarker() {
 
 type NotificationItem = {
   uri: string;
-  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view' | 'followed.post'
-    // Reasons the appview's app.bsky.notification.* feed can return.
-    | 'mention' | 'quote' | 'repost' | 'follow' | 'other';
+  type: 'comment' | 'comment.reply' | 'comment.like' | 'post.like' | 'post.view' | 'followed.post';
   actorDid: string;
   actorName?: string;
   actorHandle?: string;
@@ -3598,33 +3596,6 @@ type NotificationItem = {
 
 let notificationItems: NotificationItem[] = [];
 let notificationLastRead: string | undefined;
-
-// The publication's HappyView appview (did:web:api.coffeencode.cc) serves the
-// new app.bsky.notification.* API. Signed-in readers mint a short-lived
-// service-auth JWT on their PDS (com.atproto.server.getServiceAuth) and send it
-// to /api/notifications, which proxies the appview; without a token the API
-// falls back to the public-record activity index.
-const APPVIEW_DID = 'did:web:api.coffeencode.cc';
-const APPVIEW_NOTIFICATION_LXM = 'app.bsky.notification.listNotifications';
-
-async function notificationServiceAuthHeaders(): Promise<Record<string, string>> {
-  const activeSession = session;
-  if (!activeSession) return {};
-  try {
-    const query = new URLSearchParams({
-      aud: APPVIEW_DID,
-      lxm: APPVIEW_NOTIFICATION_LXM,
-      exp: String(Math.floor(Date.now() / 1000) + 300),
-    });
-    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.server.getServiceAuth?${query.toString()}`);
-    if (!response.ok) return {};
-    const data = await response.json() as { token?: unknown };
-    return typeof data.token === 'string' && data.token ? { Authorization: `Bearer ${data.token}` } : {};
-  } catch {
-    // Without service auth the API falls back to the public activity index.
-    return {};
-  }
-}
 
 async function markPageNotificationsRead() {
   const readStatus = notificationsPage?.querySelector<HTMLElement>('[data-notifications-read-status]');
@@ -3668,7 +3639,6 @@ async function loadNotificationBadge(did: string) {
     if (marker.lastRead) query.set('lastRead', marker.lastRead);
     const response = await fetch(`/api/notifications?${query}`, {
       cache: 'no-store',
-      headers: await notificationServiceAuthHeaders(),
     });
     if (!response.ok) throw new Error(`Could not load notification count (${response.status}).`);
     const data = await response.json() as { unreadCount?: unknown };
@@ -3715,13 +3685,7 @@ function renderNotifications() {
           ? 'fa-regular fa-eye'
           : item.type === 'followed.post'
             ? 'fa-regular fa-newspaper'
-            : item.type === 'repost' || item.type === 'quote'
-              ? 'fa-solid fa-repeat'
-              : item.type === 'mention'
-                ? 'fa-solid fa-at'
-                : item.type === 'follow'
-                  ? 'fa-solid fa-user-plus'
-                  : 'fa-regular fa-comment';
+            : 'fa-regular fa-comment';
       icon.appendChild(iconGlyph);
       row.appendChild(icon);
 
@@ -3765,19 +3729,11 @@ function renderNotifications() {
               ? ' published a new post: '
             : item.type === 'comment.reply'
               ? ' Replied to you'
-              : item.type === 'mention'
-                ? ' mentioned you'
-                : item.type === 'quote'
-                  ? ' quoted your post'
-                  : item.type === 'repost'
-                    ? ' reposted your post'
-                    : item.type === 'follow'
-                      ? ' followed you'
-                      : item.type === 'comment'
-                        ? ' Replied to '
-                        : ' interacted with your post';
+              : item.type === 'comment'
+                ? ' Replied to '
+                : ' commented on ';
       summary.appendChild(document.createTextNode(action));
-      if (['comment', 'post.like', 'post.view', 'followed.post', 'mention', 'quote', 'repost', 'other'].includes(item.type)) summary.appendChild(story);
+      if (['comment', 'post.like', 'post.view', 'followed.post'].includes(item.type)) summary.appendChild(story);
       if (item.type === 'followed.post' && item.matchedTags?.length) {
           summary.appendChild(document.createTextNode(` tagged ${item.matchedTags.map((tag) => `#${tag}`).join(', ')}`));
       }
@@ -3830,7 +3786,6 @@ async function loadNotificationsPage(refresh = true) {
     const [response, marker] = await Promise.all([
       fetch(`/api/notifications?limit=30&did=${encodeURIComponent(did)}${refresh ? '&refresh=1' : ''}`, {
         cache: 'no-store',
-        headers: await notificationServiceAuthHeaders(),
       }),
       readNotificationsMarker(),
     ]);

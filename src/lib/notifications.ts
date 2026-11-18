@@ -8,14 +8,7 @@ export type NotificationType =
   | 'comment.like'
   | 'post.like'
   | 'post.view'
-  | 'followed.post'
-  // Reasons surfaced by the appview's app.bsky.notification.* endpoints that
-  // do not map onto a Coffee & Code activity type.
-  | 'mention'
-  | 'quote'
-  | 'repost'
-  | 'follow'
-  | 'other';
+  | 'followed.post';
 
 export type Notification = {
   uri: string;
@@ -40,105 +33,6 @@ type Activity = Notification & { recordKey: string };
 
 const DID_PATTERN = /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/;
 const RKEY_PATTERN = /^[a-zA-Z0-9._~:-]+$/;
-
-// The publication's HappyView appview. Callers authenticate with a short-lived
-// service-auth JWT minted by their own PDS (com.atproto.server.getServiceAuth)
-// with `aud` set to the appview's DID; the worker adds its registered API
-// client key (X-Client-Key/X-Client-Secret) required on every XRPC call.
-const DEFAULT_APPVIEW_URL = 'https://api.coffeencode.cc';
-export const APPVIEW_DID = 'did:web:api.coffeencode.cc';
-export const APPVIEW_NOTIFICATIONS_METHOD = 'app.bsky.notification.listNotifications';
-
-type AppviewNotification = {
-  uri?: string;
-  cid?: string;
-  author?: { did?: string; handle?: string; displayName?: string; avatar?: string };
-  reason?: string;
-  reasonSubject?: string;
-  record?: { text?: unknown; subject?: { uri?: unknown } | string; reply?: { parent?: { uri?: unknown }; root?: { uri?: unknown } } };
-  isRead?: boolean;
-  indexedAt?: string;
-};
-
-function appviewReasonType(reason: string | undefined): NotificationType {
-  switch (reason) {
-    case 'reply': return 'comment';
-    case 'mention': return 'mention';
-    case 'quote': return 'quote';
-    case 'repost': return 'repost';
-    case 'like': return 'post.like';
-    case 'follow': return 'follow';
-    default: return 'other';
-  }
-}
-
-// Fetch the caller's notification feed from the HappyView appview using the
-// service-auth token the client minted for it. The token is forwarded as-is —
-// the appview verifies iss/aud/lxm/signature — alongside the worker's API
-// client credentials, which HappyView requires on every XRPC request.
-export async function loadNotificationsFromAppview(env: Env, serviceAuthToken: string, limit = 100, cursor?: string): Promise<{ notifications: Notification[]; cursor?: string }> {
-  const base = (env.HAPPYVIEW_URL || DEFAULT_APPVIEW_URL).replace(/\/$/, '');
-  const url = new URL(`${base}/xrpc/${APPVIEW_NOTIFICATIONS_METHOD}`);
-  url.searchParams.set('limit', String(limit));
-  if (cursor) url.searchParams.set('cursor', cursor);
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    Authorization: `Bearer ${serviceAuthToken}`,
-  };
-  if (env.HAPPYVIEW_CLIENT_KEY) headers['X-Client-Key'] = env.HAPPYVIEW_CLIENT_KEY;
-  if (env.HAPPYVIEW_CLIENT_SECRET) headers['X-Client-Secret'] = env.HAPPYVIEW_CLIENT_SECRET;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Appview returned ${response.status}`);
-  const data = await response.json() as { notifications?: AppviewNotification[]; cursor?: string };
-  const notifications = (data.notifications || [])
-    .filter((item) => typeof item.uri === 'string' && typeof item.author?.did === 'string')
-    .map((item) => {
-      const record = item.record || {};
-      const recordText = typeof record.text === 'string' ? record.text : undefined;
-      const replySubject = typeof record.reply?.parent?.uri === 'string' ? record.reply.parent.uri
-        : typeof record.reply?.root?.uri === 'string' ? record.reply.root.uri : undefined;
-      const subjectUri = typeof item.reasonSubject === 'string' ? item.reasonSubject
-        : typeof record.subject === 'string' ? record.subject
-          : typeof record.subject?.uri === 'string' ? record.subject.uri : replySubject;
-      return {
-        uri: item.uri!,
-        type: appviewReasonType(item.reason),
-        actorDid: item.author!.did!,
-        subjectUri: subjectUri || item.uri!,
-        documentUri: subjectUri || item.uri!,
-        documentTitle: recordText ? (recordText.length > 80 ? `${recordText.slice(0, 80)}…` : recordText) : 'a post',
-        documentPath: '/',
-        ...(typeof item.indexedAt === 'string' ? { createdAt: item.indexedAt } : {}),
-        ...(recordText ? { text: recordText } : {}),
-        actorName: item.author?.displayName || item.author?.handle || item.author!.did!,
-        ...(item.author?.handle ? { actorHandle: item.author.handle } : {}),
-        ...(item.author?.avatar ? { actorAvatar: proxyAvatarUrl(item.author.avatar) } : {}),
-      } satisfies Notification;
-    });
-  return {
-    notifications,
-    ...(typeof data.cursor === 'string' && data.cursor ? { cursor: data.cursor } : {}),
-  };
-}
-
-// Decode (without verifying — the appview is the verifier) the claims of a
-// service-auth JWT the client wants proxied, and confirm it was minted for the
-// requested account and our appview. This keeps the endpoint from being an
-// open relay for arbitrary tokens while staying stateless.
-export function validateServiceAuthToken(token: string, did: string): boolean {
-  const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  try {
-    const claims = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))) as {
-      iss?: string; aud?: string; exp?: number;
-    };
-    if (claims.iss !== did || claims.aud !== APPVIEW_DID) return false;
-    if (typeof claims.exp !== 'number' || claims.exp * 1000 <= Date.now()) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // AT Protocol records are public and immutable in normal use. Constellation
 // indexes backlinks across repositories, so this produces a current activity

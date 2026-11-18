@@ -51,11 +51,6 @@ function pushBodyFor(notification: Notification) {
     case 'followed.post': return notification.matchedTags?.length
       ? `New story about ${notification.matchedTags.join(', ')}: “${notification.documentTitle}”`
       : `${actor} published “${notification.documentTitle}”`;
-    case 'mention': return `${actor} mentioned you`;
-    case 'quote': return `${actor} quoted your post`;
-    case 'repost': return `${actor} reposted your post`;
-    case 'follow': return `${actor} followed you`;
-    default: return `${actor} interacted with your post`;
   }
 }
 
