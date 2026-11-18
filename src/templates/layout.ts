@@ -473,6 +473,15 @@ export function renderLayout(
     .account-email__filters input[type="text"] { background: var(--paper); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: 14px 'Source Sans 3', sans-serif; padding: 7px 9px; }
     .account-email__filters .auth-signout { font-size: 12px; padding: 5px 10px; }
     .account-email__filters > small { color: var(--muted); display: block; margin-top: 6px; }
+    .account-email__filter-group { margin-bottom: 14px; }
+    .account-email__filter-heading { color: var(--muted); font: 600 13px 'Source Sans 3', sans-serif; margin: 0 0 8px; }
+    .account-email__options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .account-email__option { align-items: center; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; color: var(--ink); cursor: pointer; display: inline-flex; font: 600 13px 'Source Sans 3', sans-serif; gap: 6px; min-height: 32px; padding: 3px 12px; }
+    .account-email__option:has(input:checked) { background: rgba(178,172,136,.14); border-color: var(--accent); }
+    html[data-theme="light"] .account-email__option:has(input:checked) { background: rgba(111,99,53,.16); }
+    .account-email__option input { accent-color: var(--accent); margin: 0; }
+    .account-email__filters-status { color: var(--muted); font-size: 13px; margin: 6px 0; }
+    .account-email__filters > .auth-signout { margin-top: 4px; }
     .account-email__form { display: grid; gap: 12px; margin-top: 18px; }
     .account-email__form label { display: grid; font-size: 14px; gap: 6px; }
     .account-email__form input[type="email"] { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: 15px 'Source Sans 3', sans-serif; padding: 10px 12px; }

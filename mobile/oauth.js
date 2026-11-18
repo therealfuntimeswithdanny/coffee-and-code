@@ -4,6 +4,7 @@ import { Agent } from '@atproto/api';
 
 const SESSION_KEY = 'coffee-and-code:account-did';
 const AUTHOR_KEY = 'coffee-and-code:account-author';
+const KNOWN_ACCOUNTS_KEY = 'coffee-and-code:known-accounts';
 const REDIRECT = 'cc.coffeencode:/auth/callback';
 const WEB_REDIRECT = 'https://coffeencode.cc/auth';
 const AUTHOR_SCOPE = 'include:cc.coffeencode.authAuthor';
@@ -45,10 +46,65 @@ function scopeForAccount(author) {
   return author ? clientMetadata.scope : clientMetadata.scope.replace(`${AUTHOR_SCOPE} `, '');
 }
 
+// Accounts that have signed in on this device, for the account switcher.
+// Each entry is { did, handle?, displayName?, avatar?, author? }.
+export async function listKnownAccounts() {
+  try {
+    const parsed = JSON.parse((await AsyncStorage.getItem(KNOWN_ACCOUNTS_KEY)) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => entry && typeof entry.did === 'string' && entry.did.startsWith('did:'));
+  } catch {
+    return [];
+  }
+}
+
+async function saveKnownAccounts(accounts) {
+  try {
+    await AsyncStorage.setItem(KNOWN_ACCOUNTS_KEY, JSON.stringify(accounts.slice(0, 12)));
+  } catch { /* The switcher just won't persist. */ }
+}
+
+export async function rememberAccount(did, patch = {}) {
+  if (typeof did !== 'string' || !did.startsWith('did:')) return;
+  const accounts = await listKnownAccounts();
+  const existing = accounts.find((account) => account.did === did);
+  if (existing) Object.assign(existing, patch);
+  else accounts.unshift({ did, ...patch });
+  await saveKnownAccounts(accounts);
+}
+
+export async function forgetAccount(did) {
+  await saveKnownAccounts((await listKnownAccounts()).filter((account) => account.did !== did));
+}
+
+// Fills in public profile details for switcher rows that only know a DID.
+export async function backfillKnownAccount(did) {
+  try {
+    const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+    if (!response.ok) return;
+    const profile = await response.json();
+    await rememberAccount(did, {
+      ...(typeof profile.handle === 'string' ? { handle: profile.handle } : {}),
+      ...(typeof profile.displayName === 'string' ? { displayName: profile.displayName } : {}),
+      ...(typeof profile.avatar === 'string' ? { avatar: profile.avatar } : {}),
+    });
+  } catch { /* Rows fall back to the DID. */ }
+}
+
+export async function switchAccount(did) {
+  const session = await getClient().restore(did);
+  const known = (await listKnownAccounts()).find((account) => account.did === session.did);
+  const author = known?.author === true;
+  await AsyncStorage.setItem(SESSION_KEY, session.did);
+  await AsyncStorage.setItem(AUTHOR_KEY, String(author));
+  return { session, agent: new Agent(session), author };
+}
+
 export async function signIn(handle, author = false) {
   const session = await getClient().signIn(handle, { redirect_uri: REDIRECT, scope: scopeForAccount(author) });
   await AsyncStorage.setItem(SESSION_KEY, session.did);
   await AsyncStorage.setItem(AUTHOR_KEY, String(author));
+  await rememberAccount(session.did, { author, ...(typeof handle === 'string' && handle ? { handle } : {}) });
   return { session, agent: new Agent(session), author };
 }
 
@@ -60,6 +116,7 @@ export async function createAccount() {
   });
   await AsyncStorage.setItem(SESSION_KEY, session.did);
   await AsyncStorage.setItem(AUTHOR_KEY, 'false');
+  await rememberAccount(session.did, { author: false });
   return { session, agent: new Agent(session), author: false };
 }
 
@@ -70,6 +127,7 @@ export async function restoreSession() {
   try {
     const session = await getClient().restore(did);
     const author = (await AsyncStorage.getItem(AUTHOR_KEY)) === 'true';
+    await rememberAccount(session.did, { author });
     return { session, agent: new Agent(session), author };
   } catch {
     await AsyncStorage.multiRemove([SESSION_KEY, AUTHOR_KEY]);
@@ -82,6 +140,8 @@ export async function signOut(account) {
     if (!isExpoGo) {
       await getClient().revoke(account.session.did).catch(() => {});
     }
+    // The session was revoked, so the switcher cannot restore this account.
+    await forgetAccount(account.session.did).catch(() => {});
   }
   await AsyncStorage.multiRemove([SESSION_KEY, AUTHOR_KEY]);
 }

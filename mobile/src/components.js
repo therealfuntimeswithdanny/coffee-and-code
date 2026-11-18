@@ -192,7 +192,7 @@ function ImageCarousel({ images, did }) {
   </View>;
 }
 
-function StructuredArticleBody({ content, did }) {
+function StructuredArticleBody({ content, did, bodyStyle }) {
   const contentItems = Array.isArray(content?.items)
     ? content.items.map((item) => ({
       block: typeof item === 'string'
@@ -211,8 +211,8 @@ function StructuredArticleBody({ content, did }) {
     if (type.endsWith('.heading') || type.endsWith('.title')) {
       return <InlineText key={index} text={text} style={block.level > 2 ? styles.articleSubheading : styles.articleHeading} />;
     }
-    if (type.endsWith('.text')) return <FacetedText key={index} text={text} facets={block.facets} style={styles.paragraph} />;
-    if (type.endsWith('.blockquote')) return <FacetedText key={index} text={text} facets={block.facets} style={styles.quote} />;
+    if (type.endsWith('.text')) return <FacetedText key={index} text={text} facets={block.facets} style={[styles.paragraph, bodyStyle]} />;
+    if (type.endsWith('.blockquote')) return <FacetedText key={index} text={text} facets={block.facets} style={[styles.quote, bodyStyle]} />;
     if (type.endsWith('.image')) return <StructuredImage key={index} image={block} did={did} index={index} />;
     if (type.endsWith('.imageGallery')) {
       const images = Array.isArray(block.images) ? block.images : [];
@@ -220,12 +220,12 @@ function StructuredArticleBody({ content, did }) {
     }
     if (type.endsWith('.horizontalRule')) return <View key={index} style={styles.rule} />;
     if (type.endsWith('.iframe') || type.endsWith('.html')) return <ArticleEmbed key={index} data={{ src: block.url, srcdoc: block.html, title: block.title || block.alt, height: block.height }} />;
-    if (text) return <InlineText key={index} text={text} style={styles.paragraph} />;
+    if (text) return <InlineText key={index} text={text} style={[styles.paragraph, bodyStyle]} />;
     return null;
   })}</View>;
 }
 
-export function ArticleBody({ record, uri }) {
+export function ArticleBody({ record, uri, bodyStyle }) {
   let content = record?.content || record?.textContent || record?.content?.textContent
     || (Array.isArray(record?.blocks) ? { blocks: record.blocks } : null);
   if (typeof content === 'string' && (record.contentFormat === 'leaflet' || record.format === 'leaflet')) {
@@ -239,13 +239,13 @@ export function ArticleBody({ record, uri }) {
   }
   if (typeof content === 'string') {
     for (const match of content.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)) registerImageUrl(match[1]);
-    return <Text style={styles.paragraph}>{content}</Text>;
+    return <Text style={[styles.paragraph, bodyStyle]}>{content}</Text>;
   }
   const structured = content && typeof content === 'object'
     && (content.$type === 'pub.leaflet.content' || Array.isArray(content.pages) || Array.isArray(content.blocks) || Array.isArray(content.items));
   if (structured) {
     const did = uri?.match(/^at:\/\/(did:[^/]+)\//)?.[1];
-    return <StructuredArticleBody content={content} did={did} />;
+    return <StructuredArticleBody content={content} did={did} bodyStyle={bodyStyle} />;
   }
   return <Text style={styles.error}>This story uses a content format the app cannot display.</Text>;
 }

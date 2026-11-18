@@ -854,8 +854,9 @@ type EmailSettingsResponse = {
   alreadyVerified?: boolean;
 };
 
-// Collapsible per-address routing editor: limit an address to stories matching
-// certain tags or authors; empty lists mean it receives everything.
+// Collapsible per-address routing editor: checkboxes built from the account's
+// followed tags and authors; leaving everything unchecked means the address
+// receives every story.
 function buildEmailFilters(
   entry: EmailAddressEntry,
   did: string,
@@ -867,35 +868,119 @@ function buildEmailFilters(
   const filterSummary = document.createElement('summary');
   const activeFilters = (entry.tags?.length || 0) + (entry.authors?.length || 0);
   filterSummary.textContent = activeFilters ? `Filters (${activeFilters})` : 'Filters — all stories';
-  filters.append(filterSummary);
-  const tagLabel = document.createElement('label');
-  tagLabel.textContent = 'Only these tags (comma-separated)';
-  const tagInput = document.createElement('input');
-  tagInput.type = 'text';
-  tagInput.value = (entry.tags || []).join(', ');
-  tagInput.placeholder = 'For example: atproto, coffee';
-  tagLabel.append(tagInput);
-  const authorLabel = document.createElement('label');
-  authorLabel.textContent = 'Only these authors (handles or dids)';
-  const authorInput = document.createElement('input');
-  authorInput.type = 'text';
-  authorInput.value = (entry.authors || []).join(', ');
-  authorInput.placeholder = 'For example: jay.bsky.team';
-  authorLabel.append(authorInput);
+  const options = document.createElement('div');
+  options.className = 'account-email__filter-options';
+  const optionsStatus = document.createElement('p');
+  optionsStatus.className = 'account-email__filters-status';
   const saveFilters = document.createElement('button');
   saveFilters.type = 'button';
   saveFilters.className = 'auth-signout';
+  saveFilters.hidden = true;
   saveFilters.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Save filters';
   const filtersStatus = document.createElement('small');
-  const splitList = (value: string) => value.split(',').map((part) => part.trim()).filter(Boolean);
+  filters.append(filterSummary, options, optionsStatus, saveFilters, filtersStatus);
+
+  const selectedTags = new Set((entry.tags || []).map((tag) => tag.toLowerCase()));
+  const selectedAuthors = new Set((entry.authors || []).map((author) => author.toLowerCase()));
+  let optionsLoaded = false;
+
+  const option = (value: string, label: string, checked: boolean, hint?: string) => {
+    const wrapper = document.createElement('label');
+    wrapper.className = 'account-email__option';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = value;
+    input.checked = checked;
+    const text = document.createElement('span');
+    text.textContent = label;
+    wrapper.append(input, text);
+    if (hint) wrapper.title = hint;
+    return wrapper;
+  };
+
+  filters.addEventListener('toggle', async () => {
+    if (!filters.open || optionsLoaded) return;
+    optionsLoaded = true;
+    optionsStatus.textContent = 'Loading your follows…';
+    try {
+      const [tagRecords, followRecords, siteAuthors] = await Promise.all([
+        listTagFollows(did),
+        listGraphFollows(did).catch(() => [] as GraphFollowRecord[]),
+        listSiteAuthors().catch(() => new Map<string, SiteAuthor>()),
+      ]);
+      if (session?.did !== did) return;
+      const followedAuthors = [...new Map(followRecords
+        .map((record) => siteAuthors.get(record.subject.toLowerCase()))
+        .filter((author): author is SiteAuthor => Boolean(author))
+        .map((author) => [author.did.toLowerCase(), author])).values()]
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+      options.replaceChildren();
+      const tagGroup = document.createElement('div');
+      tagGroup.className = 'account-email__filter-group';
+      tagGroup.append(Object.assign(document.createElement('p'), { className: 'account-email__filter-heading', textContent: 'Tags you follow' }));
+      const tagOptions = document.createElement('div');
+      tagOptions.className = 'account-email__options';
+      const knownTags = new Set(tagRecords.map((record) => record.tag.toLowerCase()));
+      tagRecords
+        .slice()
+        .sort((a, b) => a.tag.localeCompare(b.tag))
+        .forEach((record) => tagOptions.append(option(record.tag, record.tag, selectedTags.has(record.tag.toLowerCase()))));
+      // Keep any saved filters that are no longer followed visible and checked.
+      selectedTags.forEach((tag) => {
+        if (!knownTags.has(tag)) tagOptions.append(option(tag, tag, true, 'Saved filter you no longer follow'));
+      });
+      tagGroup.append(tagOptions);
+      if (!tagOptions.children.length) {
+        tagGroup.append(Object.assign(document.createElement('p'), {
+          className: 'account-email__filters-status',
+          textContent: 'You do not follow any tags yet.',
+        }));
+      }
+
+      const authorGroup = document.createElement('div');
+      authorGroup.className = 'account-email__filter-group';
+      authorGroup.append(Object.assign(document.createElement('p'), { className: 'account-email__filter-heading', textContent: 'Authors you follow' }));
+      const authorOptions = document.createElement('div');
+      authorOptions.className = 'account-email__options';
+      const knownAuthors = new Set(followedAuthors.map((author) => author.did.toLowerCase()));
+      followedAuthors.forEach((author) => authorOptions.append(
+        option(author.did, `${author.displayName} (@${author.handle})`, selectedAuthors.has(author.did.toLowerCase()) || selectedAuthors.has(author.handle.toLowerCase())),
+      ));
+      selectedAuthors.forEach((author) => {
+        if (!knownAuthors.has(author)) authorOptions.append(option(author, author, true, 'Saved filter you no longer follow'));
+      });
+      authorGroup.append(authorOptions);
+      if (!authorOptions.children.length) {
+        authorGroup.append(Object.assign(document.createElement('p'), {
+          className: 'account-email__filters-status',
+          textContent: 'You do not follow any authors yet.',
+        }));
+      }
+
+      options.append(tagGroup, authorGroup);
+      optionsStatus.textContent = 'Leave everything unchecked to receive all stories at this address.';
+      saveFilters.hidden = false;
+    } catch (error) {
+      optionsLoaded = false;
+      optionsStatus.textContent = errorMessage(error);
+    }
+  });
+
   saveFilters.addEventListener('click', async () => {
     saveFilters.disabled = true;
     filtersStatus.textContent = 'Saving filters…';
+    const checked = (group: number) => {
+      const container = options.children[group];
+      return container
+        ? [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')].map((input) => input.value)
+        : [];
+    };
     try {
       const response = await fetch('/api/email/addresses', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ did, email: entry.address, tags: splitList(tagInput.value), authors: splitList(authorInput.value) }),
+        body: JSON.stringify({ did, email: entry.address, tags: checked(0), authors: checked(1) }),
       });
       const result = await response.json() as EmailSettingsResponse & { error?: string };
       if (!response.ok) throw new Error(result.error || 'Could not save your filters.');
@@ -907,7 +992,6 @@ function buildEmailFilters(
       saveFilters.disabled = false;
     }
   });
-  filters.append(tagLabel, authorLabel, saveFilters, filtersStatus);
   return filters;
 }
 

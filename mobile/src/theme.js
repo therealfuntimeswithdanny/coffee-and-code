@@ -747,6 +747,7 @@ export const styles = StyleSheet.create({
   blockedAccountRow: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     borderBottomWidth: 1,
     borderBottomColor: C.line,
     paddingVertical: 13,
@@ -1110,4 +1111,23 @@ export const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: "center",
   },
+
+  // Sharing, appearance, and email settings
+  shareRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  prefChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 8 },
+  prefSizeRow: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 8 },
+  prefPreview: { marginTop: 16, padding: 14, backgroundColor: C.panel, borderRadius: 8 },
+  emailToggleRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  emailRowActions: { flexDirection: "row", alignItems: "center", gap: 14 },
+  profileAvatarPreview: { width: 72, height: 72, borderRadius: 36, marginRight: 14, backgroundColor: C.panelLight },
+  profileBannerPreview: { width: 120, height: 56, borderRadius: 8, marginRight: 14, backgroundColor: C.panelLight },
+  switcherRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderTopColor: C.line,
+  },
+  switcherAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 12, backgroundColor: C.panelLight },
 });

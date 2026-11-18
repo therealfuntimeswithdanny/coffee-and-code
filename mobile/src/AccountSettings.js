@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DevSettings, Image, Linking, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, DevSettings, Image, Linking, Pressable, ScrollView, Share, Switch, Text, TextInput, View } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { WELCOME_KEY, FEEDBACK_URL } from './Welcome';
 import SymbolView from './Icon';
 import { C, styles } from './theme';
@@ -10,10 +11,23 @@ import {
   getApiBase, getLogEntries, getLogStats, getLogText, imageCacheStats, postCacheStats, refreshImageCache,
   setApiBase,
 } from './developer';
+import {
+  DEFAULT_FONT_SIZE, MAX_FONT_SIZE, MIN_FONT_SIZE, STORY_FONT_CHOICES, normalizePreferences, readerTextStyle,
+} from './preferences';
+
+// expo-image-picker is a native module: it only exists in builds made after it
+// was installed. Require it lazily so older dev-client builds keep working.
+let ImagePicker = null;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch { /* Older dev-client builds keep working without image picking. */ }
 import { cacheStats as imageDiskStats, clearImageCache } from './imageCache';
 import { LegalSettings } from './legal';
 
 export const accountSettingsPages = [
+  { id: 'profile', title: 'Edit profile', subtitle: 'Your name, pronouns, bio, and photos on Coffee & Code', icon: 'pencil' },
+  { id: 'appearance', title: 'Appearance', subtitle: 'Story font and text size, synced to your account', icon: 'textformat.size' },
+  { id: 'email', title: 'Email notifications', subtitle: 'Get new stories from authors and tags you follow in your inbox', icon: 'envelope' },
   { id: 'account', title: 'Manage Identity', subtitle: 'Manage your identity and perform destructive actions', icon: 'person.crop.circle' },
   { id: 'reading', title: 'Public activity', subtitle: 'View and delete public records. Likes, views, saves, etc.', icon: 'book' },
   { id: 'follows', title: 'Following', subtitle: 'Authors and tags you follow for new-story notifications', icon: 'tag' },
@@ -25,7 +39,7 @@ export const accountSettingsPages = [
   { id: 'developer', title: 'Developer', subtitle: 'On-device logs and caches for debugging', icon: 'hammer' },
 ];
 
-export const publicSettingsPageIds = ['ads', 'legal', 'feedback', 'about', 'developer'];
+export const publicSettingsPageIds = ['appearance', 'ads', 'legal', 'feedback', 'about', 'developer'];
 
 export function SettingsRow({ icon, title, subtitle, onPress, destructive = false, badge = 0 }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={styles.settingsRow}>
@@ -159,7 +173,370 @@ function DeveloperSettings() {
   </View>;
 }
 
-export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, tagFollows = [], authors = [], authorFollows = [], savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onToggleTagFollow, onToggleAuthorFollow, onSignOut }) {
+const PROFILE_LIMITS = { displayName: 64, pronouns: 40, description: 256 };
+const graphemes = (value) => [...String(value || '')].length;
+
+// Edits the reader profile record (cc.coffeencode.profile). Unknown fields on
+// the existing record are preserved so other clients' data is not lost.
+function ProfileEditor({ account, accountProfile, coffeeProfile, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [pronouns, setPronouns] = useState('');
+  const [description, setDescription] = useState('');
+  const [avatar, setAvatar] = useState(null);
+  const [banner, setBanner] = useState(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [removeBanner, setRemoveBanner] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const record = coffeeProfile || {};
+  const startEditing = () => {
+    setDisplayName(record.displayName || accountProfile?.displayName || '');
+    setPronouns(record.pronouns || '');
+    setDescription(record.description || accountProfile?.description || '');
+    setAvatar(null);
+    setBanner(null);
+    setRemoveAvatar(false);
+    setRemoveBanner(false);
+    setStatus('');
+    setEditing(true);
+  };
+
+  const pickImage = async (kind) => {
+    if (busy) return;
+    if (!ImagePicker) {
+      setStatus('Image picking needs a newer app build. Rebuild the app to use it.');
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: kind === 'avatar' ? [1, 1] : [3, 1],
+        quality: 0.9,
+      });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+      if (asset.fileSize && asset.fileSize > 2_000_000) {
+        setStatus('Profile images must be smaller than 2 MB. Choose a smaller image.');
+        return;
+      }
+      const mimeType = asset.mimeType
+        || `image/${/\.(png)$/i.test(asset.uri) ? 'png' : /\.(gif)$/i.test(asset.uri) ? 'gif' : /\.(webp)$/i.test(asset.uri) ? 'webp' : 'jpeg'}`;
+      if (!/^image\/(jpeg|png|gif|webp)$/.test(mimeType)) {
+        setStatus('Profile images must be JPEG, PNG, GIF, or WebP.');
+        return;
+      }
+      setStatus('');
+      if (kind === 'avatar') { setAvatar({ uri: asset.uri, mimeType }); setRemoveAvatar(false); }
+      else { setBanner({ uri: asset.uri, mimeType }); setRemoveBanner(false); }
+    } catch (pickError) {
+      setStatus(pickError.message || 'Could not open the image picker.');
+    }
+  };
+
+  const save = async () => {
+    const invalid = [['displayName', 'Display name', displayName], ['pronouns', 'Pronouns', pronouns], ['description', 'Bio', description]]
+      .find(([key, , value]) => graphemes(value.trim()) > PROFILE_LIMITS[key]);
+    if (invalid) {
+      setStatus(`${invalid[1]} must be ${PROFILE_LIMITS[invalid[0]]} characters or fewer.`);
+      return;
+    }
+    setBusy(true);
+    setStatus(avatar || banner ? 'Uploading images…' : 'Saving your profile…');
+    try {
+      const { avatarUrl, bannerUrl, ...rest } = record;
+      const next = { ...rest, $type: 'cc.coffeencode.profile' };
+      const fields = { displayName: displayName.trim(), pronouns: pronouns.trim(), description: description.trim() };
+      Object.entries(fields).forEach(([key, value]) => { if (value) next[key] = value; else delete next[key]; });
+      const upload = async (picked) => {
+        const base64 = await FileSystem.readAsStringAsync(picked.uri, { encoding: FileSystem.EncodingType.Base64 });
+        const bytes = Uint8Array.fromBase64(base64);
+        if (bytes.length > 2_000_000) throw new Error('Profile images must be smaller than 2 MB.');
+        const uploaded = await account.agent.com.atproto.repo.uploadBlob(bytes, { encoding: picked.mimeType || 'image/jpeg' });
+        const blob = uploaded?.data?.blob;
+        if (!blob?.ref?.$link) throw new Error('The account provider did not return the uploaded image.');
+        return blob;
+      };
+      if (avatar) next.avatar = await upload(avatar);
+      else if (removeAvatar) delete next.avatar;
+      if (banner) next.banner = await upload(banner);
+      else if (removeBanner) delete next.banner;
+      if (typeof next.createdAt !== 'string' || !next.createdAt) next.createdAt = new Date().toISOString();
+      setStatus('Saving your profile…');
+      await account.agent.com.atproto.repo.putRecord({
+        repo: account.session.did,
+        collection: 'cc.coffeencode.profile',
+        rkey: 'self',
+        record: next,
+      });
+      onSaved?.(next);
+      setStatus('Profile saved.');
+      setEditing(false);
+    } catch (saveError) {
+      setStatus(saveError.message || 'Could not save your profile.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return <View style={styles.settingsCard}>
+      <Text style={styles.accountDescription}>Your Coffee & Code profile is shown on your public reader page instead of your Bluesky details. Changes sync anywhere you sign in.</Text>
+      <Pressable accessibilityRole="button" onPress={startEditing} style={styles.secondaryButton}><Text style={styles.action}>EDIT PROFILE</Text></Pressable>
+    </View>;
+  }
+
+  const pickerRow = (kind, picked, currentUrl, removed, onRemove) => <View style={styles.listImagePickerRow}>
+    {picked?.uri || (!removed && currentUrl)
+      ? <Image source={{ uri: picked?.uri || currentUrl }} accessibilityLabel={kind === 'avatar' ? 'Profile photo preview' : 'Profile banner preview'} style={kind === 'avatar' ? styles.profileAvatarPreview : styles.profileBannerPreview} />
+      : <View style={[kind === 'avatar' ? styles.profileAvatarPreview : styles.profileBannerPreview, styles.listImagePreviewEmpty]}><SymbolView name="photo" size={18} tintColor={C.muted} /></View>}
+    <View style={{ flex: 1 }}>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={() => pickImage(kind)} style={styles.secondaryButton}><Text style={styles.action}>{picked || (!removed && currentUrl) ? `CHANGE ${kind === 'avatar' ? 'PHOTO' : 'BANNER'}` : `CHOOSE ${kind === 'avatar' ? 'PHOTO' : 'BANNER'}`}</Text></Pressable>
+      {(picked || (!removed && currentUrl)) && <Pressable accessibilityRole="button" disabled={busy} onPress={onRemove}><Text style={[styles.action, { color: C.error, marginTop: 8 }]}>REMOVE</Text></Pressable>}
+    </View>
+  </View>;
+
+  return <View style={styles.settingsCard}>
+    {!!status && <Text accessibilityRole="alert" style={styles.error}>{status}</Text>}
+    <Text style={styles.fieldLabel}>PROFILE PHOTO</Text>
+    {pickerRow('avatar', avatar, coffeeProfile?.avatarUrl || accountProfile?.avatar, removeAvatar, () => { setAvatar(null); setRemoveAvatar(true); })}
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>BANNER</Text>
+    {pickerRow('banner', banner, coffeeProfile?.bannerUrl || accountProfile?.banner, removeBanner, () => { setBanner(null); setRemoveBanner(true); })}
+    <Text style={styles.meta}>Images upload to your account, up to 2 MB each.</Text>
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>DISPLAY NAME</Text>
+    <TextInput value={displayName} onChangeText={setDisplayName} editable={!busy} placeholder="Your name" placeholderTextColor={C.muted} maxLength={640} style={styles.commentInput} />
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>PRONOUNS (OPTIONAL)</Text>
+    <TextInput value={pronouns} onChangeText={setPronouns} editable={!busy} placeholder="For example: they/them" placeholderTextColor={C.muted} maxLength={400} autoCapitalize="none" style={styles.commentInput} />
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>BIO</Text>
+    <TextInput value={description} onChangeText={setDescription} editable={!busy} placeholder="A little about you" placeholderTextColor={C.muted} multiline maxLength={2560} style={[styles.commentInput, { minHeight: 80 }]} />
+    <Pressable accessibilityRole="button" disabled={busy} onPress={save} style={[styles.primaryButton, busy && styles.disabledButton, { marginTop: 16 }]}>
+      <Text style={styles.primaryButtonText}>{busy ? 'SAVING…' : 'SAVE PROFILE'}</Text>
+    </Pressable>
+    <Pressable accessibilityRole="button" disabled={busy} onPress={() => setEditing(false)}><Text style={[styles.action, { marginTop: 12 }]}>CANCEL</Text></Pressable>
+  </View>;
+}
+
+function AppearanceSettings({ account, prefs, onPrefsChange, prefsStatus = '' }) {
+  const active = normalizePreferences(prefs);
+  const size = active.postFontSize || DEFAULT_FONT_SIZE;
+  const choose = (patch) => onPrefsChange?.(normalizePreferences({ ...active, ...patch }));
+  const chip = (choice) => <Pressable key={choice.id} accessibilityRole="button" accessibilityState={{ selected: active.postFont === choice.id }} onPress={() => choose({ postFont: choice.id })} style={[styles.tagChip, active.postFont === choice.id && styles.tagChipActive]}>
+    <Text style={[styles.tagText, active.postFont === choice.id && styles.tagTextActive]}>{choice.label}</Text>
+  </Pressable>;
+  return <View style={styles.settingsCard}>
+    <Text style={styles.accountDescription}>Choose how stories look in the app. Your preferences are saved to your account and synced with the Coffee &amp; Code website.</Text>
+    <Text style={styles.fieldLabel}>STORY FONT</Text>
+    <View style={styles.prefChipRow}>{STORY_FONT_CHOICES.map(chip)}</View>
+    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>STORY TEXT SIZE</Text>
+    <View style={styles.prefSizeRow}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Decrease text size" disabled={size <= MIN_FONT_SIZE} onPress={() => choose({ postFontSize: size - 1 })} style={[styles.tagChip, size <= MIN_FONT_SIZE && styles.disabledButton]}><Text style={styles.tagText}>A−</Text></Pressable>
+      <Text style={styles.accountIdentityValue}>{size}px</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Increase text size" disabled={size >= MAX_FONT_SIZE} onPress={() => choose({ postFontSize: size + 1 })} style={[styles.tagChip, size >= MAX_FONT_SIZE && styles.disabledButton]}><Text style={styles.tagText}>A+</Text></Pressable>
+    </View>
+    <View style={styles.prefPreview}>
+      <Text style={[styles.paragraph, readerTextStyle(active), { marginBottom: 0 }]}>The quick brown fox jumps over the lazy dog. Stories you read in the app use this font and size.</Text>
+    </View>
+    {!!prefsStatus && <Text style={styles.meta}>{prefsStatus}</Text>}
+    {!account && <Text style={styles.meta}>Sign in to sync these preferences with the website.</Text>}
+  </View>;
+}
+
+const EMAIL_FREQUENCIES = [
+  { id: 'instant', label: 'Instant' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekly', label: 'Weekly' },
+];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Mirrors the website's Email notifications card: the same /api/email routes
+// back both, so addresses added here work there too.
+function EmailSettings({ account }) {
+  const did = account?.session?.did;
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('Loading your email settings…');
+  const [newAddress, setNewAddress] = useState('');
+  const [accountEmail, setAccountEmail] = useState(null);
+  const [filterFor, setFilterFor] = useState(null);
+  const [filterDraft, setFilterDraft] = useState({ tags: '', authors: '' });
+
+  const request = useCallback(async (path, options = {}) => {
+    const response = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `The email service returned an error (${response.status}).`);
+    return payload;
+  }, []);
+
+  const applySettings = useCallback((payload) => {
+    setSettings(payload);
+    return payload;
+  }, []);
+
+  useEffect(() => {
+    if (!did) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await request(`/email/settings?did=${encodeURIComponent(did)}`);
+        if (cancelled) return;
+        applySettings(payload);
+        setStatus(payload.emails?.length ? '' : 'Add an email address to get new stories in your inbox.');
+      } catch (loadError) {
+        if (!cancelled) setStatus(loadError.message || 'Could not load your email settings.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+      // The account's own email comes from its PDS session. Sessions that
+      // predate the email scope just do not offer the button.
+      try {
+        const session = await account.agent.com.atproto.server.getSession();
+        const address = session?.data?.email;
+        if (!cancelled && typeof address === 'string' && address) {
+          setAccountEmail({ address, confirmed: session.data.emailConfirmed === true });
+        }
+      } catch { /* Account email unavailable; manual addresses still work. */ }
+    })();
+    return () => { cancelled = true; };
+  }, [did, account, request, applySettings]);
+
+  const run = useCallback(async (working, action) => {
+    if (busy) return;
+    setBusy(true);
+    setStatus(working);
+    try {
+      const payload = await action();
+      if (payload?.emails) applySettings(payload);
+      return payload;
+    } catch (actionError) {
+      setStatus(actionError.message || 'That change could not be saved.');
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, applySettings]);
+
+  const toggleEnabled = (enabled) => run(
+    enabled ? 'Turning email notifications on…' : 'Turning email notifications off…',
+    async () => {
+      const payload = await request('/email/settings', { method: 'POST', body: JSON.stringify({ did, enabled }) });
+      setStatus(enabled ? 'Email notifications are on.' : 'Email notifications are off.');
+      return payload;
+    },
+  );
+  const chooseFrequency = (frequency) => run('Saving your delivery preference…', async () => {
+    const payload = await request('/email/settings', { method: 'PUT', body: JSON.stringify({ did, frequency }) });
+    setStatus(frequency === 'instant' ? 'Emails will arrive as stories publish.' : `You'll get a ${frequency} brief in your inbox.`);
+    return payload;
+  });
+  const removeAddress = (address) => run(`Removing ${address}…`, async () => {
+    const payload = await request('/email/addresses', { method: 'DELETE', body: JSON.stringify({ did, email: address }) });
+    setStatus(`Removed ${address}.`);
+    return payload;
+  });
+  const resend = (address) => run(`Resending the confirmation email to ${address}…`, async () => {
+    const payload = await request('/email/addresses', { method: 'POST', body: JSON.stringify({ did, email: address }) });
+    setStatus(payload.verificationSent ? `Confirmation email sent to ${address}.` : 'The confirmation email could not be sent right now. Try again shortly.');
+    return payload;
+  });
+  const addAddress = () => {
+    const address = newAddress.trim();
+    if (!EMAIL_PATTERN.test(address)) { setStatus('Enter a valid email address.'); return; }
+    void run(`Sending a confirmation email to ${address}…`, async () => {
+      const payload = await request('/email/addresses', { method: 'POST', body: JSON.stringify({ did, email: address }) });
+      setNewAddress('');
+      setStatus(payload.alreadyVerified
+        ? `${address} is already verified.`
+        : payload.verificationSent
+          ? `Confirmation email sent to ${address}. Open the link in it to verify the address.`
+          : `${address} saved, but the confirmation email could not be sent. Try again shortly.`);
+      return payload;
+    });
+  };
+  const addAccountEmail = () => {
+    if (!accountEmail) return;
+    const { address, confirmed } = accountEmail;
+    void run(`Adding ${address}…`, async () => {
+      const payload = await request(confirmed ? '/email/account-email' : '/email/addresses', { method: 'POST', body: JSON.stringify({ did, email: address }) });
+      setStatus(confirmed
+        ? `${address} added — it is already verified through your account.`
+        : `Confirmation email sent to ${address}. Open the link in it to verify the address.`);
+      if (confirmed) setAccountEmail(null);
+      return payload;
+    });
+  };
+  const openFilters = (entry) => {
+    setFilterFor(entry.address);
+    setFilterDraft({ tags: (entry.tags || []).join(', '), authors: (entry.authors || []).join(', ') });
+  };
+  const saveFilters = () => {
+    const parse = (value) => value.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 32);
+    const tags = parse(filterDraft.tags);
+    const authors = parse(filterDraft.authors);
+    void run('Saving delivery filters…', async () => {
+      const payload = await request('/email/addresses', { method: 'PUT', body: JSON.stringify({ did, email: filterFor, tags, authors }) });
+      setFilterFor(null);
+      setStatus(tags.length || authors.length
+        ? `${filterFor} now only receives matching stories.`
+        : `${filterFor} now receives every matching story.`);
+      return payload;
+    });
+  };
+
+  if (loading) return <View style={styles.settingsCard}><ActivityIndicator color={C.muted} /><Text style={[styles.meta, { marginTop: 10 }]}>{status}</Text></View>;
+  const enabled = settings?.enabled === true;
+  const frequency = settings?.frequency || 'instant';
+  const emails = settings?.emails || [];
+  const accountEmailListed = accountEmail && emails.some((entry) => entry.address.toLowerCase() === accountEmail.address.toLowerCase());
+  return <View style={styles.settingsCard}>
+    <View style={styles.emailToggleRow}>
+      <Text style={[styles.authorName, { flex: 1, paddingRight: 10 }]}>Email me when people or tags I follow publish a story</Text>
+      <Switch accessibilityLabel="Email me when people or tags I follow publish a story" value={enabled} disabled={busy || !settings} onValueChange={toggleEnabled} trackColor={{ true: C.ink, false: C.panelLight }} thumbColor={enabled ? C.bg : C.muted} />
+    </View>
+    <Text style={styles.fieldLabel}>DELIVERY</Text>
+    <View style={styles.prefChipRow}>
+      {EMAIL_FREQUENCIES.map((option) => <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected: frequency === option.id }} disabled={busy || !settings} onPress={() => chooseFrequency(option.id)} style={[styles.tagChip, frequency === option.id && styles.tagChipActive]}>
+        <Text style={[styles.tagText, frequency === option.id && styles.tagTextActive]}>{option.label}</Text>
+      </Pressable>)}
+    </View>
+    {!!status && <Text accessibilityRole="alert" style={[styles.meta, { marginTop: 12 }]}>{status}</Text>}
+    {emails.map((entry) => <View key={entry.address} style={styles.blockedAccountRow}>
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={styles.accountIdentityValue}>{entry.address}</Text>
+        <Text style={styles.meta}>{entry.verified ? (entry.account ? 'Account email' : 'Verified') : 'Pending confirmation'}</Text>
+        {!!(entry.tags?.length || entry.authors?.length) && <Text style={styles.meta} numberOfLines={2}>Only: {[...(entry.tags || []).map((tag) => `#${tag}`), ...(entry.authors || [])].join(', ')}</Text>}
+      </View>
+      <View style={styles.emailRowActions}>
+        {!entry.verified && <Pressable accessibilityRole="button" disabled={busy} onPress={() => resend(entry.address)}><Text style={styles.action}>RESEND</Text></Pressable>}
+        <Pressable accessibilityRole="button" accessibilityLabel={`Edit filters for ${entry.address}`} disabled={busy} onPress={() => (filterFor === entry.address ? setFilterFor(null) : openFilters(entry))}><Text style={styles.action}>FILTERS</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${entry.address}`} disabled={busy} onPress={() => removeAddress(entry.address)}><Text style={[styles.action, { color: C.error }]}>REMOVE</Text></Pressable>
+      </View>
+      {filterFor === entry.address && <View style={{ flexBasis: '100%', marginTop: 10 }}>
+        <Text style={styles.fieldLabel}>ONLY THESE TAGS (COMMA-SEPARATED)</Text>
+        <TextInput value={filterDraft.tags} onChangeText={(tags) => setFilterDraft((draft) => ({ ...draft, tags }))} placeholder="Leave empty for every tag" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} style={styles.commentInput} />
+        <Text style={[styles.fieldLabel, { marginTop: 10 }]}>ONLY THESE AUTHORS (COMMA-SEPARATED)</Text>
+        <TextInput value={filterDraft.authors} onChangeText={(authors) => setFilterDraft((draft) => ({ ...draft, authors }))} placeholder="Handles or DIDs, empty for every author" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} style={styles.commentInput} />
+        <Pressable accessibilityRole="button" disabled={busy} onPress={saveFilters} style={styles.secondaryButton}><Text style={styles.action}>SAVE FILTERS</Text></Pressable>
+      </View>}
+    </View>)}
+    {!!accountEmail && !accountEmailListed && <Pressable accessibilityRole="button" disabled={busy} onPress={addAccountEmail} style={styles.secondaryButton}>
+      <Text style={styles.action}>{accountEmail.confirmed ? `USE ${accountEmail.address.toUpperCase()}` : `USE ${accountEmail.address.toUpperCase()} (CONFIRMATION REQUIRED)`}</Text>
+    </Pressable>}
+    <Text style={styles.fieldLabel}>ADD AN ADDRESS</Text>
+    <TextInput value={newAddress} onChangeText={setNewAddress} editable={!busy} placeholder="you@example.com" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" style={styles.commentInput} />
+    <Pressable accessibilityRole="button" disabled={busy || !newAddress.trim()} onPress={addAddress} style={[styles.primaryButton, (busy || !newAddress.trim()) && styles.disabledButton, { marginTop: 12 }]}>
+      <Text style={styles.primaryButtonText}>{busy ? 'PLEASE WAIT…' : 'SEND CONFIRMATION EMAIL'}</Text>
+    </Pressable>
+  </View>;
+}
+
+export default function AccountSettings({ account, accountProfile, coffeeProfile, accountPds, blockedAccounts, tagFollows = [], authors = [], authorFollows = [], savedCount, viewedCount, accountBusy, initialPage, onBack, onUnblock, onToggleTagFollow, onToggleAuthorFollow, onSignOut, onProfileSaved, readerPrefs, onReaderPrefsChange, readerPrefsStatus }) {
   const [page, setPage] = useState(initialPage);
   const pages = account ? accountSettingsPages : accountSettingsPages.filter((item) => publicSettingsPageIds.includes(item.id));
   const selected = pages.find((item) => item.id === page);
@@ -170,6 +547,9 @@ export default function AccountSettings({ account, accountProfile, coffeeProfile
     <Text style={[styles.pageTitle, { marginTop: 0 }]}>{selected?.title || 'Settings'}</Text>
     <Text style={styles.pageSubtitle}>{selected?.subtitle || 'Manage your account and app settings'}</Text>
     {selected ? <>
+      {page === 'profile' && !!account && <ProfileEditor account={account} accountProfile={accountProfile} coffeeProfile={coffeeProfile} onSaved={onProfileSaved} />}
+      {page === 'appearance' && <AppearanceSettings account={account} prefs={readerPrefs} onPrefsChange={onReaderPrefsChange} prefsStatus={readerPrefsStatus} />}
+      {page === 'email' && !!account && <EmailSettings account={account} />}
       {page === 'account' && !!account && <View style={styles.accountCard}>
         <Text style={styles.accountProfileName}>Deactivate Account</Text>
         <Text style={styles.accountDescription}>Deactivate your repostory on the network, your account/identity will still exist and be visable to the network but records won't be, and will be hidden by most apps and appviews. All current OAuth seesions and App Passowords will be revoked. You can always reactivate your account at any time.</Text>

@@ -19,7 +19,12 @@ try {
   log.warn('expo-image-picker native module unavailable', pickerError?.message);
 }
 import SymbolView from './src/Icon';
-import { createAccount, restoreSession, signIn, signOut } from './oauth';
+import {
+  backfillKnownAccount, createAccount, forgetAccount, listKnownAccounts, restoreSession, signIn, signOut, switchAccount,
+} from './oauth';
+import {
+  cachePreferences, loadCachedPreferences, loadPreferencesRecord, normalizePreferences, readerTextStyle, savePreferencesRecord,
+} from './src/preferences';
 import { C, styles, TAB_BAR_HEIGHT } from './src/theme';
 import { articleReadingTime, formatDate, storyAuthor } from './src/utils';
 import { ArticleBody, ArticleTagRow, SectionBar, SkeletonImage, StoryRow, SwipeableDeleteRow, TabButton } from './src/components';
@@ -31,7 +36,7 @@ import { onNotificationResponse, registerForPushNotifications, unregisterForPush
 import Welcome, { WELCOME_KEY } from './src/Welcome';
 import AuthCard from './src/AuthCard';
 import {
-  ActivityIndicator, Image, Linking, Pressable, ScrollView,
+  ActivityIndicator, Image, Linking, Pressable, ScrollView, Share,
   StatusBar, Text, TextInput, View, RefreshControl,
 } from 'react-native';
 
@@ -50,6 +55,13 @@ const LIST_ITEM_COLLECTION = 'cc.coffeencode.list.item';
 const LEGACY_LIST_ITEM_COLLECTION = 'cc.coffeencode.cclist.item';
 const LIST_ITEM_COLLECTIONS = [LIST_ITEM_COLLECTION, LEGACY_LIST_ITEM_COLLECTION];
 const AUTHOR_FOLLOW_COLLECTION = 'cc.coffeencode.author.follow';
+
+function storyWebUrl(story) {
+  const rkey = storyRecordKey(story?.uri || '');
+  if (!rkey) return 'https://coffeencode.cc';
+  const author = story?.author?.handle || story?.author?.did || '';
+  return `https://coffeencode.cc/post/${author ? `${encodeURIComponent(author)}/` : ''}${encodeURIComponent(rkey)}`;
+}
 
 function profileBlobUrl(blob, did, preset) {
   const cid = blob?.ref?.$link;
@@ -234,6 +246,9 @@ export default function App() {
   const [forumDraft, setForumDraft] = useState({ title: '', content: '', tags: '' });
   const [forumReplyDraft, setForumReplyDraft] = useState('');
   const [forumReplyTarget, setForumReplyTarget] = useState(null);
+  const [knownAccounts, setKnownAccounts] = useState([]);
+  const [readerPrefs, setReaderPrefs] = useState(() => normalizePreferences({}));
+  const [readerPrefsStatus, setReaderPrefsStatus] = useState('');
   const [error, setError] = useState('');
 
   const loadFeed = useCallback(async (refresh = false) => {
@@ -588,6 +603,58 @@ export default function App() {
       .then((session) => { log.info('Session restore', session ? 'restored' : 'no session'); setAccount(session); })
       .catch((error) => { log.warn('Session restore failed', error?.message); });
   }, []);
+  // Account switcher + synced reading preferences.
+  useEffect(() => {
+    loadCachedPreferences().then(setReaderPrefs).catch(() => {});
+    let cancelled = false;
+    listKnownAccounts().then(async (accounts) => {
+      if (cancelled) return;
+      setKnownAccounts(accounts);
+      // Rows saved before profiles were cached only carry a DID; fill them in.
+      await Promise.all(accounts
+        .filter((entry) => !entry.handle || !entry.avatar)
+        .map((entry) => backfillKnownAccount(entry.did)));
+      if (!cancelled) setKnownAccounts(await listKnownAccounts());
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [account?.session?.did]);
+  useEffect(() => {
+    if (!account?.agent) return undefined;
+    let cancelled = false;
+    loadPreferencesRecord(account)
+      .then((prefs) => {
+        if (cancelled || !prefs) return;
+        setReaderPrefs(prefs);
+        void cachePreferences(prefs);
+      })
+      .catch((prefsError) => {
+        if (cancelled) return;
+        const status = prefsError.status || prefsError.statusCode;
+        setReaderPrefsStatus(status === 401 || status === 403
+          ? 'Your account needs updated appearance permissions. Sign out, then sign in again to approve them.'
+          : prefsError.message || 'Could not load your synced appearance.');
+      });
+    return () => { cancelled = true; };
+  }, [account]);
+
+  const handleReaderPrefsChange = useCallback((prefs) => {
+    const next = normalizePreferences(prefs);
+    setReaderPrefs(next);
+    void cachePreferences(next);
+    if (!account?.agent) {
+      setReaderPrefsStatus('Saved on this device. Sign in to sync with the website.');
+      return;
+    }
+    setReaderPrefsStatus('Saving your appearance…');
+    savePreferencesRecord(account, next)
+      .then(() => setReaderPrefsStatus('Appearance saved.'))
+      .catch((saveError) => {
+        const status = saveError.status || saveError.statusCode;
+        setReaderPrefsStatus(status === 401 || status === 403
+          ? 'Your account needs updated appearance permissions. Sign out, then sign in again to approve them.'
+          : saveError.message || 'Could not save your appearance.');
+      });
+  }, [account]);
   useEffect(() => {
     if (!account?.session?.did) return;
     void registerForPushNotifications(account.session.did, AsyncStorage);
@@ -1192,6 +1259,9 @@ export default function App() {
       setAccount(await signIn(loginHandle.trim(), Boolean(data.isAuthor)));
       log.info('Signed in', loginHandle.trim());
       setLoginHandle('');
+      setAccountView(null);
+      setSettingsPage(null);
+      setKnownAccounts(await listKnownAccounts());
     } catch (e) { log.warn('Sign-in failed', e?.message); setError(e.message || 'Sign-in could not be completed.'); }
     finally { setAccountBusy(false); }
   };
@@ -1220,6 +1290,8 @@ export default function App() {
     try {
       setAccount(await createAccount());
       log.info('Account created');
+      setAccountView(null);
+      setKnownAccounts(await listKnownAccounts());
     } catch (e) {
       log.warn('Account creation failed', e?.message);
       setError(e.message || 'Account creation could not be started.');
@@ -1387,6 +1459,7 @@ export default function App() {
     bio: authorProfile?.coffee?.description || authorProfile?.bsky?.description || selected.author.description || '',
   } : null;
   const readingMinutes = articleReadingTime(articleRecord) || articleReadingTime(selected);
+  const readerBodyStyle = useMemo(() => readerTextStyle(readerPrefs), [readerPrefs]);
   const openAuthorProfile = () => Linking.openURL(`https://bsky.app/profile/${encodeURIComponent(articleAuthor.handle || articleAuthor.did)}`);
   const closeStory = () => { commentsRequestId.current += 1; setCommentLoading(false); setSelected(null); setArticleRecord(null); setError(''); setReplyTarget(null); animateArticleNav(false); lastArticleScrollY.current = 0; };
   const allArchiveStories = archiveLoaded ? archiveStories : stories;
@@ -1772,6 +1845,30 @@ export default function App() {
     </React.Fragment>;
   };
 
+  const handleSwitchAccount = async (entry) => {
+    if (!entry?.did || accountBusy || entry.did === account?.session?.did) return;
+    setAccountBusy(true);
+    setError('');
+    try {
+      const next = await switchAccount(entry.did);
+      log.info('Switched account', entry.did);
+      setAccount(next);
+      setSettingsPage(null);
+      setAccountView(null);
+      setActiveList(null);
+      setListPicker(false);
+      setKnownAccounts(await listKnownAccounts());
+    } catch (switchError) {
+      // The stored session is gone (revoked or expired); drop it from the list.
+      log.warn('Account switch failed', switchError?.message);
+      await forgetAccount(entry.did).catch(() => {});
+      setKnownAccounts(await listKnownAccounts());
+      setError(`Could not switch accounts: ${switchError.message || 'the saved session expired. Sign in again.'}`);
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await signOut(account);
     void unregisterForPushNotifications(AsyncStorage);
@@ -1780,7 +1877,17 @@ export default function App() {
     setSettingsPage(null);
     setAccountView(null);
     setActiveList(null);
+    setKnownAccounts(await listKnownAccounts());
   };
+
+  const handleProfileSaved = useCallback((next) => {
+    const did = account?.session?.did;
+    setCoffeeProfile({
+      ...next,
+      avatarUrl: profileBlobUrl(next.avatar, did, 'avatar_medium'),
+      bannerUrl: profileBlobUrl(next.banner, did, 'banner_medium'),
+    });
+  }, [account]);
 
   const renderAccountSubpage = (title, onBack, children) => <ScrollView contentContainerStyle={styles.content}
     refreshControl={<RefreshControl refreshing={accountDataLoading} onRefresh={() => setAccountRefresh((value) => value + 1)} tintColor={C.muted} />}>
@@ -1889,8 +1996,21 @@ export default function App() {
       onToggleTagFollow={toggleTagFollow}
       onToggleAuthorFollow={toggleAuthorFollow}
       onSignOut={handleSignOut}
+      onProfileSaved={handleProfileSaved}
+      readerPrefs={readerPrefs}
+      onReaderPrefsChange={handleReaderPrefsChange}
+      readerPrefsStatus={readerPrefsStatus}
     />;
     if (account) {
+      if (accountView === 'add-account') return renderAccountSubpage('Add account', () => setAccountView(null), <>
+        <Text style={styles.pageSubtitle}>Sign in with another account. Both accounts stay available in the account switcher.</Text>
+        <AuthCard
+          loginHandle={loginHandle} onChangeHandle={setLoginHandle} onLogin={handleLogin}
+          accountBusy={accountBusy} error={error}
+          inviteCode={inviteCode} inviteError={inviteError} inviteLoading={inviteLoading}
+          onGetInviteCode={getInviteCode} onContinueAccountCreation={continueAccountCreation}
+        />
+      </>);
       if (accountView === 'notifications') return renderNotifications(() => setAccountView(null));
       if (activeList) return listPicker ? renderListPicker() : renderListDetail();
       if (accountView === 'new-list') return renderNewListView();
@@ -1934,6 +2054,20 @@ export default function App() {
       <View style={styles.settingsCard}>
         {accountSettingsPages.map((page) => <SettingsRow key={page.id} {...page} onPress={() => setSettingsPage(page.id)} />)}
       </View>
+      <SectionBar title="Switch account" />
+      <View style={styles.settingsCard}>
+        {knownAccounts.filter((entry) => entry.did !== account.session.did).map((entry) => <Pressable key={entry.did} accessibilityRole="button" accessibilityLabel={`Switch to ${entry.displayName || entry.handle || entry.did}`} disabled={accountBusy} onPress={() => handleSwitchAccount(entry)} style={styles.switcherRow}>
+          {entry.avatar
+            ? <SkeletonImage source={{ uri: entry.avatar }} imagePreset="avatar_thumb" accessibilityLabel="" style={styles.switcherAvatar} />
+            : <View style={[styles.switcherAvatar, styles.accountCompactAvatarPlaceholder]}><SymbolView name="person.fill" size={16} tintColor={C.muted} /></View>}
+          <View style={styles.settingsCopy}>
+            <Text numberOfLines={1} style={styles.authorName}>{entry.displayName || entry.handle || `${entry.did.slice(0, 18)}…`}</Text>
+            {!!entry.handle && <Text numberOfLines={1} style={styles.meta}>@{entry.handle}</Text>}
+          </View>
+          <SymbolView name="arrow.right.arrow.left" size={15} tintColor={C.muted} />
+        </Pressable>)}
+        <SettingsRow icon="plus" title="Add account" subtitle="Sign in with another account" onPress={() => setAccountView('add-account')} />
+      </View>
       {account.author && <>
         <SectionBar title="Author profile" detail="COFFEE & CODE" />
         <View style={styles.accountCard}>
@@ -1943,12 +2077,29 @@ export default function App() {
           <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://coffeencode.cc/account')} style={styles.profileLink}><Text style={styles.action}>MANAGE ON COFFEE & CODE  ↗</Text></Pressable>
         </View>
       </>}
-    </> : <AuthCard
-      loginHandle={loginHandle} onChangeHandle={setLoginHandle} onLogin={handleLogin}
-      accountBusy={accountBusy} error={error}
-      inviteCode={inviteCode} inviteError={inviteError} inviteLoading={inviteLoading}
-      onGetInviteCode={getInviteCode} onContinueAccountCreation={continueAccountCreation}
-    />}
+    </> : <>
+      {!!knownAccounts.length && <>
+        <SectionBar title="Switch account" />
+        <View style={styles.settingsCard}>
+          {knownAccounts.map((entry) => <Pressable key={entry.did} accessibilityRole="button" accessibilityLabel={`Switch to ${entry.displayName || entry.handle || entry.did}`} disabled={accountBusy} onPress={() => handleSwitchAccount(entry)} style={styles.switcherRow}>
+            {entry.avatar
+              ? <SkeletonImage source={{ uri: entry.avatar }} imagePreset="avatar_thumb" accessibilityLabel="" style={styles.switcherAvatar} />
+              : <View style={[styles.switcherAvatar, styles.accountCompactAvatarPlaceholder]}><SymbolView name="person.fill" size={16} tintColor={C.muted} /></View>}
+            <View style={styles.settingsCopy}>
+              <Text numberOfLines={1} style={styles.authorName}>{entry.displayName || entry.handle || `${entry.did.slice(0, 18)}…`}</Text>
+              {!!entry.handle && <Text numberOfLines={1} style={styles.meta}>@{entry.handle}</Text>}
+            </View>
+            <SymbolView name="arrow.right.arrow.left" size={15} tintColor={C.muted} />
+          </Pressable>)}
+        </View>
+      </>}
+      <AuthCard
+        loginHandle={loginHandle} onChangeHandle={setLoginHandle} onLogin={handleLogin}
+        accountBusy={accountBusy} error={error}
+        inviteCode={inviteCode} inviteError={inviteError} inviteLoading={inviteLoading}
+        onGetInviteCode={getInviteCode} onContinueAccountCreation={continueAccountCreation}
+      />
+    </>}
     {!account && <>
       <SectionBar title="Settings" />
       <View style={styles.settingsCard}>
@@ -2012,8 +2163,16 @@ export default function App() {
           <Pressable accessibilityRole="button" accessibilityState={{ selected: saved.some((item) => item.uri === selected.uri) }} accessibilityLabel={`Save, ${engagement?.saves ?? 0}`} disabled={accountBusy} onPress={() => toggleSaved(selected)} style={[styles.reactionButton, saved.some((item) => item.uri === selected.uri) && styles.reactionSelected]}><SymbolView name="bookmark" size={14} tintColor={saved.some((item) => item.uri === selected.uri) ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{saved.some((item) => item.uri === selected.uri) ? 'SAVED' : 'SAVE'}</Text><Text style={[styles.reactionButtonCount, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{engagement?.saves ?? 0}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.disliked) }} accessibilityLabel={`Dislike, ${engagement?.dislikes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('dislike')} style={[styles.reactionButton, engagement?.disliked && styles.reactionSelected]}><SymbolView name="hand.thumbsdown" size={14} tintColor={engagement?.disliked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.disliked ? 'DISLIKED' : 'DISLIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.dislikes ?? 0}</Text></Pressable>
         </View>
+        <View style={styles.shareRow}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Share this story on Bluesky" onPress={() => Linking.openURL(`https://app.coffeencode.cc/intent?text=${encodeURIComponent(selected.title)}%20${encodeURIComponent(storyWebUrl(selected))}`)} style={styles.reactionButton}>
+            <SymbolView name="paperplane" size={14} tintColor={C.muted} /><Text style={styles.reactionButtonLabel}>BLUESKY</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Share this story" onPress={() => Share.share({ message: `${selected.title} ${storyWebUrl(selected)}`, url: storyWebUrl(selected) }).catch(() => {})} style={styles.reactionButton}>
+            <SymbolView name="square.and.arrow.up" size={14} tintColor={C.muted} /><Text style={styles.reactionButtonLabel}>SHARE</Text>
+          </Pressable>
+        </View>
         <View style={styles.rule} />
-        {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody record={articleRecord} uri={selected.uri} />}
+        {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody record={articleRecord} uri={selected.uri} bodyStyle={readerBodyStyle} />}
                 {!!articleAuthor && !articleLoading && !error && <>
           <SectionBar title="About the author" />
           <View style={styles.accountCard}>
