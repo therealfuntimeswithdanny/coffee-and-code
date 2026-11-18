@@ -43,9 +43,11 @@ const RKEY_PATTERN = /^[a-zA-Z0-9._~:-]+$/;
 
 // The publication's HappyView appview. Callers authenticate with a short-lived
 // service-auth JWT minted by their own PDS (com.atproto.server.getServiceAuth)
-// with `aud` set to the appview's DID.
-export const APPVIEW_URL = 'https://api.coffeencode.cc';
+// with `aud` set to the appview's DID; the worker adds its registered API
+// client key (X-Client-Key/X-Client-Secret) required on every XRPC call.
+const DEFAULT_APPVIEW_URL = 'https://api.coffeencode.cc';
 export const APPVIEW_DID = 'did:web:api.coffeencode.cc';
+export const APPVIEW_NOTIFICATIONS_METHOD = 'app.bsky.notification.listNotifications';
 
 type AppviewNotification = {
   uri?: string;
@@ -71,17 +73,24 @@ function appviewReasonType(reason: string | undefined): NotificationType {
 }
 
 // Fetch the caller's notification feed from the HappyView appview using the
-// service-auth token the client minted for it. The token is forwarded as-is;
-// the appview verifies iss/aud/signature.
-export async function loadNotificationsFromAppview(serviceAuthToken: string): Promise<Notification[]> {
-  const url = new URL(`${APPVIEW_URL}/xrpc/app.bsky.notification.listNotifications`);
-  url.searchParams.set('limit', '100');
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${serviceAuthToken}` },
-  });
+// service-auth token the client minted for it. The token is forwarded as-is —
+// the appview verifies iss/aud/lxm/signature — alongside the worker's API
+// client credentials, which HappyView requires on every XRPC request.
+export async function loadNotificationsFromAppview(env: Env, serviceAuthToken: string, limit = 100, cursor?: string): Promise<{ notifications: Notification[]; cursor?: string }> {
+  const base = (env.HAPPYVIEW_URL || DEFAULT_APPVIEW_URL).replace(/\/$/, '');
+  const url = new URL(`${base}/xrpc/${APPVIEW_NOTIFICATIONS_METHOD}`);
+  url.searchParams.set('limit', String(limit));
+  if (cursor) url.searchParams.set('cursor', cursor);
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${serviceAuthToken}`,
+  };
+  if (env.HAPPYVIEW_CLIENT_KEY) headers['X-Client-Key'] = env.HAPPYVIEW_CLIENT_KEY;
+  if (env.HAPPYVIEW_CLIENT_SECRET) headers['X-Client-Secret'] = env.HAPPYVIEW_CLIENT_SECRET;
+  const response = await fetch(url, { headers });
   if (!response.ok) throw new Error(`Appview returned ${response.status}`);
-  const data = await response.json() as { notifications?: AppviewNotification[] };
-  return (data.notifications || [])
+  const data = await response.json() as { notifications?: AppviewNotification[]; cursor?: string };
+  const notifications = (data.notifications || [])
     .filter((item) => typeof item.uri === 'string' && typeof item.author?.did === 'string')
     .map((item) => {
       const record = item.record || {};
@@ -106,6 +115,10 @@ export async function loadNotificationsFromAppview(serviceAuthToken: string): Pr
         ...(item.author?.avatar ? { actorAvatar: proxyAvatarUrl(item.author.avatar) } : {}),
       } satisfies Notification;
     });
+  return {
+    notifications,
+    ...(typeof data.cursor === 'string' && data.cursor ? { cursor: data.cursor } : {}),
+  };
 }
 
 // Decode (without verifying — the appview is the verifier) the claims of a

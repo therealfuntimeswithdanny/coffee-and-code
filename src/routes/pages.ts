@@ -725,10 +725,26 @@ const draftEditorStyles = `
     .draft-editor__grid { display: grid; gap: 26px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     @media (max-width: 900px) { .draft-editor__grid { grid-template-columns: 1fr; } }
     .draft-editor__edit { min-width: 0; }
-    .draft-editor__meta { border: 1px solid var(--line); margin-bottom: 16px; padding: 14px 16px; }
-    .draft-editor__meta summary { cursor: pointer; font-weight: 700; }
-    .draft-editor__meta label { display: grid; font-size: 13px; gap: 4px; margin-top: 10px; }
-    .draft-editor__meta input, .draft-editor__meta textarea { font: inherit; }
+    .draft-editor__meta { background: var(--paper); border: 1px solid var(--line); margin-bottom: 16px; }
+    .draft-editor__meta summary { color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .08em; padding: 9px 18px; text-transform: uppercase; }
+    .draft-editor__meta summary:hover { color: var(--ink); }
+    .draft-editor__meta[open] summary { border-bottom: 1px solid var(--line); }
+    .draft-editor__meta-doc { display: grid; gap: 14px; padding: 18px; }
+    .draft-editor__meta-title { background: transparent; border: 0; border-bottom: 1px solid transparent; font-family: Lora, serif; font-size: 27px; font-weight: 700; line-height: 1.2; padding: 2px 0 6px; width: 100%; }
+    .draft-editor__meta-title:focus { border-bottom-color: var(--line-strong); outline: none; }
+    .draft-editor__meta-title::placeholder, .draft-editor__meta-description::placeholder { color: var(--muted); opacity: .6; }
+    .draft-editor__meta-description { background: transparent; border: 0; border-bottom: 1px solid transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1.5; padding: 0 0 6px; resize: vertical; width: 100%; }
+    .draft-editor__meta-description:focus { border-bottom-color: var(--line-strong); color: var(--ink); outline: none; }
+    .draft-editor__meta-grid { column-gap: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); row-gap: 12px; }
+    .draft-editor__meta-grid label, .draft-editor__meta-sources label { color: var(--muted); display: grid; font-size: 11px; font-weight: 700; gap: 4px; letter-spacing: .06em; text-transform: uppercase; }
+    .draft-editor__meta-grid input, .draft-editor__meta-grid select, .draft-editor__meta-sources input, .draft-editor__meta-sources textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font: inherit; font-size: 14px; letter-spacing: normal; padding: 7px 10px; text-transform: none; }
+    .draft-editor__meta-grid input:focus, .draft-editor__meta-grid select:focus, .draft-editor__meta-sources input:focus, .draft-editor__meta-sources textarea:focus { border-color: var(--accent); outline: none; }
+    .draft-editor__meta-grid input[type="file"] { font-size: 13px; padding: 5px 0; }
+    .draft-editor__meta-check { align-items: center; align-self: end; display: flex !important; flex-direction: row; gap: 7px !important; letter-spacing: normal !important; padding-bottom: 8px; text-transform: none !important; }
+    .draft-editor__meta-sources { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 10px; padding: 14px 16px; }
+    .draft-editor__meta-sources h2 { font-size: 15px; margin: 0; }
+    .draft-editor__meta-hint { color: var(--muted); font-size: 13px; margin: 0; }
+    .draft-editor__meta-sources textarea { resize: vertical; }
     .draft-toolbar { align-items: center; border: 1px solid var(--line); border-bottom: 0; display: flex; flex-wrap: wrap; gap: 2px; padding: 6px; position: sticky; top: 0; background: var(--paper); z-index: 2; }
     .draft-toolbar button { background: transparent; border: 0; color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; min-height: 32px; min-width: 32px; padding: 4px 8px; }
     .draft-toolbar button:hover { background: var(--paper-deep); }
@@ -778,6 +794,11 @@ const draftEditorStyles = `
     .draft-preview__embed { border: 1px solid var(--line); color: var(--muted); font-size: 14px; margin-bottom: 14px; padding: 12px 14px; }
     .draft-preview__math { font-family: ui-monospace, monospace; margin-bottom: 14px; text-align: center; }
     .draft-preview__empty { color: var(--muted); }
+    .draft-preview__sources { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 14px; }
+    .draft-preview__sources h2 { font-size: 15px; margin: 0 0 8px; }
+    .draft-preview__sources ul { margin: 0; }
+    .draft-preview__sources a { color: var(--accent); overflow-wrap: anywhere; }
+    .draft-preview__sources span { color: var(--muted); font-size: 13px; }
     .draft-list__item { align-items: center; display: flex; gap: 12px; }
     .draft-list__item > a { flex: 1; min-width: 0; }
     .draft-list__title { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -822,13 +843,23 @@ pages.get('/account/author/draft/:rkey', (c) => {
       <div class="draft-editor__grid" data-draft-workspace hidden>
         <div class="draft-editor__edit">
           <details class="draft-editor__meta" open>
-            <summary>Metadata</summary>
-            <label>Title<input name="draft-title" maxlength="5000" placeholder="Untitled" data-draft-field="title"></label>
-            <label>Description<textarea name="draft-description" rows="2" maxlength="30000" data-draft-field="description"></textarea></label>
-            <label>Tags<input name="draft-tags" placeholder="Comma separated" data-draft-field="tags"></label>
-            <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
-            <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
-            <label class="account-author-form__check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
+            <summary>Story details</summary>
+            <div class="draft-editor__meta-doc">
+              <input class="draft-editor__meta-title" name="draft-title" type="text" maxlength="5000" placeholder="Untitled story" aria-label="Title" data-draft-field="title">
+              <textarea class="draft-editor__meta-description" name="draft-description" rows="2" maxlength="30000" placeholder="Add a short description…" aria-label="Description" data-draft-field="description"></textarea>
+              <div class="draft-editor__meta-grid">
+                <label>Tags<input name="draft-tags" placeholder="coffee, code, …" data-draft-field="tags"></label>
+                <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
+                <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
+                <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
+              </div>
+              <section class="draft-editor__meta-sources" aria-labelledby="draft-sources-heading">
+                <h2 id="draft-sources-heading"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Sources</h2>
+                <p class="draft-editor__meta-hint">These become the sources card shown alongside your published story.</p>
+                <label>Source links — one URL per line<textarea name="draft-sources" rows="3" placeholder="https://example.com/article" data-draft-field="sources"></textarea></label>
+                <label>Source document — URL or at:// URI (optional)<input name="draft-backlink" type="text" placeholder="https://docs.google.com/… or at://did:plc:…" data-draft-field="backlink"></label>
+              </section>
+            </div>
           </details>
           <div class="draft-toolbar" role="toolbar" aria-label="Formatting" data-draft-toolbar>
             <button type="button" data-cmd="bold" title="Bold" aria-label="Bold"><i class="fa-solid fa-bold" aria-hidden="true"></i></button>

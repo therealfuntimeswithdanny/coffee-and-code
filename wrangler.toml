@@ -23,6 +23,12 @@ PUB_NAME = "Coffee and Code"
 PUB_DESCRIPTION = "A small tech news publication built on the AT Protocol by Daniel Morrisey"
 OWNER_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
 OWNER_PDS = "https://account.coffeencode.cc"
+# HappyView appview backing the v2 notification feed (/api/notifications).
+# Register an API client in the HappyView dashboard (Settings > API Clients)
+# and set its credentials as secrets:
+#   wrangler secret put HAPPYVIEW_CLIENT_KEY     # hvc_…
+#   wrangler secret put HAPPYVIEW_CLIENT_SECRET  # hvs_…
+HAPPYVIEW_URL = "https://api.coffeencode.cc"
 
 # Stores Expo push tokens (device:<token>) and per-account push state
 # (state:<did>). To isolate `wrangler dev` from production data, create a

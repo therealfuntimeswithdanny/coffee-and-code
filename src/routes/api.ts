@@ -182,9 +182,14 @@ api.get('/documents', async (c) => {
   }, 200, { 'Cache-Control': 'public, max-age=60' });
 });
 
-// AT Protocol records are public and immutable in normal use. Constellation
-// indexes backlinks across repositories, so this endpoint can produce a
-// current activity feed without maintaining a separate copy of the firehose.
+// Notification feed versions:
+//   v2 (default) — HappyView appview at api.coffeencode.cc. The caller sends a
+//     service-auth JWT its PDS minted for did:web:api.coffeencode.cc, which the
+//     worker proxies with its registered API client key. This is the
+//     production path; signed-in web and mobile clients always send a token.
+//   v=1 — the original backlinking feed derived from public records via the
+//     Constellation index. No authentication required; also used internally by
+//     the push/email dispatchers (see src/lib/push.ts).
 api.get('/notifications', async (c) => {
   const rawLimit = c.req.query('limit');
   const limit = rawLimit === undefined ? 40 : Number(rawLimit);
@@ -202,21 +207,31 @@ api.get('/notifications', async (c) => {
     return c.json({ error: 'lastRead must be a valid timestamp.' }, 400);
   }
 
+  const version = c.req.query('v');
+  if (version && version !== '1' && version !== '2') {
+    return c.json({ error: 'v must be 1 (backlinking index) or 2 (appview).' }, 400);
+  }
+
   try {
-    // Signed-in clients send a service-auth JWT minted by their PDS for the
-    // HappyView appview (did:web:api.coffeencode.cc); the worker proxies the
-    // request since the appview only accepts authenticated calls. Without a
-    // token the endpoint falls back to the public-record activity index.
     const authHeader = c.req.header('Authorization') || '';
     const serviceAuthToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    let notifications;
-    if (serviceAuthToken) {
+    let notifications: Awaited<ReturnType<typeof loadNotificationsForUser>>;
+    let nextCursor: string | undefined;
+    let usedVersion: 1 | 2;
+    if (version === '1' || !serviceAuthToken) {
+      if (version === '2' && !serviceAuthToken) {
+        return c.json({ error: 'v2 requires a service-auth Bearer token minted for the appview.' }, 401, { 'Cache-Control': 'no-store' });
+      }
+      usedVersion = 1;
+      notifications = await loadNotificationsForUser(c.env, did);
+    } else {
       if (!validateServiceAuthToken(serviceAuthToken, did)) {
         return c.json({ error: 'The notification session token is invalid for this account.' }, 401, { 'Cache-Control': 'no-store' });
       }
-      notifications = await loadNotificationsFromAppview(serviceAuthToken);
-    } else {
-      notifications = await loadNotificationsForUser(c.env, did);
+      usedVersion = 2;
+      const page = await loadNotificationsFromAppview(c.env, serviceAuthToken, limit, c.req.query('cursor'));
+      notifications = page.notifications;
+      nextCursor = page.cursor;
     }
     if (countOnly) {
       const cutoff = lastRead ? Date.parse(lastRead) : Number.NEGATIVE_INFINITY;
@@ -224,9 +239,14 @@ api.get('/notifications', async (c) => {
         const timestamp = notification.createdAt ? Date.parse(notification.createdAt) : Number.NaN;
         return !Number.isFinite(timestamp) || timestamp > cutoff;
       }).length;
-      return c.json({ unreadCount }, 200, { 'Cache-Control': 'no-store' });
+      return c.json({ unreadCount, v: usedVersion }, 200, { 'Cache-Control': 'no-store' });
     }
-    return c.json({ notifications: notifications.slice(0, limit), limit }, 200, {
+    return c.json({
+      notifications: usedVersion === 2 ? notifications : notifications.slice(0, limit),
+      limit,
+      v: usedVersion,
+      ...(nextCursor ? { cursor: nextCursor } : {}),
+    }, 200, {
       'Cache-Control': 'no-store',
     });
   } catch (error) {

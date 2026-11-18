@@ -4252,14 +4252,24 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
   } as const;
   let reactionActionVersion = 0;
 
+  const setReactionActive = (target: HTMLButtonElement | null | undefined, active: boolean) => {
+    if (!target) return;
+    target.setAttribute('aria-pressed', String(active));
+    const icon = target.querySelector('i');
+    if (icon) {
+      icon.classList.toggle('fa-solid', active);
+      icon.classList.toggle('fa-regular', !active);
+    }
+  };
+
   const refreshReactionState = async () => {
     await oauthReady;
     if (!session) return;
     const version = reactionActionVersion;
     const state = await getOwnRecords(documentUri, session.did);
     if (version !== reactionActionVersion) return;
-    container.querySelector<HTMLButtonElement>('[data-reaction="like"]')?.setAttribute('aria-pressed', String(state.liked));
-    container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(state.disliked));
+    setReactionActive(container.querySelector<HTMLButtonElement>('[data-reaction="like"]'), state.liked);
+    setReactionActive(container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]'), state.disliked);
   };
 
   const readReactionCount = (reaction: 'like' | 'dislike') => {
@@ -4316,100 +4326,87 @@ document.querySelectorAll<HTMLElement>('[data-reaction-subject]').forEach((conta
     const opposite = kind === 'like' ? 'dislike' : 'like';
     const activeSession = session;
     const actionVersion = ++reactionActionVersion;
-    buttons.forEach((item) => { item.disabled = true; });
-    if (status) status.textContent = 'Saving your reaction…';
+
+    const oppositeButton = container.querySelector<HTMLButtonElement>(`[data-reaction="${opposite}"]`);
+    const wasSelected = button.getAttribute('aria-pressed') === 'true';
+    const oppositeSelected = !wasSelected && oppositeButton?.getAttribute('aria-pressed') === 'true';
+    const nowSelected = !wasSelected;
     const beforeCounts = { like: readReactionCount('like'), dislike: readReactionCount('dislike') };
+    const delta = { like: 0, dislike: 0 };
+    delta[kind] = nowSelected ? 1 : -1;
+    if (oppositeSelected) delta[opposite] = -1;
 
-    let wasSelected = false;
-    try {
+    // Optimistic update: show the reaction and count immediately so the
+    // interface feels instant. The record is written in the background and
+    // the change is silently reverted if that write fails.
+    setReactionActive(button, nowSelected);
+    if (oppositeSelected) setReactionActive(oppositeButton, false);
+    if (beforeCounts.like !== undefined) writeReactionCount('like', beforeCounts.like + delta.like);
+    if (beforeCounts.dislike !== undefined) writeReactionCount('dislike', beforeCounts.dislike + delta.dislike);
+    if (status) {
+      status.textContent = nowSelected
+        ? kind === 'like' ? 'You liked this post.' : 'You disliked this post.'
+        : `Your ${kind} was removed.`;
+    }
+
+    void (async () => {
       const rkey = await recordKey(documentUri);
-      const current = await getOwnRecords(documentUri, activeSession.did);
-      wasSelected = kind === 'like' ? current.liked : current.disliked;
-      const oppositeSelected = kind === 'like' ? current.disliked : current.liked;
-
-      if (wasSelected) {
+      const createdAt = new Date().toISOString();
+      if (!nowSelected) {
         await repoRequest('com.atproto.repo.deleteRecord', {
           repo: activeSession.did,
           collection: collections[kind],
           rkey,
         });
-      } else {
-        const createdAt = new Date().toISOString();
-        await repoRequest('com.atproto.repo.createRecord', {
+        return;
+      }
+      await repoRequest('com.atproto.repo.putRecord', {
+        repo: activeSession.did,
+        collection: collections[kind],
+        rkey,
+        record: { $type: collections[kind], document: documentUri, createdAt },
+      });
+      if (oppositeSelected) {
+        await repoRequest('com.atproto.repo.deleteRecord', {
           repo: activeSession.did,
-          collection: collections[kind],
+          collection: collections[opposite],
           rkey,
-          record: { $type: collections[kind], document: documentUri, createdAt },
         });
-
-        if (oppositeSelected) {
-          try {
-            await repoRequest('com.atproto.repo.deleteRecord', {
+      }
+      if (kind === 'like') {
+        try {
+          const recommendationCollection = 'site.standard.graph.recommend';
+          const current = await getOwnRecords(documentUri, activeSession.did);
+          if (!current.recommended) {
+            await repoRequest('com.atproto.repo.putRecord', {
               repo: activeSession.did,
-              collection: collections[opposite],
+              collection: recommendationCollection,
               rkey,
+              record: {
+                $type: recommendationCollection,
+                document: documentUri,
+                createdAt,
+              },
             });
-          } catch (error) {
-            try {
-              await repoRequest('com.atproto.repo.deleteRecord', {
-                repo: activeSession.did,
-                collection: collections[kind],
-                rkey,
-              });
-            } catch {
-              throw new Error('Your new reaction was saved, but the previous reaction could not be removed. Refresh the page to see the current state.');
-            }
-            throw error;
           }
-        }
-
-        if (kind === 'like') {
-          try {
-            const recommendationCollection = 'site.standard.graph.recommend';
-            const recommendationExists = current.recommended;
-            if (!recommendationExists) {
-              await repoRequest('com.atproto.repo.createRecord', {
-                repo: activeSession.did,
-                collection: recommendationCollection,
-                rkey,
-                record: {
-                  $type: recommendationCollection,
-                  document: documentUri,
-                  createdAt,
-                },
-              });
-            }
-          } catch (error) {
-            // Recommendations are optional. The like itself has already been
-            // saved, so this must not make the like appear to have failed.
-            console.warn('Could not create an optional post recommendation:', error);
-          }
+        } catch (error) {
+          // Recommendations are optional. The like itself has already been
+          // saved, so this must not make the like appear to have failed.
+          console.warn('Could not create an optional post recommendation:', error);
         }
       }
-
-      const liked = kind === 'like' ? !wasSelected : false;
-      const disliked = kind === 'dislike' ? !wasSelected : false;
+    })().then(() => {
       if (actionVersion !== reactionActionVersion) return;
-      container.querySelector<HTMLButtonElement>('[data-reaction="like"]')?.setAttribute('aria-pressed', String(liked));
-      container.querySelector<HTMLButtonElement>('[data-reaction="dislike"]')?.setAttribute('aria-pressed', String(disliked));
-      const delta = { like: 0, dislike: 0 };
-      if (kind === 'like') delta.like = wasSelected ? -1 : 1;
-      else delta.dislike = wasSelected ? -1 : 1;
-      if (!wasSelected && oppositeSelected) delta[opposite] = -1;
-      if (beforeCounts.like !== undefined) writeReactionCount('like', beforeCounts.like + delta.like);
-      if (beforeCounts.dislike !== undefined) writeReactionCount('dislike', beforeCounts.dislike + delta.dislike);
       void refreshReactionCounts(beforeCounts, delta, actionVersion);
-
-      if (status) {
-        status.textContent = wasSelected
-          ? `Your ${kind} was removed.`
-          : kind === 'like' ? 'You liked this post.' : 'You disliked this post.';
-      }
-    } catch (error) {
-      if (status) status.textContent = errorMessage(error);
-    } finally {
-      buttons.forEach((item) => { item.disabled = false; });
-    }
+    }).catch(() => {
+      // The write failed: silently restore the previous button and counts.
+      if (actionVersion !== reactionActionVersion) return;
+      setReactionActive(button, wasSelected);
+      if (oppositeSelected) setReactionActive(oppositeButton, true);
+      if (beforeCounts.like !== undefined) writeReactionCount('like', beforeCounts.like);
+      if (beforeCounts.dislike !== undefined) writeReactionCount('dislike', beforeCounts.dislike);
+      if (status) status.textContent = '';
+    });
   }));
 });
 
@@ -4437,6 +4434,14 @@ document.querySelectorAll<HTMLButtonElement>('[data-reaction-subject] [data-save
     if (label) label.textContent = state.saved ? ' Saved ' : ' Save ';
   })().catch((error) => { if (status) status.textContent = errorMessage(error); });
 
+  const renderSaved = (saved: boolean) => {
+    button.setAttribute('aria-pressed', String(saved));
+    button.querySelector('i')?.classList.replace(saved ? 'fa-regular' : 'fa-solid', saved ? 'fa-solid' : 'fa-regular');
+    const label = button.childNodes[1];
+    if (label) label.textContent = saved ? ' Saved ' : ' Save ';
+  };
+
+  let saveActionVersion = 0;
   button.addEventListener('click', async () => {
     await oauthReady;
     if (!session) {
@@ -4445,46 +4450,54 @@ document.querySelectorAll<HTMLButtonElement>('[data-reaction-subject] [data-save
       return;
     }
     const activeSession = session;
+    const actionVersion = ++saveActionVersion;
+    const wasSaved = button.getAttribute('aria-pressed') === 'true';
+    const saved = !wasSaved;
     const beforeCount = readCount();
-    button.disabled = true;
-    try {
+
+    // Optimistic update: show the saved state and bump the count right away,
+    // then create or remove the record in the background. On failure, the
+    // change is silently reverted.
+    renderSaved(saved);
+    if (beforeCount !== undefined) updateCount(beforeCount + (saved ? 1 : -1));
+    if (status) status.textContent = saved ? 'Story saved to your account.' : 'Story removed from your saved posts.';
+
+    void (async () => {
       const rkey = await recordKey(documentUri);
-      const current = await getOwnRecords(documentUri, activeSession.did);
-      if (current.saved) {
+      if (wasSaved) {
         await repoRequest('com.atproto.repo.deleteRecord', { repo: activeSession.did, collection: 'cc.coffeencode.save', rkey });
       } else {
-        await repoRequest('com.atproto.repo.createRecord', {
+        await repoRequest('com.atproto.repo.putRecord', {
           repo: activeSession.did,
           collection: 'cc.coffeencode.save',
           rkey,
           record: { $type: 'cc.coffeencode.save', target: { document: documentUri }, createdAt: new Date().toISOString() },
         });
       }
-      const saved = !current.saved;
-      button.setAttribute('aria-pressed', String(saved));
-      button.querySelector('i')?.classList.replace(saved ? 'fa-regular' : 'fa-solid', saved ? 'fa-solid' : 'fa-regular');
-      const label = button.childNodes[1];
-      if (label) label.textContent = saved ? ' Saved ' : ' Save ';
-      if (beforeCount !== undefined) updateCount(beforeCount + (saved ? 1 : -1));
-      if (status) status.textContent = saved ? 'Story saved to your account.' : 'Story removed from your saved posts.';
-
-      if (beforeCount !== undefined) {
+    })().then(() => {
+      if (actionVersion !== saveActionVersion || beforeCount === undefined) return;
+      void (async () => {
         for (const delay of [1200, 1800, 2600, 4000, 6000]) {
           await new Promise((resolve) => window.setTimeout(resolve, delay));
-          const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`, { cache: 'no-store' });
-          if (!response.ok) continue;
-          const counts = await response.json() as { saves?: number };
-          if (Number.isFinite(counts.saves) && (saved ? Number(counts.saves) >= beforeCount + 1 : Number(counts.saves) < beforeCount)) {
-            updateCount(Number(counts.saves));
-            break;
-          }
+          if (actionVersion !== saveActionVersion) return;
+          try {
+            const response = await fetch(`/api/reactions?subject=${encodeURIComponent(documentUri)}&_=${Date.now()}`, { cache: 'no-store' });
+            if (!response.ok) continue;
+            const counts = await response.json() as { saves?: number };
+            if (Number.isFinite(counts.saves) && (saved ? Number(counts.saves) >= beforeCount + 1 : Number(counts.saves) < beforeCount)) {
+              updateCount(Number(counts.saves));
+              break;
+            }
+          } catch { /* Keep the optimistic count if the index is temporarily unavailable. */ }
         }
-      }
-    } catch (error) {
-      if (status) status.textContent = errorMessage(error);
-    } finally {
-      button.disabled = false;
-    }
+      })();
+    }).catch(() => {
+      // The write failed: silently restore the previous icon, label, and count.
+      if (actionVersion !== saveActionVersion) return;
+      renderSaved(wasSaved);
+      if (beforeCount !== undefined) updateCount(beforeCount);
+      if (status) status.textContent = '';
+    });
   });
 });
 
@@ -5144,6 +5157,8 @@ async function loadDraftEditor(did: string) {
   const publicationInput = metaForm.querySelector<HTMLSelectElement>('[data-draft-field="publication"]')!;
   const coverInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="cover"]')!;
   const coverRemoveInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="coverRemove"]')!;
+  const sourcesInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="sources"]')!;
+  const backlinkInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="backlink"]')!;
 
   const state = {
     blocks: [] as DraftBlock[],
@@ -5158,6 +5173,8 @@ async function loadDraftEditor(did: string) {
     publishedUri: undefined as string | undefined,
     publishedAt: undefined as string | undefined,
     postUri: undefined as string | undefined,
+    metadataExisted: false,
+    metadataCreatedAt: undefined as string | undefined,
   };
   const markDirty = () => { state.version += 1; };
 
@@ -5315,6 +5332,13 @@ async function loadDraftEditor(did: string) {
       }
     }
     parts.push(body || '<p class="draft-preview__empty">Start writing to see a preview.</p>');
+    const previewSources = draftSources();
+    const previewBacklink = draftBacklink();
+    if (previewSources.length || previewBacklink) {
+      const items = previewSources.map((source) => `<li><a href="${draftEscapeHtml(source)}">${draftEscapeHtml(draftSourceLabel(source))}</a></li>`);
+      if (previewBacklink) items.push(`<li><a href="${draftEscapeHtml(previewBacklink.startsWith('at://') ? `https://pdsls.dev/${previewBacklink}` : previewBacklink)}">${previewBacklink.startsWith('at://') ? 'Original document' : `Source document`}</a> <span>${draftEscapeHtml(draftSourceLabel(previewBacklink))}</span></li>`);
+      parts.push(`<section class="draft-preview__sources"><h2>Sources</h2><ul>${items.join('')}</ul></section>`);
+    }
     previewEl.innerHTML = parts.join('');
   }
 
@@ -5686,7 +5710,7 @@ async function loadDraftEditor(did: string) {
     }
   });
 
-  [titleInput, descriptionInput, tagsInput, publicationInput].forEach((input) => input.addEventListener('input', changed));
+  [titleInput, descriptionInput, tagsInput, publicationInput, sourcesInput, backlinkInput].forEach((input) => input.addEventListener('input', changed));
   coverInput.addEventListener('change', async () => {
     const picked = coverInput.files?.[0];
     if (!picked) return;
@@ -5759,6 +5783,56 @@ async function loadDraftEditor(did: string) {
     if (state.cover) document.coverImage = state.cover;
     return document;
   }
+
+  const draftSources = () => [...new Set(sourcesInput.value.split('\n').map((line) => line.trim()).filter(Boolean))];
+  const draftBacklink = () => backlinkInput.value.trim();
+  const draftSourceLabel = (value: string) => {
+    if (value.startsWith('at://')) return value;
+    try { return new URL(value).hostname.replace(/^www\./, ''); } catch { return value; }
+  };
+  const isHttpUrl = (value: string) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  };
+  const metadataValidationError = () => {
+    const invalid = draftSources().find((source) => !isHttpUrl(source));
+    if (invalid) return `"${invalid}" is not a valid http(s) URL.`;
+    const backlink = draftBacklink();
+    if (backlink && !isHttpUrl(backlink) && !/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/[a-zA-Z0-9.]+\/[a-zA-Z0-9._~:-]+$/.test(backlink)) {
+      return 'The source document must be a valid URL or at:// URI.';
+    }
+    return '';
+  };
+
+  let lastWrittenMetadata = '';
+  const syncPostMetadata = async () => {
+    const postRkey = state.postUri?.split('/').pop() || '';
+    if (!postRkey) return;
+    const sources = draftSources();
+    const backlink = draftBacklink();
+    const key = JSON.stringify({ postRkey, sources, backlink });
+    if (key === lastWrittenMetadata) return;
+    if (!sources.length && !backlink) {
+      if (state.metadataExisted) {
+        await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: POST_METADATA_COLLECTION, rkey: postRkey });
+      }
+      state.metadataExisted = false;
+      state.metadataCreatedAt = undefined;
+      lastWrittenMetadata = key;
+      return;
+    }
+    state.metadataCreatedAt = state.metadataCreatedAt || new Date().toISOString();
+    const record: Record<string, unknown> = { $type: POST_METADATA_COLLECTION, createdAt: state.metadataCreatedAt };
+    if (sources.length) record.sources = sources;
+    if (backlink) record.backlink = backlink;
+    await repoRequest('com.atproto.repo.putRecord', { repo: did, collection: POST_METADATA_COLLECTION, rkey: postRkey, record });
+    state.metadataExisted = true;
+    lastWrittenMetadata = key;
+  };
 
   const loadDraftPublications = async () => {
     const publications: Array<{ uri: string; label: string }> = [];
@@ -5860,6 +5934,8 @@ async function loadDraftEditor(did: string) {
       const now = new Date().toISOString();
       state.createdAt = state.createdAt || now;
       const draftDocument = serializeDraft();
+      const draftSourceList = draftSources();
+      const draftBacklinkValue = draftBacklink();
       await repoRequest('com.atproto.repo.putRecord', {
         repo: did,
         collection: DRAFT_COLLECTION,
@@ -5870,12 +5946,19 @@ async function loadDraftEditor(did: string) {
           updatedAt: now,
           title: draftDocument.title,
           ...(typeof draftDocument.description === 'string' ? { description: draftDocument.description } : {}),
+          ...(draftSourceList.length ? { sources: draftSourceList } : {}),
+          ...(draftBacklinkValue ? { backlink: draftBacklinkValue } : {}),
           ...(state.publishedUri ? { publishedUri: state.publishedUri } : {}),
           ...(state.postUri ? { postUri: state.postUri } : {}),
           ...(state.publishedAt ? { publishedAt: state.publishedAt } : {}),
           document: draftDocument,
         },
       });
+      if (state.postUri && !metadataValidationError()) {
+        // The published story's sources card lives in a separate record keyed
+        // by the post rkey; keep it in step with the draft fields.
+        try { await syncPostMetadata(); } catch { /* Metadata sync must not fail the draft sync. */ }
+      }
       state.exists = true;
       state.savedVersion = versionAtStart;
       statusEl.textContent = `Synced at ${new Date().toLocaleTimeString(undefined, { timeStyle: 'short' })}.`;
@@ -5905,6 +5988,8 @@ async function loadDraftEditor(did: string) {
   });
   publishButton.addEventListener('click', async () => {
     if (state.syncing) return;
+    const metaError = metadataValidationError();
+    if (metaError) { statusEl.textContent = metaError; return; }
     if (!window.confirm('Publish this draft as a Leaflet document in your repository?')) return;
     state.syncing = true;
     publishButton.disabled = true;
@@ -6012,6 +6097,23 @@ async function loadDraftEditor(did: string) {
         publicationInput.append(option);
       }
       publicationInput.value = storedPublication;
+      if (Array.isArray(value?.sources)) {
+        sourcesInput.value = value.sources.filter((source): source is string => typeof source === 'string').join('\n');
+      }
+      if (typeof value?.backlink === 'string') backlinkInput.value = value.backlink;
+      if (state.postUri) {
+        // Older drafts may predate stored sources — hydrate from the published
+        // story's metadata record so the fields match what readers see.
+        try {
+          const postRkey = state.postUri.split('/').pop() || '';
+          const meta = postRkey ? await fetchPostMetadataRecord(did, postRkey) : undefined;
+          state.metadataExisted = Boolean(meta);
+          state.metadataCreatedAt = typeof meta?.createdAt === 'string' ? meta.createdAt : undefined;
+          if (!sourcesInput.value.trim() && Array.isArray(meta?.sources)) sourcesInput.value = meta.sources.join('\n');
+          if (!backlinkInput.value.trim() && typeof meta?.backlink === 'string') backlinkInput.value = meta.backlink;
+          lastWrittenMetadata = JSON.stringify({ postRkey, sources: draftSources(), backlink: draftBacklink() });
+        } catch { /* Missing metadata is fine; the fields just stay as stored. */ }
+      }
       if (doc?.coverImage && typeof doc.coverImage === 'object') {
         state.cover = doc.coverImage;
         const cid = (doc.coverImage as { ref?: { $link?: unknown } }).ref?.$link;

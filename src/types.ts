@@ -4,6 +4,12 @@ export type Env = {
   OWNER_DID: string;
   OWNER_PDS: string;
   PUSH_TOKENS: KVNamespace;
+  // HappyView appview (api.coffeencode.cc). The client key/secret identify this
+  // worker as an API client on every XRPC call; users authenticate with
+  // service-auth JWTs their PDS mints for did:web:api.coffeencode.cc.
+  HAPPYVIEW_URL?: string;
+  HAPPYVIEW_CLIENT_KEY?: string;
+  HAPPYVIEW_CLIENT_SECRET?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;
