@@ -10,6 +10,8 @@ import {
   removeEmail,
   requestEmailVerification,
   setEmailEnabled,
+  setEmailFilters,
+  setEmailFrequency,
   unsubscribeByToken,
 } from '../lib/emailSubscriptions';
 import { renderLayout } from '../templates/layout';
@@ -28,10 +30,13 @@ function parseDid(body: unknown) {
 function publicSettings(settings: Awaited<ReturnType<typeof loadEmailSettings>>) {
   return {
     enabled: settings.enabled,
+    frequency: settings.frequency,
     emails: settings.emails.map((entry) => ({
       address: entry.address,
       verified: entry.verified,
       account: entry.account,
+      tags: entry.tags || [],
+      authors: entry.authors || [],
     })),
   };
 }
@@ -51,6 +56,39 @@ email.post('/api/email/settings', async (c) => {
     : null;
   if (!did || enabled === null) return c.json({ error: 'A valid did and enabled flag are required.' }, 400);
   const settings = await setEmailEnabled(c.env, did, enabled);
+  return c.json(publicSettings(settings));
+});
+
+email.put('/api/email/settings', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const did = parseDid(body);
+  const frequency = (body as { frequency?: unknown } | null)?.frequency;
+  if (!did || (frequency !== 'instant' && frequency !== 'daily' && frequency !== 'weekly')) {
+    return c.json({ error: 'A valid did and frequency (instant, daily, or weekly) are required.' }, 400);
+  }
+  const settings = await setEmailFrequency(c.env, did, frequency);
+  return c.json(publicSettings(settings));
+});
+
+// Per-address routing filters: tags and authors (handles or dids) limit which
+// stories that address receives. Empty lists mean the address gets everything.
+email.put('/api/email/addresses', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const did = parseDid(body);
+  const address = (body as { email?: unknown } | null)?.email;
+  const tags = (body as { tags?: unknown } | null)?.tags;
+  const authors = (body as { authors?: unknown } | null)?.authors;
+  if (!did || typeof address !== 'string' || !EMAIL_PATTERN.test(normalizeEmail(address))) {
+    return c.json({ error: 'A valid did and email address are required.' }, 400);
+  }
+  if ((tags !== undefined && !Array.isArray(tags)) || (authors !== undefined && !Array.isArray(authors))) {
+    return c.json({ error: 'Filters must be arrays of strings.' }, 400);
+  }
+  const settings = await setEmailFilters(c.env, did, address, {
+    tags: tags as string[] | undefined,
+    authors: authors as string[] | undefined,
+  });
+  if (!settings) return c.json({ error: 'That email address is not on your list.' }, 404);
   return c.json(publicSettings(settings));
 });
 

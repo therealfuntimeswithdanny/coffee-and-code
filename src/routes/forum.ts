@@ -557,28 +557,32 @@ forum.get('/create', async (c) => {
         <h1 id="forum-create-title">Start a discussion</h1>
         <p class="forum-create-intro">Share a project, ask a question, or start a conversation with the community.</p>
       </header>
-      <form class="archive-search forum-editor" data-forum-post data-forum-uri="${escapeHtml(config.uri)}">
+      <form class="archive-search forum-editor forum-composer-ui" data-forum-post data-forum-uri="${escapeHtml(config.uri)}">
         <p class="forum-status" data-forum-status role="status"></p>
-        <label class="archive-search__query">Title
-          <input type="text" name="title" maxlength="300" placeholder="Give your discussion a clear title" required>
-        </label>
-        <label class="forum-editor__body">Your post
-          <textarea name="content" rows="14" maxlength="100000" placeholder="Write your post in Markdown…" required></textarea>
-        </label>
-        <p class="forum-markdown-note">Markdown is supported. Links and formatting will be safely rendered.</p>
-        <label>Topics (comma-separated)
-          <input type="text" name="tags" list="forum-create-tags" maxlength="256" placeholder="For example: projects, web development">
-          <datalist id="forum-create-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
-        </label>
-        <label>Images
-          <input name="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
-        </label>
-        <label>Image alt text <span class="forum-field-hint">Add one description per image, one per line.</span>
-          <textarea name="imageAlts" rows="3" placeholder="Describe each image for readers using assistive technology"></textarea>
-        </label>
-        <div class="forum-editor__actions">
-          <button type="submit" class="search-button">Publish discussion</button>
-          <a href="/forum" class="read-link">Cancel</a>
+        <div class="forum-composer-ui__card">
+          <span class="forum-composer-ui__avatar"><img data-composer-avatar alt="" hidden><i class="fa-solid fa-user" data-composer-avatar-icon aria-hidden="true"></i></span>
+          <div class="forum-composer-ui__body">
+            <input class="forum-composer-ui__title" type="text" name="title" maxlength="300" placeholder="Title your discussion" required aria-label="Title">
+            <textarea name="content" rows="5" maxlength="100000" placeholder="Share a project, ask a question, or start a conversation…" required aria-label="Your post" data-autogrow></textarea>
+            <div class="forum-composer-ui__attachments" data-attachments hidden></div>
+            <label class="forum-composer-ui__alts" data-alt-field hidden>Alt text — one line per image
+              <textarea name="imageAlts" rows="2" placeholder="Describe each image for readers using assistive technology"></textarea>
+            </label>
+          </div>
+        </div>
+        <div class="forum-composer-ui__toolbar">
+          <label class="forum-composer-ui__tool" title="Add images" aria-label="Add images">
+            <i class="fa-regular fa-image" aria-hidden="true"></i>
+            <input type="file" name="images" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+            <span class="forum-composer-ui__count" data-image-count hidden></span>
+          </label>
+          <label class="forum-composer-ui__tags">
+            <i class="fa-solid fa-tag" aria-hidden="true"></i>
+            <input type="text" name="tags" list="forum-create-tags" maxlength="256" placeholder="Topics" aria-label="Topics (comma-separated)">
+            <datalist id="forum-create-tags">${config.tags.map((tag) => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+          </label>
+          <span class="forum-composer-ui__hint">Markdown supported</span>
+          <button type="submit" class="forum-composer-ui__post">Post</button>
         </div>
       </form>
     </section>`;
@@ -664,12 +668,26 @@ forum.get('/:handle/:rkey', async (c) => {
     ${moderatorControls(post.uri, post.cid, config.uri, rootState, config.moderators)}
     <section class="forum-thread__replies" aria-labelledby="forum-replies-title">
       <div class="section-heading"><span id="forum-replies-title">Replies</span><span>${visibleReplyCount}</span></div>
-      ${!rootState.locked ? `<form data-forum-reply class="forum-reply-form">
+      ${!rootState.locked ? `<form data-forum-reply class="forum-reply-form forum-composer-ui">
         <p class="forum-status" data-forum-status role="status"></p>
-        <label>Reply <textarea name="content" rows="5" maxlength="30000" required></textarea></label>
-        <label>Images <input name="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
-        <label>Image alt text (one line per selected image) <textarea name="imageAlts" rows="2"></textarea></label>
-        <button type="submit" class="login-button">Post reply</button>
+        <div class="forum-composer-ui__card">
+          <span class="forum-composer-ui__avatar"><img data-composer-avatar alt="" hidden><i class="fa-solid fa-user" data-composer-avatar-icon aria-hidden="true"></i></span>
+          <div class="forum-composer-ui__body">
+            <textarea name="content" rows="3" maxlength="30000" placeholder="Write a reply…" required aria-label="Reply" data-autogrow></textarea>
+            <div class="forum-composer-ui__attachments" data-attachments hidden></div>
+            <label class="forum-composer-ui__alts" data-alt-field hidden>Alt text — one line per image
+              <textarea name="imageAlts" rows="2" placeholder="Describe each image for readers using assistive technology"></textarea>
+            </label>
+          </div>
+        </div>
+        <div class="forum-composer-ui__toolbar">
+          <label class="forum-composer-ui__tool" title="Add images" aria-label="Add images">
+            <i class="fa-regular fa-image" aria-hidden="true"></i>
+            <input type="file" name="images" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+            <span class="forum-composer-ui__count" data-image-count hidden></span>
+          </label>
+          <button type="submit" class="forum-composer-ui__post">Reply</button>
+        </div>
       </form>` : '<p class="forum-locked">Replies are locked by a forum moderator.</p>'}
       <div class="forum-replies">${renderReplies(post.uri, 1, new Set([post.uri]))}</div>
     </section>

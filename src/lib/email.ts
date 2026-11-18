@@ -115,7 +115,7 @@ export function verificationEmail(env: Env, verifyUrl: string) {
   return { subject: `Confirm your email for ${pubName} notifications`, html, text };
 }
 
-export function followedPostsEmail(env: Env, notifications: Notification[], unsubscribeUrl: string, manageUrl: string) {
+export function followedPostsEmail(env: Env, notifications: Notification[], unsubscribeUrl: string, manageUrl: string, options: { label?: string } = {}) {
   const pubName = env.PUB_NAME || 'Coffee & Code';
   const items = notifications.map((notification) => {
     const url = `${SITE_ORIGIN}${notification.documentPath || '/'}`;
@@ -134,7 +134,8 @@ export function followedPostsEmail(env: Env, notifications: Notification[], unsu
     title: escapeHtml(item.title),
     reason: escapeHtml(item.reason),
   })).join('');
-  const heading = items.length === 1 ? '1 new story for you' : `${items.length} new stories for you`;
+  const baseHeading = items.length === 1 ? '1 new story for you' : `${items.length} new stories for you`;
+  const heading = options.label ? `Your ${options.label} — ${baseHeading}` : baseHeading;
   const html = fill(digest.document, {
     heading: escapeHtml(heading),
     pubName: escapeHtml(pubName),
@@ -145,8 +146,10 @@ export function followedPostsEmail(env: Env, notifications: Notification[], unsu
   const text = `${heading}\n\n`
     + items.map((item) => `${item.title}\n${item.reason}\n${item.url}`).join('\n\n')
     + `\n\nManage email settings: ${manageUrl}\nUnsubscribe: ${unsubscribeUrl}`;
-  const subject = items.length === 1
-    ? `New story: ${items[0].title}`
-    : `${items.length} new stories on ${pubName}`;
+  const subject = options.label
+    ? `Your ${options.label}: ${items.length === 1 ? items[0].title : `${items.length} new stories on ${pubName}`}`
+    : items.length === 1
+      ? `New story: ${items[0].title}`
+      : `${items.length} new stories on ${pubName}`;
   return { subject, html, text };
 }

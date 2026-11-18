@@ -314,7 +314,22 @@ pages.get('/api/account/posts', async (c) => {
   const articles = authorDid
     ? allArticles.filter((post) => post.author?.did.toLowerCase() === authorDid.toLowerCase())
     : allArticles;
-  return c.json(articles.map(({ uri, path, title, publishedAt, cover }) => ({ uri, path, title, publishedAt, cover })), 200, {
+  return c.json(articles.map(({ uri, path, title, description, publishedAt, cover, author }) => ({
+    uri,
+    path,
+    title,
+    description: description || '',
+    publishedAt,
+    cover: cover ? proxyImageUrl(cover, pds, 'feed_small') : undefined,
+    author: author
+      ? {
+          did: author.did,
+          handle: author.handle,
+          displayName: author.displayName || author.handle,
+          avatar: author.avatar ? proxyAvatarUrl(author.avatar, 'avatar_thumb') : undefined,
+        }
+      : undefined,
+  })), 200, {
     'Cache-Control': 'public, max-age=60',
   });
 });
@@ -387,34 +402,7 @@ pages.get('/account', (c) => {
       <h1 id="account-title">Your account</h1>
       <div class="auth-account" data-auth-account hidden>
         <div class="account-layout">
-        <aside class="account-layout__column account-layout__sidebar" aria-label="Your profile">
-          <section class="account-card" aria-labelledby="profile-card-title">
-            <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 id="profile-card-title" data-profile-name>Loading account…</h2><p data-profile-handle></p><p class="account-page__profile-meta" data-profile-pronouns hidden></p><p data-profile-bio></p></div></div>
-            <form class="account-profile-form" data-user-profile-form hidden aria-labelledby="profile-form-title">
-              <h3 id="profile-form-title" class="visually-hidden">Edit your Coffee &amp; Code profile</h3>
-              <label>Display name<input name="displayName" maxlength="64" autocomplete="nickname"></label>
-              <label>Pronouns<input name="pronouns" maxlength="40" placeholder="Optional"></label>
-              <label>Bio<textarea name="description" maxlength="256" rows="4"></textarea></label>
-              <div class="account-profile-form__actions"><button class="auth-signout" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-user-profile>Cancel</button></div>
-            </form>
-            <p class="account-profile-form__status" data-user-profile-status role="status" aria-live="polite"></p>
-            <div class="account-page__actions">
-              <button type="button" class="auth-signout" data-edit-user-profile disabled><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit profile</button>
-              <button type="button" class="auth-signout" data-auth-signout><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Log out</button>
-            </div>
-            <nav class="account-page__section-nav" aria-label="Account sections">
-              <a href="#saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</a>
-              <a href="#viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</a>
-              <a href="#followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</a>
-              <a href="#appearance-title"><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</a>
-              <a href="#email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</a>
-              <a href="#blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</a>
-              <a href="/account/list"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</a>
-              <a href="#author-settings-title" data-author-settings-link hidden><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</a>
-            </nav>
-          </section>
-          <section class="account-card account-switcher-card" data-account-switcher hidden aria-label="Switch account"></section>
-        </aside>
+        ${accountProfileSidebar}
         <div class="account-layout__column account-layout__main">
           <section class="account-card account-page__viewed" aria-labelledby="saved-posts-title"><div class="account-card__header"><h2 id="saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</h2><span class="account-card__count" data-saved-count></span></div><p class="account-page__viewed-status" data-saved-status role="status" aria-live="polite">Loading your saved posts…</p><ul data-saved-posts></ul></section>
           <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
@@ -440,11 +428,29 @@ pages.get('/account', (c) => {
                 </div>
               </fieldset>
               <fieldset>
+                <legend>Site font</legend>
+                <div class="account-preferences__options" role="radiogroup" aria-label="Site font">
+                  <label><input type="radio" name="pref-ui-font" value="sans"> Sans</label>
+                  <label><input type="radio" name="pref-ui-font" value="serif"> Serif</label>
+                  <label><input type="radio" name="pref-ui-font" value="monospace"> Mono</label>
+                  <label><input type="radio" name="pref-ui-font" value="system"> System</label>
+                  <label><input type="radio" name="pref-ui-font" value="inter"> Inter</label>
+                  <label><input type="radio" name="pref-ui-font" value="atkinson"> Atkinson</label>
+                  <label><input type="radio" name="pref-ui-font" value="merriweather"> Merriweather</label>
+                  <label><input type="radio" name="pref-ui-font" value="fraunces"> Fraunces</label>
+                </div>
+              </fieldset>
+              <fieldset>
                 <legend>Story font</legend>
                 <div class="account-preferences__options" role="radiogroup" aria-label="Story font">
                   <label><input type="radio" name="pref-font" value="sans"> Sans</label>
                   <label><input type="radio" name="pref-font" value="serif"> Serif</label>
                   <label><input type="radio" name="pref-font" value="monospace"> Mono</label>
+                  <label><input type="radio" name="pref-font" value="system"> System</label>
+                  <label><input type="radio" name="pref-font" value="inter"> Inter</label>
+                  <label><input type="radio" name="pref-font" value="atkinson"> Atkinson</label>
+                  <label><input type="radio" name="pref-font" value="merriweather"> Merriweather</label>
+                  <label><input type="radio" name="pref-font" value="fraunces"> Fraunces</label>
                 </div>
               </fieldset>
               <label>Story text size
@@ -462,7 +468,16 @@ pages.get('/account', (c) => {
             <p class="account-page__viewed-status" data-email-status role="status" aria-live="polite">Loading your email settings…</p>
             <div data-email-settings hidden>
               <label class="account-email__toggle"><input type="checkbox" data-email-enabled> Email me when people or tags I follow publish a story</label>
+              <fieldset class="account-email__frequency" data-email-frequency>
+                <legend>Delivery</legend>
+                <div class="account-preferences__options" role="radiogroup" aria-label="Delivery frequency">
+                  <label><input type="radio" name="email-frequency" value="instant"> As they publish</label>
+                  <label><input type="radio" name="email-frequency" value="daily"> Daily brief</label>
+                  <label><input type="radio" name="email-frequency" value="weekly"> Weekly brief</label>
+                </div>
+              </fieldset>
               <ul class="account-email__list" data-email-list></ul>
+              <p class="account-page__blocks-note">Use “Filters” on an address to limit it to certain tags or authors — for example, send one tag to a work email and a specific author somewhere else.</p>
               <form class="account-email__form" data-email-form>
                 <label>Email address<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="you@example.com"></label>
                 <div class="account-profile-form__actions">
@@ -480,47 +495,6 @@ pages.get('/account', (c) => {
             <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s forum posts and replies for you. Stories and comments remain visible. Bluesky blocks are managed separately in Bluesky settings.</p>
           </section>
         </div>
-        <section class="account-card account-author-settings account-layout__author" data-author-settings hidden aria-labelledby="author-settings-title">
-          <h2 id="author-settings-title"><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</h2>
-          <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
-          <button type="button" class="auth-signout" data-edit-author-profile hidden><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit author profile</button>
-          <form class="account-author-form" data-author-profile-form hidden>
-            <div class="account-author-form__workspace">
-              <div class="account-author-form__fields">
-                <button type="button" class="account-author-form__sync" data-sync-bluesky-profile><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Sync from Bluesky profile</button>
-                <p class="account-author-form__sync-note">Review synced details and save them to your Coffee &amp; Code author profile.</p>
-                <label>Display name<input name="displayName" maxlength="100"></label>
-                <label>Pronouns<input name="pronouns" maxlength="50" placeholder="Optional"></label>
-                <label class="account-author-form__wide">Bio<textarea name="description" maxlength="1000" rows="5"></textarea></label>
-                <label>Profile photo<input name="avatar" type="file" accept="image/*"></label>
-                <label class="account-author-form__check"><input name="removeAvatar" type="checkbox"> Remove current photo</label>
-                <label>Profile banner<input name="banner" type="file" accept="image/*"></label>
-                <label class="account-author-form__check"><input name="removeBanner" type="checkbox"> Remove current banner</label>
-                <fieldset class="account-author-form__pins account-author-form__wide"><legend><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Pinned posts</legend><p>Choose the stories to feature on your author page.</p><input type="search" class="account-search-input" data-author-posts-search placeholder="Search your stories…" aria-label="Search your stories"><p data-author-posts-status>Stories will load when you open the editor.</p><div data-author-post-picker></div></fieldset>
-                <div class="account-author-form__actions account-author-form__wide"><button class="auth-signout" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-author-edit>Cancel</button></div>
-                <p class="account-author-form__status account-author-form__wide" data-author-profile-status role="status" aria-live="polite"></p>
-              </div>
-              <aside class="account-author-preview" aria-label="Author profile preview">
-                <div class="account-author-preview__banner"><img data-author-preview-banner alt="" hidden><span data-author-preview-banner-placeholder>Author profile</span></div>
-                <div class="account-author-preview__identity">
-                  <img class="account-author-preview__avatar" data-author-preview-avatar alt="" hidden>
-                  <span class="account-author-preview__avatar account-author-preview__avatar--placeholder" data-author-preview-avatar-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span>
-                  <div><h3 data-author-preview-name></h3><p data-author-preview-handle></p></div>
-                </div>
-                <p class="account-author-preview__pronouns" data-author-preview-pronouns></p>
-                <p class="account-author-preview__bio" data-author-preview-bio></p>
-                <p class="account-author-preview__footnote">This is how your author profile will appear to readers.</p>
-              </aside>
-            </div>
-          </form>
-          <div class="account-post-metadata" data-post-metadata>
-            <h3 class="account-page__subheading" id="post-metadata-title"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Post metadata</h3>
-            <p class="account-post-metadata__intro">Attach sources and a backing document to stories published in your repository. Metadata appears on the story page.</p>
-            <input type="search" class="account-search-input" data-post-metadata-search placeholder="Search your stories to edit metadata…" aria-label="Search your stories to edit metadata">
-            <p class="account-post-metadata__status" data-post-metadata-status role="status" aria-live="polite"></p>
-            <ul class="account-post-metadata__list" data-post-metadata-list></ul>
-          </div>
-        </section>
         </div>
       </div>
       <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth" data-login-link>Log in</a></div>
@@ -552,6 +526,36 @@ const accountSubNav = `
     <a href="/account/author">Author profile</a>
   </nav>`;
 
+const accountProfileSidebar = `
+  <aside class="account-layout__column account-layout__sidebar" aria-label="Your profile">
+    <section class="account-card" aria-labelledby="profile-card-title">
+      <div class="account-page__profile"><img data-profile-avatar alt="" hidden><span data-profile-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><div><h2 id="profile-card-title" data-profile-name>Loading account…</h2><p data-profile-handle></p><p class="account-page__profile-meta" data-profile-pronouns hidden></p><p data-profile-bio></p></div></div>
+      <form class="account-profile-form" data-user-profile-form hidden aria-labelledby="profile-form-title">
+        <h3 id="profile-form-title" class="visually-hidden">Edit your Coffee &amp; Code profile</h3>
+        <label>Display name<input name="displayName" maxlength="64" autocomplete="nickname"></label>
+        <label>Pronouns<input name="pronouns" maxlength="40" placeholder="Optional"></label>
+        <label>Bio<textarea name="description" maxlength="256" rows="4"></textarea></label>
+        <div class="account-profile-form__actions"><button class="auth-signout" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Save profile</button><button class="account-author-form__cancel" type="button" data-cancel-user-profile>Cancel</button></div>
+      </form>
+      <p class="account-profile-form__status" data-user-profile-status role="status" aria-live="polite"></p>
+      <div class="account-page__actions">
+        <button type="button" class="auth-signout" data-edit-user-profile disabled><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit profile</button>
+        <button type="button" class="auth-signout" data-auth-signout><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Log out</button>
+      </div>
+      <nav class="account-page__section-nav" aria-label="Account sections">
+        <a href="/account#saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</a>
+        <a href="/account#viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</a>
+        <a href="/account#followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</a>
+        <a href="/account#appearance-title"><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</a>
+        <a href="/account#email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</a>
+        <a href="/account#blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</a>
+        <a href="/account/list"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</a>
+        <a href="/account/author" data-author-settings-link hidden><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</a>
+      </nav>
+    </section>
+    <section class="account-card account-switcher-card" data-account-switcher hidden aria-label="Switch account"></section>
+  </aside>`;
+
 pages.get('/account/saves', (c) => {
   const inner = `
     ${accountSubNav}
@@ -578,24 +582,32 @@ pages.get('/account/reads', (c) => {
 
 pages.get('/account/list', (c) => {
   const inner = `
-    ${accountSubNav}
-    <section class="account-card account-page__viewed" aria-labelledby="account-lists-title" data-account-lists>
-      <div class="account-card__header"><h2 id="account-lists-title">Your lists</h2><span class="account-card__count" data-lists-count></span></div>
-      <p class="account-page__viewed-status" data-lists-status role="status" aria-live="polite">Loading your lists…</p>
-      <ul data-lists-list></ul>
-      <p class="account-page__blocks-note">Lists are saved to your AT Protocol account and are public. Add stories to a list from the story page, or share a list link with anyone.</p>
-      <h3 class="account-page__subheading" id="list-form-title" data-list-form-title>Create a list</h3>
-      <form class="account-profile-form account-list-form" data-list-form aria-labelledby="list-form-title">
-        <label>Title<input name="title" maxlength="120" required placeholder="Required"></label>
-        <label>About<textarea name="about" maxlength="2000" rows="3" placeholder="Optional — what belongs on this list?"></textarea></label>
-        <label>Icon<input name="icon" maxlength="2048" placeholder="Optional — emoji or https image URL"></label>
-        <div class="account-profile-form__actions">
-          <button class="auth-signout" type="submit" data-list-submit>Create list</button>
-          <button class="account-author-form__cancel" type="button" data-list-cancel hidden>Cancel</button>
-        </div>
-        <p class="account-profile-form__status" data-list-form-status role="status" aria-live="polite"></p>
-      </form>
-    </section>`;
+    <div class="account-layout">
+    ${accountProfileSidebar}
+    <div class="account-layout__column account-layout__main">
+      <section class="account-card account-page__viewed" aria-labelledby="account-lists-title" data-account-lists>
+        <div class="account-card__header"><h2 id="account-lists-title"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</h2><span class="account-card__count" data-lists-count></span></div>
+        <p class="account-page__viewed-status" data-lists-status role="status" aria-live="polite">Loading your lists…</p>
+        <ul data-lists-list></ul>
+      </section>
+    </div>
+    <div class="account-layout__column account-layout__secondary">
+      <section class="account-card account-page__viewed" aria-labelledby="list-form-title">
+        <h2 id="list-form-title" data-list-form-title><i class="fa-solid fa-plus" aria-hidden="true"></i> Create a list</h2>
+        <form class="account-profile-form account-list-form" data-list-form aria-labelledby="list-form-title">
+          <label>Title<input name="title" maxlength="120" required placeholder="Required"></label>
+          <label>About<textarea name="about" maxlength="2000" rows="3" placeholder="Optional — what belongs on this list?"></textarea></label>
+          <label>Icon<input name="icon" maxlength="2048" placeholder="Optional — emoji or https image URL"></label>
+          <div class="account-profile-form__actions">
+            <button class="auth-signout" type="submit" data-list-submit>Create list</button>
+            <button class="account-author-form__cancel" type="button" data-list-cancel hidden>Cancel</button>
+          </div>
+          <p class="account-profile-form__status" data-list-form-status role="status" aria-live="polite"></p>
+        </form>
+        <p class="account-page__blocks-note">Lists are saved to your AT Protocol account and are public. Add stories to a list from the story page, or share a list link with anyone.</p>
+      </section>
+    </div>
+    </div>`;
   const body = accountPageShell('Your lists', inner, 'Sign in to create and manage your lists.');
   return c.html(renderLayout(c, 'Your lists', body));
 });

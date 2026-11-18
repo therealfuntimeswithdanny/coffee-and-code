@@ -200,7 +200,7 @@ async function renderPost(
         <h2 id="article-sources-title">Sources</h2>
         <ul>${postMetadata.sources.map((source) => `
           <li><a href="${escapeHtml(externalLinkUrl(source))}" target="_blank" rel="noopener">${escapeHtml(sourceLabel(source))} <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></li>`).join('')}
-          ${postMetadata.backlink ? `<li><a href="${escapeHtml(externalLinkUrl(`https://pdsls.dev/${postMetadata.backlink}`))}" target="_blank" rel="noopener">Original document <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></li>` : ''}
+          ${postMetadata.backlink ? `<li><a href="${escapeHtml(externalLinkUrl(postMetadata.backlink.startsWith('at://') ? `https://pdsls.dev/${postMetadata.backlink}` : postMetadata.backlink))}" target="_blank" rel="noopener">${postMetadata.backlink.startsWith('at://') ? 'Original document' : `Source document · ${escapeHtml(sourceLabel(postMetadata.backlink))}`} <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></li>` : ''}
         </ul>
       </section>`
     : '';
@@ -219,6 +219,7 @@ async function renderPost(
       <div class="article-share" data-share-title="${safeTitle}" data-share-url="${escapeHtml(pageUrl)}">
         <span class="article-share__label">Share this story</span>
         <div class="article-share__buttons" aria-label="Share this story">
+          <a class="reaction-button" href="https://app.coffeencode.cc/intent?text=${shareText}%20${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Bluesky"><i class="fa-brands fa-bluesky" aria-hidden="true"></i> Bluesky</a>
           <a class="reaction-button" href="https://www.reddit.com/submit?url=${shareUrl}&title=${shareText}" target="_blank" rel="noopener" aria-label="Share on Reddit"><i class="fa-brands fa-reddit-alien" aria-hidden="true"></i> Reddit</a>
           <a class="reaction-button" href="https://www.threads.net/intent/post?text=${shareText}%20${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Threads"><i class="fa-brands fa-threads" aria-hidden="true"></i> Threads</a>
           <a class="reaction-button" href="https://www.facebook.com/sharer/sharer.php?u=${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Facebook"><i class="fa-brands fa-facebook-f" aria-hidden="true"></i> Facebook</a>

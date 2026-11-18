@@ -24,6 +24,65 @@ function forumStatus(container, message, isError = false) {
   status.dataset.error = String(isError);
 }
 
+function enhanceComposer(form) {
+  form.querySelectorAll('textarea[data-autogrow]').forEach((el) => {
+    const grow = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    el.addEventListener('input', grow);
+    grow();
+  });
+
+  const fileInput = form.querySelector('input[name="images"]');
+  const attachments = form.querySelector('[data-attachments]');
+  const altField = form.querySelector('[data-alt-field]');
+  const count = form.querySelector('[data-image-count]');
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      const files = Array.from(fileInput.files || []);
+      if (attachments) {
+        attachments.replaceChildren();
+        attachments.hidden = !files.length;
+        files.forEach((file) => {
+          if (!file.type.startsWith('image/')) return;
+          const img = document.createElement('img');
+          img.src = URL.createObjectURL(file);
+          img.alt = '';
+          attachments.append(img);
+        });
+      }
+      if (altField) altField.hidden = !files.length;
+      if (count) {
+        count.hidden = !files.length;
+        count.textContent = String(files.length);
+      }
+    });
+  }
+
+  const avatar = form.querySelector('[data-composer-avatar]');
+  if (avatar && !avatar.dataset.filled) {
+    avatar.dataset.filled = '1';
+    void (async () => {
+      try {
+        const did = await forumAuth().getDid();
+        if (!did) return;
+        const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+        if (!response.ok) return;
+        const profile = await response.json();
+        if (typeof profile?.avatar !== 'string') return;
+        avatar.src = profile.avatar;
+        avatar.hidden = false;
+        avatar.nextElementSibling?.setAttribute('hidden', '');
+      } catch {
+        // Avatar is decorative; leave the placeholder.
+      }
+    })();
+  }
+}
+
+document.querySelectorAll('[data-forum-post], [data-forum-reply]').forEach(enhanceComposer);
+
 function forumImages(form, maximum) {
   const files = Array.from(form.querySelector('input[name="images"]')?.files || []);
   if (files.length > maximum) throw new Error(`Choose no more than ${maximum} images.`);
@@ -80,18 +139,33 @@ document.querySelectorAll('[data-forum-post]').forEach((form) => {
 
 function makeReplyForm(thread, parentUri, parentCid) {
   const form = document.createElement('form');
-  form.className = 'forum-reply-form';
+  form.className = 'forum-reply-form forum-composer-ui';
   form.dataset.forumReplyInline = '';
   form.dataset.parentUri = parentUri;
   form.dataset.parentCid = parentCid;
   form.innerHTML = `
     <p class="forum-status" data-forum-status role="status"></p>
-    <label>Reply <textarea name="content" rows="4" maxlength="30000" required></textarea></label>
-    <label>Images <input name="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
-    <label>Image alt text (one line per selected image) <textarea name="imageAlts" rows="2"></textarea></label>
-    <button type="submit" class="login-button">Post reply</button>`;
+    <div class="forum-composer-ui__card">
+      <span class="forum-composer-ui__avatar"><img data-composer-avatar alt="" hidden><i class="fa-solid fa-user" data-composer-avatar-icon aria-hidden="true"></i></span>
+      <div class="forum-composer-ui__body">
+        <textarea name="content" rows="3" maxlength="30000" placeholder="Write a reply…" required aria-label="Reply" data-autogrow></textarea>
+        <div class="forum-composer-ui__attachments" data-attachments hidden></div>
+        <label class="forum-composer-ui__alts" data-alt-field hidden>Alt text — one line per image
+          <textarea name="imageAlts" rows="2" placeholder="Describe each image for readers using assistive technology"></textarea>
+        </label>
+      </div>
+    </div>
+    <div class="forum-composer-ui__toolbar">
+      <label class="forum-composer-ui__tool" title="Add images" aria-label="Add images">
+        <i class="fa-regular fa-image" aria-hidden="true"></i>
+        <input type="file" name="images" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+        <span class="forum-composer-ui__count" data-image-count hidden></span>
+      </label>
+      <button type="submit" class="forum-composer-ui__post">Reply</button>
+    </div>`;
   const threadUri = thread.dataset.rootUri;
   if (!threadUri) throw new Error('The thread root is missing.');
+  enhanceComposer(form);
   return form;
 }
 

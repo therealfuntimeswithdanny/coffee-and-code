@@ -131,8 +131,33 @@ async function switchToAccount(did: string, trigger?: HTMLButtonElement) {
   }
 }
 
+// DIDs whose public profiles we've already tried to fetch for the switcher,
+// so renderAccountSwitchers doesn't re-request them on every render.
+const switcherProfileLookups = new Set<string>();
+
+function backfillSwitcherProfiles(accounts: KnownAccount[]) {
+  accounts
+    .filter((account) => !account.handle || !account.avatar)
+    .forEach((account) => {
+      if (switcherProfileLookups.has(account.did)) return;
+      switcherProfileLookups.add(account.did);
+      fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.did)}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
+        .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
+          rememberAccount(account.did, {
+            ...(profile.handle ? { handle: profile.handle } : {}),
+            ...(profile.displayName ? { displayName: profile.displayName } : {}),
+            ...(profile.avatar ? { avatar: accountAvatarUrl(profile.avatar) } : {}),
+          });
+          renderAccountSwitchers();
+        })
+        .catch(() => {});
+    });
+}
+
 function renderAccountSwitchers() {
   const accounts = loadKnownAccounts();
+  backfillSwitcherProfiles(accounts);
   const activeDid = session?.did;
   const returnTo = safeReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
   document.querySelectorAll<HTMLElement>('[data-account-switcher]').forEach((container) => {
@@ -254,9 +279,12 @@ if (accountMenuButton && accountMenu && headerAccount) {
   });
 }
 
+type FontChoice = 'sans' | 'serif' | 'monospace' | 'system' | 'atkinson' | 'merriweather' | 'fraunces' | 'inter';
+
 type ReaderPreferences = {
   theme: 'system' | 'dark' | 'light';
-  postFont: 'sans' | 'serif' | 'monospace';
+  uiFont: FontChoice;
+  postFont: FontChoice;
   postFontSize?: number;
 };
 
@@ -264,7 +292,7 @@ declare global {
   interface Window {
     coffeeAndCodePreferences?: {
       get: () => ReaderPreferences;
-      apply: (prefs: { theme?: unknown; postFont?: unknown; postFontSize?: unknown }) => void;
+      apply: (prefs: { theme?: unknown; uiFont?: unknown; postFont?: unknown; postFontSize?: unknown }) => void;
     };
     coffeeAndCodeAuth?: {
       getDid: () => Promise<string | undefined>;
@@ -817,8 +845,71 @@ async function renderTagFollows(did: string) {
   }
 }
 
-type EmailAddressEntry = { address: string; verified: boolean; account: boolean };
-type EmailSettingsResponse = { enabled: boolean; emails: EmailAddressEntry[]; verificationSent?: boolean; alreadyVerified?: boolean };
+type EmailAddressEntry = { address: string; verified: boolean; account: boolean; tags?: string[]; authors?: string[] };
+type EmailSettingsResponse = {
+  enabled: boolean;
+  frequency?: 'instant' | 'daily' | 'weekly';
+  emails: EmailAddressEntry[];
+  verificationSent?: boolean;
+  alreadyVerified?: boolean;
+};
+
+// Collapsible per-address routing editor: limit an address to stories matching
+// certain tags or authors; empty lists mean it receives everything.
+function buildEmailFilters(
+  entry: EmailAddressEntry,
+  did: string,
+  renderEmails: (settings: EmailSettingsResponse) => void,
+  status: HTMLElement,
+) {
+  const filters = document.createElement('details');
+  filters.className = 'account-email__filters';
+  const filterSummary = document.createElement('summary');
+  const activeFilters = (entry.tags?.length || 0) + (entry.authors?.length || 0);
+  filterSummary.textContent = activeFilters ? `Filters (${activeFilters})` : 'Filters — all stories';
+  filters.append(filterSummary);
+  const tagLabel = document.createElement('label');
+  tagLabel.textContent = 'Only these tags (comma-separated)';
+  const tagInput = document.createElement('input');
+  tagInput.type = 'text';
+  tagInput.value = (entry.tags || []).join(', ');
+  tagInput.placeholder = 'For example: atproto, coffee';
+  tagLabel.append(tagInput);
+  const authorLabel = document.createElement('label');
+  authorLabel.textContent = 'Only these authors (handles or dids)';
+  const authorInput = document.createElement('input');
+  authorInput.type = 'text';
+  authorInput.value = (entry.authors || []).join(', ');
+  authorInput.placeholder = 'For example: jay.bsky.team';
+  authorLabel.append(authorInput);
+  const saveFilters = document.createElement('button');
+  saveFilters.type = 'button';
+  saveFilters.className = 'auth-signout';
+  saveFilters.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Save filters';
+  const filtersStatus = document.createElement('small');
+  const splitList = (value: string) => value.split(',').map((part) => part.trim()).filter(Boolean);
+  saveFilters.addEventListener('click', async () => {
+    saveFilters.disabled = true;
+    filtersStatus.textContent = 'Saving filters…';
+    try {
+      const response = await fetch('/api/email/addresses', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ did, email: entry.address, tags: splitList(tagInput.value), authors: splitList(authorInput.value) }),
+      });
+      const result = await response.json() as EmailSettingsResponse & { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Could not save your filters.');
+      if (session?.did !== did) return;
+      renderEmails(result);
+      status.textContent = `Filters updated for ${entry.address}.`;
+    } catch (error) {
+      filtersStatus.textContent = errorMessage(error);
+      saveFilters.disabled = false;
+    }
+  });
+  filters.append(tagLabel, authorLabel, saveFilters, filtersStatus);
+  return filters;
+}
 
 async function loadEmailSettings(did: string) {
   if (!accountPage) return;
@@ -828,10 +919,14 @@ async function loadEmailSettings(did: string) {
   const form = accountPage.querySelector<HTMLFormElement>('[data-email-form]');
   const toggle = accountPage.querySelector<HTMLInputElement>('[data-email-enabled]');
   const accountButton = accountPage.querySelector<HTMLButtonElement>('[data-email-account-button]');
+  const frequencyField = accountPage.querySelector<HTMLElement>('[data-email-frequency]');
   if (!section || !status || !list || !form || !toggle || !accountButton) return;
 
   const renderEmails = (settings: EmailSettingsResponse) => {
     toggle.checked = settings.enabled;
+    frequencyField?.querySelectorAll<HTMLInputElement>('input[name="email-frequency"]').forEach((input) => {
+      input.checked = input.value === (settings.frequency || 'instant');
+    });
     list.replaceChildren();
     settings.emails.forEach((entry) => {
       const item = document.createElement('li');
@@ -891,7 +986,8 @@ async function loadEmailSettings(did: string) {
           remove.disabled = false;
         }
       });
-      item.append(label, badge, ...(resend ? [resend] : []), remove);
+      const filters = buildEmailFilters(entry, did, renderEmails, status);
+      item.append(label, badge, ...(resend ? [resend] : []), remove, filters);
       list.append(item);
     });
   };
@@ -978,6 +1074,33 @@ async function loadEmailSettings(did: string) {
     } finally {
       toggle.disabled = false;
     }
+  });
+
+  frequencyField?.querySelectorAll<HTMLInputElement>('input[name="email-frequency"]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      if (!input.checked) return;
+      const frequency = input.value;
+      input.disabled = true;
+      status.textContent = 'Saving your delivery preference…';
+      try {
+        const response = await fetch('/api/email/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ did, frequency }),
+        });
+        const result = await response.json() as EmailSettingsResponse & { error?: string };
+        if (!response.ok) throw new Error(result.error || 'Could not save your delivery preference.');
+        if (session?.did !== did) return;
+        renderEmails(result);
+        status.textContent = frequency === 'instant'
+          ? 'Emails will arrive as stories publish.'
+          : `You'll get a ${frequency} brief in your inbox.`;
+      } catch (error) {
+        status.textContent = errorMessage(error);
+      } finally {
+        input.disabled = false;
+      }
+    });
   });
 
   form.addEventListener('submit', async (event) => {
@@ -1634,10 +1757,10 @@ function buildPostMetadataItem(did: string, post: { uri: string; path?: string; 
   sourcesInput.placeholder = 'https://example.com/article';
   sourcesLabel.append(sourcesInput);
   const backlinkLabel = document.createElement('label');
-  backlinkLabel.textContent = 'Source document (at:// URI, optional)';
+  backlinkLabel.textContent = 'Source document (URL or at:// URI, optional)';
   const backlinkInput = document.createElement('input');
   backlinkInput.name = 'backlink';
-  backlinkInput.placeholder = 'at://did:plc:…/site.standard.document/…';
+  backlinkInput.placeholder = 'https://docs.google.com/… or at://did:plc:…';
   backlinkLabel.append(backlinkInput);
   const actions = document.createElement('div');
   actions.className = 'account-post-metadata__form-actions';
@@ -1715,8 +1838,17 @@ function buildPostMetadataItem(did: string, post: { uri: string; path?: string; 
       return;
     }
     const backlink = backlinkInput.value.trim();
-    if (backlink && !/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/[a-zA-Z0-9.]+\/[a-zA-Z0-9._~:-]+$/.test(backlink)) {
-      formStatus.textContent = 'The source document must be a valid at:// URI.';
+    const isAtUri = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/[a-zA-Z0-9.]+\/[a-zA-Z0-9._~:-]+$/.test(backlink);
+    const isHttpUrl = (() => {
+      try {
+        const url = new URL(backlink);
+        return url.protocol === 'https:' || url.protocol === 'http:';
+      } catch {
+        return false;
+      }
+    })();
+    if (backlink && !isAtUri && !isHttpUrl) {
+      formStatus.textContent = 'The source document must be a valid URL or at:// URI.';
       return;
     }
 
@@ -1776,6 +1908,92 @@ async function uploadAuthorImage(file: File): Promise<unknown> {
   throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Image upload failed (${response.status}).`);
 }
 
+type AccountPostSummary = {
+  uri: string;
+  path: string;
+  title?: string;
+  description?: string;
+  publishedAt?: string;
+  cover?: string;
+  author?: { did?: string; handle?: string; displayName?: string; avatar?: string };
+};
+
+// Bluesky-style card: avatar, author line, title, excerpt, and a cover thumb.
+function storyCard(post: AccountPostSummary | undefined, fallbackHref: string, emptyTitle: string, metaText?: string) {
+  const item = document.createElement('li');
+  item.className = 'story-card';
+  const avatar = document.createElement('span');
+  avatar.className = 'story-card__avatar';
+  if (post?.author?.avatar) {
+    const img = document.createElement('img');
+    img.src = post.author.avatar;
+    img.alt = '';
+    img.loading = 'lazy';
+    avatar.append(img);
+  } else {
+    avatar.innerHTML = '<i class="fa-solid fa-user" aria-hidden="true"></i>';
+  }
+  item.append(avatar);
+
+  const main = document.createElement('div');
+  main.className = 'story-card__main';
+  const byline = document.createElement('div');
+  byline.className = 'story-card__byline';
+  const authorHandle = post?.author?.handle;
+  const authorName = post?.author?.displayName || authorHandle;
+  if (authorName) {
+    const authorLink = document.createElement('a');
+    authorLink.className = 'story-card__author';
+    authorLink.href = `/author/${encodeURIComponent(authorHandle || authorName)}`;
+    authorLink.textContent = authorName;
+    byline.append(authorLink);
+    if (authorHandle) {
+      const handle = document.createElement('span');
+      handle.className = 'story-card__handle';
+      handle.textContent = `@${authorHandle}`;
+      byline.append(handle);
+    }
+    byline.append(document.createTextNode('·'));
+  }
+  if (post?.publishedAt && Number.isFinite(Date.parse(post.publishedAt))) {
+    const time = document.createElement('time');
+    time.dateTime = post.publishedAt;
+    time.textContent = new Date(post.publishedAt).toLocaleDateString();
+    byline.append(time);
+  }
+  main.append(byline);
+
+  const link = document.createElement('a');
+  link.className = 'story-card__story';
+  link.href = post?.path || fallbackHref;
+  const heading = document.createElement('h3');
+  heading.textContent = post?.title || emptyTitle;
+  link.append(heading);
+  const excerpt = (post?.description || '').trim();
+  if (excerpt) {
+    const summary = document.createElement('p');
+    summary.textContent = excerpt.length > 180 ? `${excerpt.slice(0, 177).trimEnd()}…` : excerpt;
+    link.append(summary);
+  }
+  main.append(link);
+  if (metaText) {
+    const meta = document.createElement('small');
+    meta.className = 'story-card__meta';
+    meta.textContent = metaText;
+    main.append(meta);
+  }
+  item.append(main);
+  if (post?.cover) {
+    const cover = document.createElement('img');
+    cover.className = 'story-card__cover';
+    cover.src = post.cover;
+    cover.alt = '';
+    cover.loading = 'lazy';
+    item.append(cover);
+  }
+  return item;
+}
+
 async function loadAccountViewedPosts(did: string) {
   if (!accountPage) return;
   const list = accountPage.querySelector<HTMLUListElement>('[data-viewed-posts]');
@@ -1789,7 +2007,7 @@ async function loadAccountViewedPosts(did: string) {
     ]);
     if (!postsResponse.ok) throw new Error('Could not load published posts.');
     const recordsPayload = await recordsResponse.json() as { records?: Array<{ value?: { document?: string; createdAt?: string } }> };
-    const posts = await postsResponse.json() as Array<{ uri: string; path: string; title: string; publishedAt: string; cover?: string }>;
+    const posts = await postsResponse.json() as AccountPostSummary[];
     const postByUri = new Map(posts.map((post) => [post.uri, post]));
     const views = (recordsPayload.records || [])
       .filter((record) => typeof record.value?.document === 'string' && record.value.document.startsWith('at://'))
@@ -1811,17 +2029,11 @@ async function loadAccountViewedPosts(did: string) {
       const uri = record.value?.document || '';
       const post = postByUri.get(uri);
       const match = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/);
-      const link = document.createElement('a');
-      link.href = post?.path || (match ? `/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}` : '/');
-      link.textContent = post?.title || 'Viewed story';
-      const item = document.createElement('li');
-      item.append(link);
-      const metadata = document.createElement('small');
-      metadata.textContent = record.value?.createdAt
+      const href = post?.path || (match ? `/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}` : '/');
+      const meta = record.value?.createdAt && Number.isFinite(Date.parse(record.value.createdAt))
         ? `Viewed ${new Date(record.value.createdAt).toLocaleDateString()}`
         : 'Viewed recently';
-      item.append(metadata);
-      fragment.append(item);
+      fragment.append(storyCard(post, href, 'Viewed story', meta));
     }
     list.replaceChildren(fragment);
     status.hidden = true;
@@ -1849,7 +2061,7 @@ async function loadAccountSavedPosts(did: string) {
     const recordsPayload = await recordsResponse.json() as {
       records?: Array<{ uri?: string; value?: { target?: { document?: string }; createdAt?: string } }>;
     };
-    const posts = await postsResponse.json() as Array<{ uri: string; path: string; title: string; publishedAt: string }>;
+    const posts = await postsResponse.json() as AccountPostSummary[];
     const postByUri = new Map(posts.map((post) => [post.uri, post]));
     const saved = (recordsPayload.records || [])
       .map((record) => {
@@ -1872,17 +2084,11 @@ async function loadAccountSavedPosts(did: string) {
     unique.forEach(({ rkey, uri, createdAt }) => {
       const post = postByUri.get(uri);
       const match = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/);
-      const item = document.createElement('li');
-      item.className = 'account-page__saved-item';
-      const link = document.createElement('a');
-      link.href = post?.path || (match ? `/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}` : '/');
-      link.textContent = post?.title || 'Saved story';
-      if (createdAt && Number.isFinite(Date.parse(createdAt))) {
-        const metadata = document.createElement('small');
-        metadata.textContent = `Saved ${new Date(createdAt).toLocaleDateString()}`;
-        link.append(metadata);
-      }
-      item.append(link);
+      const href = post?.path || (match ? `/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}` : '/');
+      const meta = createdAt && Number.isFinite(Date.parse(createdAt))
+        ? `Saved ${new Date(createdAt).toLocaleDateString()}`
+        : undefined;
+      const item = storyCard(post, href, 'Saved story', meta);
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'account-page__remove-save';
@@ -1909,7 +2115,7 @@ async function loadAccountSavedPosts(did: string) {
           remove.disabled = false;
         }
       });
-      item.append(remove);
+      item.querySelector('.story-card__byline')?.append(remove);
       fragment.append(item);
     });
     list.replaceChildren(fragment);
@@ -2188,6 +2394,9 @@ function syncPreferencesForm() {
   preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-theme"]').forEach((input) => {
     input.checked = input.value === prefs.theme;
   });
+  preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-ui-font"]').forEach((input) => {
+    input.checked = input.value === prefs.uiFont;
+  });
   preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-font"]').forEach((input) => {
     input.checked = input.value === prefs.postFont;
   });
@@ -2196,9 +2405,10 @@ function syncPreferencesForm() {
   if (preferencesFontSizeOutput) preferencesFontSizeOutput.textContent = `${size}px`;
 }
 
-function readPreferencesForm(): { theme?: unknown; postFont?: unknown; postFontSize?: unknown } {
+function readPreferencesForm(): { theme?: unknown; uiFont?: unknown; postFont?: unknown; postFontSize?: unknown } {
   return {
     theme: preferencesSection?.querySelector<HTMLInputElement>('input[name="pref-theme"]:checked')?.value,
+    uiFont: preferencesSection?.querySelector<HTMLInputElement>('input[name="pref-ui-font"]:checked')?.value,
     postFont: preferencesSection?.querySelector<HTMLInputElement>('input[name="pref-font"]:checked')?.value,
     postFontSize: preferencesFontSize ? Number(preferencesFontSize.value) : undefined,
   };
@@ -2215,6 +2425,7 @@ function schedulePreferencesSave(did: string) {
       const record: Record<string, unknown> = {
         $type: PREFERENCES_COLLECTION,
         theme: active.theme,
+        uiFont: active.uiFont,
         postFont: active.postFont,
         updatedAt: new Date().toISOString(),
       };
@@ -2236,7 +2447,7 @@ function schedulePreferencesSave(did: string) {
 }
 
 if (preferencesSection) {
-  preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-theme"], input[name="pref-font"]').forEach((input) => {
+  preferencesSection.querySelectorAll<HTMLInputElement>('input[name="pref-theme"], input[name="pref-ui-font"], input[name="pref-font"]').forEach((input) => {
     input.addEventListener('change', () => {
       const did = session?.did;
       window.coffeeAndCodePreferences?.apply(readPreferencesForm());

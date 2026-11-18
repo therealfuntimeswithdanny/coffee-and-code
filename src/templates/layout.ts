@@ -58,8 +58,8 @@ export function renderLayout(
   <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/webfonts/fa-brands-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Merriweather:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Merriweather:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
   <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"></noscript>
   <style>
@@ -75,7 +75,7 @@ export function renderLayout(
     .browser-run .article-layout { display: block; max-width: 820px; }
     .browser-run .article { margin: 0 auto; max-width: 820px; }
     .browser-run .article-rail, .browser-run .recommendations { display: none !important; }
-    * { box-sizing: border-box; } html, body { min-height: 100%; } body { display: flex; flex-direction: column; margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', sans-serif; font-size: 18px; line-height: 1.45; }
+    * { box-sizing: border-box; } html, body { min-height: 100%; } body { display: flex; flex-direction: column; margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: var(--ui-font, 'Source Sans 3', sans-serif); font-size: 18px; line-height: 1.45; }
     a { color: inherit; text-decoration: none; } a:hover { color: var(--accent); } .site-header { border-bottom: 1px solid var(--line-strong); background: var(--paper); position: sticky; top: 0; z-index: 100; } .header-inner, .page-content, .footer-inner { width: min(var(--page-width), calc(100% - 48px)); margin: 0 auto; }
       .header-inner { min-height: 100px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; transition: min-height 180ms ease; } .site-nav, .header-links { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; } .header-links { justify-content: flex-end; }.site-brand { font-family: Lora, serif; font-size: clamp(1.55rem, 3vw, 2.3rem); font-weight: 700; letter-spacing: -.06em; white-space: nowrap; transition: font-size 180ms ease; }.site-header.is-compact { box-shadow: 0 3px 16px rgba(0, 0, 0, .2); }.site-header.is-compact .header-inner { min-height: 68px; }.site-header.is-compact .site-brand { font-size: clamp(1.35rem, 2.5vw, 1.9rem); }
     .subscribe-button { background: var(--accent); color: var(--paper); padding: 8px 13px; }.subscribe-button:hover { background: var(--ink); color: var(--paper); }
@@ -134,9 +134,21 @@ export function renderLayout(
     .archive-search .search-button:hover { background: transparent; color: var(--accent); }
     @media (max-width: 760px) { .archive-search { margin-bottom: 20px; padding: 14px; }.archive-search__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }.archive-search .archive-search__image-filter { align-self: end; } }
     /* Editorial publication system */
-    :root { color-scheme: dark; --ink: #ffffff; --paper: #281914; --paper-deep: #3b2a1d; --accent: #b2ac88; --muted: #b2ac88; --line: rgba(178,172,136,.42); --line-strong: #b2ac88; --page-width: 1180px; --reader-font: 'Source Sans 3', sans-serif; --reader-size: 19px; }
+    :root { color-scheme: dark; --ink: #ffffff; --paper: #281914; --paper-deep: #3b2a1d; --accent: #b2ac88; --muted: #b2ac88; --line: rgba(178,172,136,.42); --line-strong: #b2ac88; --page-width: 1180px; --reader-font: 'Source Sans 3', sans-serif; --reader-size: 19px; --ui-font: 'Source Sans 3', sans-serif; }
     html[data-reader-font="serif"] { --reader-font: 'Lora', Georgia, serif; }
     html[data-reader-font="monospace"] { --reader-font: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    html[data-reader-font="system"] { --reader-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    html[data-reader-font="atkinson"] { --reader-font: 'Atkinson Hyperlegible', 'Source Sans 3', sans-serif; }
+    html[data-reader-font="merriweather"] { --reader-font: 'Merriweather', Georgia, serif; }
+    html[data-reader-font="fraunces"] { --reader-font: 'Fraunces', Georgia, serif; }
+    html[data-reader-font="inter"] { --reader-font: 'Inter', 'Source Sans 3', sans-serif; }
+    html[data-ui-font="serif"] { --ui-font: 'Lora', Georgia, serif; }
+    html[data-ui-font="monospace"] { --ui-font: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    html[data-ui-font="system"] { --ui-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    html[data-ui-font="atkinson"] { --ui-font: 'Atkinson Hyperlegible', 'Source Sans 3', sans-serif; }
+    html[data-ui-font="merriweather"] { --ui-font: 'Merriweather', Georgia, serif; }
+    html[data-ui-font="fraunces"] { --ui-font: 'Fraunces', Georgia, serif; }
+    html[data-ui-font="inter"] { --ui-font: 'Inter', 'Source Sans 3', sans-serif; }
     html[data-theme="light"] { color-scheme: light; --ink: #2b1d12; --paper: #faf5ec; --paper-deep: #efe7d8; --accent: #6f6335; --muted: #6d675a; --line: rgba(111,99,53,.38); --line-strong: #6f6335; }
     html[data-theme="light"] ::selection { background: rgba(111,99,53,.3); }
     html[data-theme="light"] .site-header { background: rgba(250,245,236,.94); box-shadow: 0 1px 0 rgba(43,29,18,.06); }
@@ -340,17 +352,18 @@ export function renderLayout(
     .article-rail h2 { margin-bottom: 16px; }
     .article-engagement { border-bottom: 1px solid var(--line); display: grid; gap: 10px; margin: 0 0 28px; padding: 0 0 22px; }
     .article-engagement .engagement-stat { background: var(--paper-deep); border: 1px solid var(--line); cursor: default; }
-    .article-engagement .article-reactions__buttons { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .article-engagement .article-reactions__buttons { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .article-engagement .reaction-button { justify-content: center; min-width: 0; }
     .article-engagement .article-reactions__buttons .engagement-stat { grid-column: 1; grid-row: 1; }
     .article-engagement .article-reactions__buttons [data-reaction="like"] { grid-column: 2; grid-row: 1; }
-    .article-engagement .article-reactions__buttons [data-reaction="dislike"] { grid-column: 1; grid-row: 2; }
-    .article-engagement .article-reactions__buttons [data-save-post] { grid-column: 2; grid-row: 2; }
-    .article-engagement .article-reactions__buttons a { grid-column: 1 / -1; grid-row: 3; }
+    .article-engagement .article-reactions__buttons [data-reaction="dislike"] { grid-column: 3; grid-row: 1; }
+    .article-engagement .article-reactions__buttons [data-save-post] { grid-column: 1; grid-row: 2; }
+    .article-engagement .article-reactions__buttons [data-add-to-list] { grid-column: 2; grid-row: 2; }
+    .article-engagement .article-reactions__buttons a { grid-column: 3; grid-row: 2; }
     .article-engagement .article-reactions__status { min-height: 0; }
     .article-share { display: grid; gap: 8px; }
     .article-share__label { color: var(--muted); font: 700 11px 'Source Sans 3', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
-    .article-share__buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+    .article-share__buttons { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .article-share__buttons .reaction-button { text-decoration: none; }
     .article-rail li a { font-size: 14px; }
     .recommendations { margin-top: 76px; }
@@ -451,6 +464,15 @@ export function renderLayout(
     .account-email__list li { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; }
     .account-email__list li span { font: 14px 'Source Sans 3', sans-serif; overflow-wrap: anywhere; }
     .account-email__list li small { display: inline; margin: 0; }
+    .account-email__frequency { border: 0; display: grid; gap: 8px; margin: 0 0 14px; padding: 0; }
+    .account-email__frequency legend { color: var(--muted); font-size: 13px; font-weight: 600; padding: 0; }
+    .account-email__filters { border: 1px solid var(--line); border-radius: 4px; flex-basis: 100%; padding: 8px 12px; }
+    .account-email__filters summary { color: var(--muted); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; }
+    .account-email__filters[open] summary { margin-bottom: 10px; }
+    .account-email__filters label { display: grid; font-size: 13px; gap: 5px; margin-bottom: 10px; }
+    .account-email__filters input[type="text"] { background: var(--paper); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: 14px 'Source Sans 3', sans-serif; padding: 7px 9px; }
+    .account-email__filters .auth-signout { font-size: 12px; padding: 5px 10px; }
+    .account-email__filters > small { color: var(--muted); display: block; margin-top: 6px; }
     .account-email__form { display: grid; gap: 12px; margin-top: 18px; }
     .account-email__form label { display: grid; font-size: 14px; gap: 6px; }
     .account-email__form input[type="email"] { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: 15px 'Source Sans 3', sans-serif; padding: 10px 12px; }
@@ -474,6 +496,22 @@ export function renderLayout(
     .feed-client-dialog__options a:hover, .feed-client-dialog__options a:focus-visible { background: var(--paper); border-color: var(--accent); }
     .account-page__saved-item { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
     .account-page__saved-item a { min-width: 0; }
+    .story-card { align-items: flex-start; display: flex; gap: 12px; padding: 14px 0 !important; position: relative; }
+    .story-card__avatar { align-items: center; align-self: flex-start; background: var(--accent); border-radius: 50%; color: var(--paper); display: flex; flex: 0 0 42px; height: 42px; justify-content: center; overflow: hidden; width: 42px; }
+    .story-card__avatar img { height: 100%; object-fit: cover; width: 100%; }
+    .story-card__main { display: grid; flex: 1 1 auto; gap: 5px; min-width: 0; }
+    .story-card__byline { align-items: baseline; color: var(--muted); display: flex; flex-wrap: wrap; font: 14px 'Source Sans 3', sans-serif; gap: 6px; }
+    .story-card__author { color: var(--ink); font-weight: 700; }
+    .story-card__author:hover { color: var(--accent); }
+    .story-card__handle { color: var(--muted); }
+    .story-card__byline .account-page__remove-save { margin-left: auto; }
+    .story-card__story { color: var(--ink); display: grid; gap: 4px; }
+    .story-card__story h3 { font-family: 'Lora', Georgia, serif; font-size: 19px; line-height: 1.3; margin: 0; }
+    .story-card__story:hover h3 { color: var(--accent); }
+    .story-card__story p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0; }
+    .story-card__meta { color: var(--muted); font-size: 12px; }
+    .story-card__cover { align-self: flex-start; border-radius: 8px; flex: 0 0 92px; height: 92px; object-fit: cover; width: 92px; }
+    @media (max-width: 560px) { .story-card__cover { flex-basis: 72px; height: 72px; width: 72px; } }
     .account-page__remove-save { background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; flex: 0 0 auto; font: 600 12px 'Source Sans 3', sans-serif; padding: 6px 10px; }
     .account-page__remove-save:hover { border-color: var(--accent); color: var(--accent); }
     .account-page__remove-save:disabled { cursor: wait; opacity: .6; }
@@ -660,7 +698,7 @@ export function renderLayout(
       .prose .prose-embed { background: var(--paper-deep); border: 1px solid var(--line); display: block; margin: 24px auto; max-width: 100%; }
       .prose pre, .prose-pre { max-width: 100%; overflow-x: auto; }
       .article-engagement { display: grid; }
-      .article-engagement .article-reactions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .article-engagement .article-reactions__buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .article-reactions__status { flex-basis: 100%; }
     }
     @media (max-width: 760px) {
@@ -773,6 +811,33 @@ export function renderLayout(
     .forum-markdown-note, .forum-field-hint { color: var(--muted); font-size: 13px; margin: -10px 0 0; }
     .forum-field-hint { font-weight: 400; letter-spacing: 0; text-transform: none; }
     .forum-editor__actions { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 18px; padding-top: 18px; }
+    .forum-composer-ui { gap: 0; padding: 0; }
+    .forum-composer-ui > .forum-status { padding: 12px 20px 0; }
+    .forum-composer-ui__card { display: flex; gap: 14px; padding: 20px; }
+    .forum-composer-ui__avatar { align-items: center; align-self: flex-start; background: var(--accent); border-radius: 50%; color: var(--paper); display: flex; flex: 0 0 44px; height: 44px; justify-content: center; overflow: hidden; width: 44px; }
+    .forum-composer-ui__avatar img { border-radius: 50%; height: 100%; object-fit: cover; width: 100%; }
+    .forum-composer-ui__body { display: grid; flex: 1 1 auto; gap: 12px; min-width: 0; }
+    .forum-composer-ui input[type="text"], .forum-composer-ui textarea { background: transparent; border: 0; border-radius: 0; font-size: 18px; padding: 0; }
+    .forum-composer-ui input[type="text"]:focus, .forum-composer-ui textarea:focus { outline: none; }
+    .forum-composer-ui input::placeholder, .forum-composer-ui textarea::placeholder { color: var(--muted); opacity: .8; }
+    .forum-composer-ui__title { font-size: 20px; font-weight: 700; }
+    .forum-composer-ui textarea { line-height: 1.6; max-height: 50vh; min-height: 90px; overflow-y: auto; resize: none; }
+    .forum-composer-ui__attachments { display: flex; flex-wrap: wrap; gap: 8px; }
+    .forum-composer-ui__attachments img { border-radius: 6px; height: 96px; object-fit: cover; width: 96px; }
+    .forum-composer-ui__alts { color: var(--muted); display: grid; font-size: 13px; gap: 6px; }
+    .forum-composer-ui__alts textarea { border: 1px solid var(--line) !important; border-radius: 4px !important; font-size: 14px !important; min-height: 0; padding: 8px 10px !important; }
+    .forum-composer-ui__toolbar { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 14px; padding: 12px 16px; }
+    .forum-composer-ui__tool { align-items: center; border-radius: 50%; color: var(--accent); cursor: pointer; display: inline-flex; font-size: 18px; height: 36px; justify-content: center; position: relative; width: 36px; }
+    .forum-composer-ui__tool:hover { background: rgba(178,172,136,.14); }
+    .forum-composer-ui__count { background: var(--accent); border-radius: 999px; color: var(--paper); font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 6px; position: absolute; right: -4px; top: -2px; }
+    .forum-composer-ui__tags { align-items: center; color: var(--muted); display: flex; gap: 7px; }
+    .forum-composer-ui__tags input { border-bottom: 1px solid var(--line) !important; font-size: 14px !important; padding: 3px 2px !important; width: 140px; }
+    .forum-composer-ui__hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+    .forum-composer-ui__post { background: var(--accent); border: 0; border-radius: 999px; color: var(--paper); cursor: pointer; font: 700 15px 'Source Sans 3', sans-serif; margin-left: auto; padding: 8px 22px; }
+    .forum-composer-ui__post:disabled { cursor: wait; opacity: .6; }
+    .forum-composer-ui__hint + .forum-composer-ui__post { margin-left: 0; }
+    .forum-reply-form.forum-composer-ui { padding: 0; }
+    .forum-reply-form.forum-composer-ui .forum-composer-ui__card { padding: 14px 16px; }
     .forum-thread > .read-link { display: inline-block; margin-bottom: 30px; }
     .forum-thread > .forum-post-card__byline { margin: 18px 0 28px; }
     .forum-thread__content { margin-top: 28px; }
@@ -920,11 +985,15 @@ export function renderLayout(
         apply: function (prefs) {
           var next = prefs && typeof prefs === 'object' ? prefs : {};
           var theme = next.theme === 'light' || next.theme === 'dark' || next.theme === 'system' ? next.theme : 'system';
-          var postFont = next.postFont === 'serif' || next.postFont === 'monospace' ? next.postFont : 'sans';
+          var fontChoices = { serif: 1, monospace: 1, system: 1, atkinson: 1, merriweather: 1, fraunces: 1, inter: 1 };
+          var postFont = fontChoices[next.postFont] ? next.postFont : 'sans';
+          var uiFont = fontChoices[next.uiFont] ? next.uiFont : 'sans';
           var size = Number(next.postFontSize);
           var hasSize = Number.isFinite(size) && size >= 14 && size <= 26;
-          active = { theme: theme, postFont: postFont, postFontSize: hasSize ? size : undefined };
+          active = { theme: theme, uiFont: uiFont, postFont: postFont, postFontSize: hasSize ? size : undefined };
           root.dataset.theme = theme === 'system' ? (lightMedia.matches ? 'light' : 'dark') : theme;
+          if (uiFont === 'sans') delete root.dataset.uiFont;
+          else root.dataset.uiFont = uiFont;
           if (postFont === 'sans') delete root.dataset.readerFont;
           else root.dataset.readerFont = postFont;
           if (hasSize) root.style.setProperty('--reader-size', size + 'px');

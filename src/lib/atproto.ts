@@ -588,7 +588,7 @@ export async function fetchPostMetadata(pdsUrl: string, repoDid: string, rkey: s
     sources: Array.isArray(value.sources)
       ? value.sources.filter((source): source is string => typeof source === 'string' && /^https?:\/\//.test(source))
       : [],
-    backlink: typeof value.backlink === 'string' && value.backlink.startsWith('at://') ? value.backlink : undefined,
+    backlink: typeof value.backlink === 'string' && /^(at:\/\/|https?:\/\/)/.test(value.backlink) ? value.backlink : undefined,
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : undefined,
   };
 }
