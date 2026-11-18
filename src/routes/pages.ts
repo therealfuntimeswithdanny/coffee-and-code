@@ -379,6 +379,17 @@ pages.get('/auth', (c) => {
             <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
             <button type="submit" class="login-button auth-option__button">Continue</button>
           </form>
+          <details class="auth-app-password">
+            <summary>Sign in with an app password instead</summary>
+            <form class="auth-form" data-app-password-form>
+              <label for="auth-app-identifier">Handle</label>
+              <input id="auth-app-identifier" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
+              <label for="auth-app-password">App password</label>
+              <input id="auth-app-password" name="password" type="password" autocomplete="current-password" placeholder="xxxx-xxxx-xxxx-xxxx" required>
+              <button type="submit" class="login-button auth-option__button">Sign in</button>
+            </form>
+            <p class="auth-page__resolution">Create an app password in your account provider’s settings (on Bluesky: Settings → App passwords). Signing in this way skips the permissions screen, so only use it on a device you trust.</p>
+          </details>
           <p class="auth-page__resolution">AT Protocol is an open social networking protocol. Bluesky is built on it, so you can sign in here with your Bluesky handle. You can also use an account from another AT Protocol service. You’ll enter your password on your account provider’s site.</p>
           <button type="button" class="auth-create-button" data-create-coffee-account>Create a Coffee &amp; Code account</button>
           <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
@@ -800,9 +811,11 @@ pages.get('/account/author/draft/:rkey', (c) => {
       <div class="draft-editor-page__bar">
         <a class="read-link" href="/account/author/draft"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All drafts</a>
         <span class="draft-editor-page__status" data-draft-status role="status" aria-live="polite">Loading draft…</span>
+        <a class="read-link" data-draft-published-link hidden target="_blank" rel="noopener">Published <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
         <div class="draft-editor-page__actions">
           <button type="button" class="auth-signout" data-draft-delete><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
           <button type="button" class="auth-signout" data-draft-save><i class="fa-solid fa-check" aria-hidden="true"></i> Save</button>
+          <button type="button" class="auth-signout" data-draft-publish><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish</button>
         </div>
       </div>
       <h1 id="draft-editor-title" class="visually-hidden">Edit draft</h1>
@@ -813,7 +826,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <label>Title<input name="draft-title" maxlength="5000" placeholder="Untitled" data-draft-field="title"></label>
             <label>Description<textarea name="draft-description" rows="2" maxlength="30000" data-draft-field="description"></textarea></label>
             <label>Tags<input name="draft-tags" placeholder="Comma separated" data-draft-field="tags"></label>
-            <label>Publication<input name="draft-publication" placeholder="at://did…/pub.leaflet.publication/…" data-draft-field="publication"></label>
+            <label>Publication<input name="draft-publication" placeholder="at://did…/site.standard.publication/…" data-draft-field="publication"></label>
             <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
             <label class="account-author-form__check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
           </details>

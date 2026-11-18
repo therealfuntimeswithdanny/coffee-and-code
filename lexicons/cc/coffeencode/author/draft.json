@@ -21,9 +21,35 @@
             "type": "string",
             "format": "datetime"
           },
+          "title": {
+            "type": "string",
+            "maxLength": 5000,
+            "maxGraphemes": 500,
+            "description": "Draft title, mirrored from document.title so drafts can be listed without unwrapping the document."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 30000,
+            "maxGraphemes": 3000,
+            "description": "Draft description, mirrored from document.description."
+          },
           "document": {
             "type": "unknown",
             "description": "A pub.leaflet.document-shaped draft. Its pages use pub.leaflet.pages.linearDocument and pub.leaflet.blocks.* blocks so the draft can be published as a Leaflet document."
+          },
+          "publishedUri": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the pub.leaflet.document record created when this draft was last published."
+          },
+          "postUri": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the site.standard.document record created when this draft was last published."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "datetime"
           }
         }
       },

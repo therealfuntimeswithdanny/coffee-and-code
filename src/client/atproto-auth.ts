@@ -42,8 +42,12 @@ function accountAvatarUrl(imageUrl: string): string | undefined {
   }
 }
 
+// The surface the site needs from a sign-in session. OAuth sessions satisfy
+// this; app-password sessions implement it with bearer tokens instead.
+type AuthSession = Pick<OAuthSession, 'did' | 'fetchHandler' | 'signOut'>;
+
 let client: BrowserOAuthClient | undefined;
-let session: OAuthSession | undefined;
+let session: AuthSession | undefined;
 let initializationError: unknown;
 let oauthInitialized = false;
 let callbackState: string | null | undefined;
@@ -109,11 +113,228 @@ function forgetAccount(did: string) {
   saveKnownAccounts(loadKnownAccounts().filter((account) => account.did !== did));
 }
 
+// ---- App-password sign-in -------------------------------------------------
+// App passwords skip OAuth entirely: the site talks to the account's PDS with
+// bearer tokens from com.atproto.server.createSession. Only one app-password
+// session is stored at a time; OAuth sessions keep their own storage.
+type StoredPasswordSession = {
+  pds: string;
+  did: AuthSession['did'];
+  handle?: string;
+  accessJwt: string;
+  refreshJwt: string;
+};
+const PASSWORD_SESSION_KEY = 'cc:pds-session';
+
+function loadStoredPasswordSession(): StoredPasswordSession | undefined {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PASSWORD_SESSION_KEY) || 'null') as unknown;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const candidate = parsed as Partial<StoredPasswordSession>;
+    if (typeof candidate.pds !== 'string' || !candidate.pds.startsWith('https://')
+      || typeof candidate.did !== 'string' || !candidate.did.startsWith('did:')
+      || typeof candidate.accessJwt !== 'string' || typeof candidate.refreshJwt !== 'string') {
+      return undefined;
+    }
+    return {
+      pds: candidate.pds,
+      did: candidate.did as AuthSession['did'],
+      handle: typeof candidate.handle === 'string' ? candidate.handle : undefined,
+      accessJwt: candidate.accessJwt,
+      refreshJwt: candidate.refreshJwt,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function savePasswordSession(stored: StoredPasswordSession) {
+  try {
+    localStorage.setItem(PASSWORD_SESSION_KEY, JSON.stringify(stored));
+  } catch {
+    // Private browsing without storage: the session still works until reload.
+  }
+}
+
+function clearPasswordSession() {
+  try {
+    localStorage.removeItem(PASSWORD_SESSION_KEY);
+  } catch {}
+}
+
+// When both an OAuth session and an app-password session are stored, this flag
+// decides which one becomes active on the next load.
+const LAST_AUTH_METHOD_KEY = 'cc:last-auth-method';
+
+function lastAuthMethod() {
+  try {
+    return localStorage.getItem(LAST_AUTH_METHOD_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setLastAuthMethod(method?: 'oauth' | 'password') {
+  try {
+    if (method) localStorage.setItem(LAST_AUTH_METHOD_KEY, method);
+    else localStorage.removeItem(LAST_AUTH_METHOD_KEY);
+  } catch {}
+}
+
+async function resolveSignInPds(identifier: string) {
+  let did = identifier;
+  if (!did.startsWith('did:')) {
+    const response = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(did)}`);
+    if (!response.ok) throw new Error('Could not resolve that handle. Check the spelling and try again.');
+    const result = await response.json() as { did?: unknown };
+    if (typeof result.did !== 'string' || !result.did.startsWith('did:')) {
+      throw new Error('That handle did not resolve to an account.');
+    }
+    did = result.did;
+  }
+
+  let documentUrl: string;
+  if (did.startsWith('did:plc:')) {
+    documentUrl = `https://plc.directory/${did}`;
+  } else if (did.startsWith('did:web:')) {
+    const webId = did.slice('did:web:'.length).replace(/%3A/gi, ':').split(':').join('/');
+    documentUrl = `https://${webId}/.well-known/did.json`;
+  } else {
+    throw new Error('This DID method is not supported for app-password sign-in.');
+  }
+  const docResponse = await fetch(documentUrl);
+  if (!docResponse.ok) throw new Error('Could not load the account’s identity document.');
+  const doc = await docResponse.json() as {
+    service?: Array<{ id?: unknown; type?: unknown; serviceEndpoint?: unknown }>;
+  };
+  const endpoint = (doc.service || []).find((service) =>
+    service.id === '#atproto_pds'
+    || (typeof service.id === 'string' && service.id.endsWith('#atproto_pds'))
+    || service.type === 'AtprotoPersonalDataServer')?.serviceEndpoint;
+  if (typeof endpoint !== 'string' || !endpoint.startsWith('https://')) {
+    throw new Error('Could not find the account provider for that account.');
+  }
+  return { did, pds: endpoint };
+}
+
+function createPasswordSession(stored: StoredPasswordSession): AuthSession {
+  let accessJwt = stored.accessJwt;
+  let refreshJwt = stored.refreshJwt;
+  let refreshPromise: Promise<void> | undefined;
+
+  const refresh = () => {
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        const response = await fetch(`${stored.pds}/xrpc/com.atproto.server.refreshSession`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${refreshJwt}` },
+        });
+        if (!response.ok) {
+          clearPasswordSession();
+          throw new Error('Your saved sign-in expired. Sign in again with your app password.');
+        }
+        const data = await response.json() as { accessJwt?: unknown; refreshJwt?: unknown };
+        if (typeof data.accessJwt !== 'string' || typeof data.refreshJwt !== 'string') {
+          throw new Error('The account provider returned an invalid session refresh.');
+        }
+        accessJwt = data.accessJwt;
+        refreshJwt = data.refreshJwt;
+        savePasswordSession({ ...stored, accessJwt, refreshJwt });
+      })().finally(() => {
+        refreshPromise = undefined;
+      });
+    }
+    return refreshPromise;
+  };
+
+  const fetchHandler: AuthSession['fetchHandler'] = async (path, init = {}) => {
+    const send = (token: string) => {
+      const headers = new Headers(init.headers);
+      headers.set('Authorization', `Bearer ${token}`);
+      return fetch(`${stored.pds}${path}`, { ...init, headers });
+    };
+    let response = await send(accessJwt);
+    if (response.status === 401) {
+      const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
+      if (payload?.error === 'ExpiredToken' || payload?.error === 'InvalidToken') {
+        await refresh();
+        response = await send(accessJwt);
+      }
+    }
+    return response;
+  };
+
+  return {
+    did: stored.did,
+    fetchHandler,
+    signOut: async () => {
+      try {
+        await fetch(`${stored.pds}/xrpc/com.atproto.server.deleteSession`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${refreshJwt}` },
+        });
+      } catch {
+        // Signing out locally matters more than revoking server-side.
+      }
+      clearPasswordSession();
+    },
+  };
+}
+
+async function signInWithAppPassword(identifier: string, password: string) {
+  const { did, pds } = await resolveSignInPds(identifier);
+  const response = await fetch(`${pds}/xrpc/com.atproto.server.createSession`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier, password }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+    if (payload?.error === 'AuthenticationRequired' && payload.message?.includes('app password')) {
+      throw new Error('That account requires an app password. Create one in your account provider’s settings.');
+    }
+    const detail = [payload?.error, payload?.message].filter(Boolean).join(': ');
+    throw new Error(detail || 'Sign-in failed. Check your handle and app password.');
+  }
+  const data = await response.json() as {
+    did?: unknown; handle?: unknown; accessJwt?: unknown; refreshJwt?: unknown;
+  };
+  if (typeof data.did !== 'string' || !data.did.startsWith('did:')
+    || typeof data.accessJwt !== 'string' || typeof data.refreshJwt !== 'string') {
+    throw new Error('The account provider returned an invalid session.');
+  }
+  const stored: StoredPasswordSession = {
+    pds,
+    did: (data.did || did) as AuthSession['did'],
+    handle: typeof data.handle === 'string' ? data.handle : undefined,
+    accessJwt: data.accessJwt,
+    refreshJwt: data.refreshJwt,
+  };
+  savePasswordSession(stored);
+  session = createPasswordSession(stored);
+  setLastAuthMethod('password');
+  rememberAccount(stored.did, { ...(stored.handle ? { handle: stored.handle } : {}) });
+}
+
+
 async function switchToAccount(did: string, trigger?: HTMLButtonElement) {
   if (!client || session?.did === did) return;
   if (trigger) trigger.disabled = true;
   try {
+    const storedPasswordSession = loadStoredPasswordSession();
+    if (storedPasswordSession?.did === did) {
+      session = createPasswordSession(storedPasswordSession);
+      setLastAuthMethod('password');
+      rememberAccount(did);
+      if (window.location.pathname === '/auth') {
+        window.location.assign(safeReturnPath(new URLSearchParams(window.location.search).get('returnTo')));
+      } else {
+        window.location.reload();
+      }
+      return;
+    }
     const restored = await client.restore(did);
+    setLastAuthMethod('oauth');
     rememberAccount(restored.did);
     if (window.location.pathname === '/auth') {
       const returnTo = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
@@ -215,6 +436,7 @@ function renderAccountSwitchers() {
 }
 
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
+const appPasswordForm = document.querySelector<HTMLFormElement>('[data-app-password-form]');
 const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
@@ -2455,12 +2677,32 @@ const oauthReady = (async () => {
       const initialized = await initializeOAuthClient(client);
       if (initialized) {
         session = initialized.session;
+        setLastAuthMethod('oauth');
         rememberAccount(session.did);
         if ('state' in initialized) callbackState = initialized.state;
       }
     } catch (error) {
       initializationError = error;
       if (authForm) showAuthError(`Sign-in could not initialize: ${errorMessage(error)}`);
+    }
+  }
+
+  // Restore a stored app-password session — when it was the last method used it
+  // takes precedence over a still-valid OAuth session, otherwise it only fills
+  // in when OAuth found nothing.
+  const storedPasswordSession = loadStoredPasswordSession();
+  if (storedPasswordSession && (!session || lastAuthMethod() === 'password')) {
+    const restored = createPasswordSession(storedPasswordSession);
+    try {
+      const check = await restored.fetchHandler('/xrpc/com.atproto.server.getSession');
+      if (!check.ok) throw new Error('Stored session rejected');
+      session = restored;
+      setLastAuthMethod('password');
+      rememberAccount(storedPasswordSession.did, { ...(storedPasswordSession.handle ? { handle: storedPasswordSession.handle } : {}) });
+    } catch {
+      clearPasswordSession();
+      forgetAccount(storedPasswordSession.did);
+      setLastAuthMethod(session ? 'oauth' : undefined);
     }
   }
 
@@ -2533,7 +2775,7 @@ copyInviteButton?.addEventListener('click', async () => {
   }
 });
 
-async function listOwnForumVotes(activeSession: OAuthSession) {
+async function listOwnForumVotes(activeSession: AuthSession) {
   const votes: Array<{ rkey: string; subjectUri: string; direction: 'up' | 'down'; createdAt: string }> = [];
   const uriPrefix = `at://${activeSession.did}/cc.coffeencode.forum.vote/`;
   let cursor: string | undefined;
@@ -3172,7 +3414,7 @@ confirmBlockButton?.addEventListener('click', async () => {
   }
 });
 
-async function uploadForumImages(images: ForumImageInput[], activeSession: OAuthSession) {
+async function uploadForumImages(images: ForumImageInput[], activeSession: AuthSession) {
   if (images.length > 10) throw new Error('A forum post can contain at most 10 images.');
   const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
   const uploaded = [];
@@ -3240,6 +3482,34 @@ if (authForm) {
   });
 }
 
+if (appPasswordForm) {
+  appPasswordForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearAuthError();
+    const data = new FormData(appPasswordForm);
+    const identifier = data.get('identifier')?.toString().trim();
+    const password = data.get('password')?.toString() || '';
+    if (!identifier || !password) return;
+
+    const submit = appPasswordForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Signing in…';
+    }
+    try {
+      await signInWithAppPassword(identifier, password);
+      const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
+      window.location.assign(window.location.pathname === '/auth' ? returnPath : `${window.location.pathname}${window.location.search}${window.location.hash}`);
+    } catch (error) {
+      showAuthError(errorMessage(error));
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = 'Sign in';
+      }
+    }
+  });
+}
+
 signoutButton?.addEventListener('click', async () => {
   await oauthReady;
   if (!session) return;
@@ -3248,6 +3518,7 @@ signoutButton?.addEventListener('click', async () => {
   try {
     await session.signOut();
     forgetAccount(signedOutDid);
+    setLastAuthMethod(undefined);
     window.location.reload();
   } catch (error) {
     showAuthError(`Could not sign out: ${errorMessage(error)}`);
@@ -4798,7 +5069,8 @@ async function loadDraftListPage(did: string) {
       let rkey: string;
       try { rkey = recordKeyFromUri(record.uri); } catch { return []; }
       const doc = value.document as Record<string, unknown> | undefined;
-      const title = typeof doc?.title === 'string' && doc.title.trim() ? doc.title.trim() : 'Untitled';
+      const title = (typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '')
+        || (typeof doc?.title === 'string' && doc.title.trim() ? doc.title.trim() : 'Untitled');
       const updatedAt = typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt))
         ? value.updatedAt
         : typeof value.createdAt === 'string' ? value.createdAt : '';
@@ -4862,8 +5134,10 @@ async function loadDraftEditor(did: string) {
   const toolbar = page.querySelector<HTMLElement>('[data-draft-toolbar]');
   const saveButton = page.querySelector<HTMLButtonElement>('[data-draft-save]');
   const deleteButton = page.querySelector<HTMLButtonElement>('[data-draft-delete]');
+  const publishButton = page.querySelector<HTMLButtonElement>('[data-draft-publish]');
+  const publishedLink = page.querySelector<HTMLAnchorElement>('[data-draft-published-link]');
   const metaForm = page.querySelector<HTMLElement>('.draft-editor__meta');
-  if (!blocksEl || !previewEl || !statusEl || !workspace || !toolbar || !saveButton || !deleteButton || !metaForm) return;
+  if (!blocksEl || !previewEl || !statusEl || !workspace || !toolbar || !saveButton || !deleteButton || !publishButton || !metaForm) return;
   const titleInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="title"]')!;
   const descriptionInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="description"]')!;
   const tagsInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="tags"]')!;
@@ -4881,6 +5155,9 @@ async function loadDraftEditor(did: string) {
     savedVersion: -1,
     syncing: false,
     exists: false,
+    publishedUri: undefined as string | undefined,
+    publishedAt: undefined as string | undefined,
+    postUri: undefined as string | undefined,
   };
   const markDirty = () => { state.version += 1; };
 
@@ -5474,14 +5751,62 @@ async function loadDraftEditor(did: string) {
     if (tags.length) document.tags = tags;
     const publication = publicationInput.value.trim();
     if (publication) {
-      if (!/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/pub\.leaflet\.publication\/[a-zA-Z0-9._~:-]+$/.test(publication)) {
-        throw new Error('The publication must be an at:// URI of a pub.leaflet.publication record.');
+      if (!/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/(pub\.leaflet\.publication|site\.standard\.publication)\/[a-zA-Z0-9._~:-]+$/.test(publication)) {
+        throw new Error('The publication must be an at:// URI of a pub.leaflet.publication or site.standard.publication record.');
       }
       document.publication = publication;
     }
     if (state.cover) document.coverImage = state.cover;
     return document;
   }
+
+  const resolvePendingPostRefs = async () => {
+    for (const block of state.blocks) {
+      if (block.type === 'bskyPost' && !block.postRef) {
+        const element = state.blockElements.get(block.id);
+        const input = element?.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim();
+        if (input) block.postRef = await resolveBskyPostRef(input);
+      }
+    }
+  };
+
+  const draftPlainText = (pages: unknown): string => {
+    const texts: string[] = [];
+    const read = (node: unknown): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) { node.forEach(read); return; }
+      const record = node as Record<string, unknown>;
+      if (typeof record.plaintext === 'string' && record.plaintext.trim()) texts.push(record.plaintext.trim());
+      read(record.children);
+      read(record.content);
+      read(record.block);
+      read(record.pages);
+      read(record.blocks);
+    };
+    read(pages);
+    return texts.join('\n\n').slice(0, 30000);
+  };
+
+  const showPublishedLink = () => {
+    if (!publishedLink) return;
+    const postMatch = state.postUri?.match(/^at:\/\/[^/]+\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/);
+    if (postMatch) {
+      publishedLink.href = `/author/${encodeURIComponent(did)}/${encodeURIComponent(postMatch[1])}`;
+      publishedLink.hidden = false;
+      publishedLink.removeAttribute('target');
+      publishedLink.removeAttribute('rel');
+      return;
+    }
+    if (state.publishedUri) {
+      publishedLink.href = `https://pdsls.dev/${state.publishedUri}`;
+      publishedLink.hidden = false;
+      publishedLink.target = '_blank';
+      publishedLink.rel = 'noopener';
+      return;
+    }
+    publishedLink.hidden = true;
+    publishedLink.removeAttribute('href');
+  };
 
   const sync = async (manual = false) => {
     if (state.syncing) return;
@@ -5490,15 +5815,10 @@ async function loadDraftEditor(did: string) {
     saveButton.disabled = true;
     statusEl.textContent = 'Syncing draft…';
     try {
-      for (const block of state.blocks) {
-        if (block.type === 'bskyPost' && !block.postRef) {
-          const element = state.blockElements.get(block.id);
-          const input = element?.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim();
-          if (input) block.postRef = await resolveBskyPostRef(input);
-        }
-      }
+      await resolvePendingPostRefs();
       const now = new Date().toISOString();
       state.createdAt = state.createdAt || now;
+      const draftDocument = serializeDraft();
       await repoRequest('com.atproto.repo.putRecord', {
         repo: did,
         collection: DRAFT_COLLECTION,
@@ -5507,7 +5827,12 @@ async function loadDraftEditor(did: string) {
           $type: DRAFT_COLLECTION,
           createdAt: state.createdAt,
           updatedAt: now,
-          document: serializeDraft(),
+          title: draftDocument.title,
+          ...(typeof draftDocument.description === 'string' ? { description: draftDocument.description } : {}),
+          ...(state.publishedUri ? { publishedUri: state.publishedUri } : {}),
+          ...(state.postUri ? { postUri: state.postUri } : {}),
+          ...(state.publishedAt ? { publishedAt: state.publishedAt } : {}),
+          document: draftDocument,
         },
       });
       state.exists = true;
@@ -5537,6 +5862,73 @@ async function loadDraftEditor(did: string) {
       deleteButton.disabled = false;
     }
   });
+  publishButton.addEventListener('click', async () => {
+    if (state.syncing) return;
+    if (!window.confirm('Publish this draft as a Leaflet document in your repository?')) return;
+    state.syncing = true;
+    publishButton.disabled = true;
+    saveButton.disabled = true;
+    statusEl.textContent = 'Publishing…';
+    try {
+      await resolvePendingPostRefs();
+      const now = new Date().toISOString();
+      const draftDocument = serializeDraft();
+      const publication = publicationInput.value.trim();
+      const site = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.publication\/[a-zA-Z0-9._~:-]+$/.test(publication)
+        ? publication
+        : undefined;
+
+      let postRef: { uri: string; cid: string } | undefined;
+      if (site) {
+        const standardRecord: Record<string, unknown> = {
+          $type: 'site.standard.document',
+          site,
+          title: draftDocument.title,
+          publishedAt: now,
+          author: did,
+          content: { $type: 'pub.leaflet.content', pages: draftDocument.pages },
+        };
+        if (typeof draftDocument.description === 'string') standardRecord.description = draftDocument.description;
+        if (Array.isArray(draftDocument.tags)) standardRecord.tags = draftDocument.tags;
+        if (draftDocument.coverImage) standardRecord.coverImage = draftDocument.coverImage;
+        const textContent = draftPlainText(draftDocument.pages);
+        if (textContent) standardRecord.textContent = textContent;
+        const standardResponse = await repoRequest('com.atproto.repo.createRecord', {
+          repo: did,
+          collection: 'site.standard.document',
+          record: standardRecord,
+        });
+        const standardResult = await standardResponse.json() as { uri?: unknown; cid?: unknown };
+        if (typeof standardResult.uri !== 'string' || typeof standardResult.cid !== 'string') {
+          throw new Error('The account provider did not return the published story record.');
+        }
+        state.postUri = standardResult.uri;
+        postRef = { uri: standardResult.uri, cid: standardResult.cid };
+      }
+
+      const response = await repoRequest('com.atproto.repo.createRecord', {
+        repo: did,
+        collection: 'pub.leaflet.document',
+        record: { ...draftDocument, publishedAt: now, ...(postRef ? { postRef } : {}) },
+      });
+      const result = await response.json() as { uri?: unknown };
+      if (typeof result.uri !== 'string') throw new Error('The account provider did not return the published document URI.');
+      state.publishedUri = result.uri;
+      state.publishedAt = now;
+      showPublishedLink();
+      state.syncing = false;
+      await sync();
+      statusEl.textContent = state.postUri
+        ? 'Published to Coffee & Code. The story link is live next to the Save button.'
+        : 'Published as a Leaflet document. Add a site.standard.publication URI in metadata to also publish it to Coffee & Code.';
+    } catch (error) {
+      state.syncing = false;
+      statusEl.textContent = error instanceof Error ? error.message : 'The draft could not be published.';
+    } finally {
+      publishButton.disabled = false;
+      saveButton.disabled = false;
+    }
+  });
   window.addEventListener('beforeunload', (event) => {
     if (state.version !== state.savedVersion && !state.syncing) {
       event.preventDefault();
@@ -5559,6 +5951,13 @@ async function loadDraftEditor(did: string) {
       if (session?.did !== did) return;
       state.exists = true;
       state.createdAt = typeof value?.createdAt === 'string' ? value.createdAt : undefined;
+      if (typeof value?.publishedUri === 'string' && /^at:\/\//.test(value.publishedUri)) {
+        state.publishedUri = value.publishedUri;
+        state.publishedAt = typeof value.publishedAt === 'string' ? value.publishedAt : undefined;
+      }
+      if (typeof value?.postUri === 'string' && /^at:\/\//.test(value.postUri)) {
+        state.postUri = value.postUri;
+      }
       const doc = value?.document as Record<string, unknown> | undefined;
       titleInput.value = typeof doc?.title === 'string' ? doc.title : '';
       descriptionInput.value = typeof doc?.description === 'string' ? doc.description : '';
@@ -5639,6 +6038,7 @@ async function loadDraftEditor(did: string) {
   if (!state.blocks.length) insertBlock({ id: crypto.randomUUID(), type: 'text' }, undefined);
   state.savedVersion = state.version;
   workspace.hidden = false;
+  showPublishedLink();
   statusEl.textContent = state.exists ? 'Draft loaded.' : 'New draft — it will sync automatically.';
   renderPreview();
 }

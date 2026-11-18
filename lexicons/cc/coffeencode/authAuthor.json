@@ -19,7 +19,9 @@
             "cc.coffeencode.author.draft",
             "cc.coffeencode.author.profile",
             "cc.coffeencode.forum.moderation",
-            "cc.coffeencode.post.metadata"
+            "cc.coffeencode.post.metadata",
+            "pub.leaflet.document",
+            "site.standard.document"
           ]
         },
         {

@@ -69,6 +69,10 @@ for (const scope of [
   'repo:at.margin.collection?action=create&action=update&action=delete',
   'repo:network.cosmik.collection?action=create&action=update&action=delete',
   'repo:network.cosmik.collectionLink?action=create&action=delete',
+  'repo:cc.coffeencode.author.draft?action=create&action=update&action=delete',
+  'repo:pub.leaflet.document?action=create&action=update&action=delete',
+  'repo:site.standard.document?action=create&action=update&action=delete',
+  'blob:image/*',
 ]) {
   assert(requestedScopes.has(normalizeScope(scope)), `required permission scope is missing: ${scope}`);
 }
