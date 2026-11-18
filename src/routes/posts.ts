@@ -231,7 +231,7 @@ async function renderPost(
     </section>`;
   const articleMetaTags = `
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
-    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b">
+    <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
     <meta name="atproto:repo" content="${escapeHtml(post.repoDid || c.env.OWNER_DID)}">
     <meta property="og:title" content="${safeTitle}">
