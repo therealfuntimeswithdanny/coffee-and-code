@@ -5141,7 +5141,7 @@ async function loadDraftEditor(did: string) {
   const titleInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="title"]')!;
   const descriptionInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="description"]')!;
   const tagsInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="tags"]')!;
-  const publicationInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="publication"]')!;
+  const publicationInput = metaForm.querySelector<HTMLSelectElement>('[data-draft-field="publication"]')!;
   const coverInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="cover"]')!;
   const coverRemoveInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="coverRemove"]')!;
 
@@ -5760,6 +5760,47 @@ async function loadDraftEditor(did: string) {
     return document;
   }
 
+  const loadDraftPublications = async () => {
+    const publications: Array<{ uri: string; label: string }> = [];
+    for (const collection of ['site.standard.publication', 'pub.leaflet.publication'] as const) {
+      try {
+        const query = new URLSearchParams({ repo: did, collection, limit: '100' });
+        const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+        const payload = await response.json() as {
+          records?: Array<{ uri?: unknown; value?: Record<string, unknown> }>;
+        };
+        for (const record of payload.records || []) {
+          if (typeof record.uri !== 'string') continue;
+          const value = record.value || {};
+          const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim()
+            : typeof value.title === 'string' && value.title.trim() ? value.title.trim()
+            : record.uri.split('/').pop() || record.uri;
+          publications.push({ uri: record.uri, label: name });
+        }
+      } catch { /* A missing collection just means no publications of that type. */ }
+    }
+    const previous = publicationInput.value;
+    publicationInput.replaceChildren();
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = publications.length ? 'No publication' : 'No publications found in your repository';
+    publicationInput.append(none);
+    for (const publication of publications) {
+      const option = document.createElement('option');
+      option.value = publication.uri;
+      option.textContent = publication.label;
+      publicationInput.append(option);
+    }
+    if (previous && !publications.some((publication) => publication.uri === previous)) {
+      const option = document.createElement('option');
+      option.value = previous;
+      option.textContent = previous;
+      publicationInput.append(option);
+    }
+    publicationInput.value = previous;
+    return publications;
+  };
+
   const resolvePendingPostRefs = async () => {
     for (const block of state.blocks) {
       if (block.type === 'bskyPost' && !block.postRef) {
@@ -5942,6 +5983,7 @@ async function loadDraftEditor(did: string) {
 
   // Load the existing record (if any) and hydrate the editor.
   try {
+    await loadDraftPublications();
     const query = new URLSearchParams({ repo: did, collection: DRAFT_COLLECTION, rkey });
     const activeSession = requireSession();
     const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
@@ -5962,7 +6004,14 @@ async function loadDraftEditor(did: string) {
       titleInput.value = typeof doc?.title === 'string' ? doc.title : '';
       descriptionInput.value = typeof doc?.description === 'string' ? doc.description : '';
       tagsInput.value = Array.isArray(doc?.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string').join(', ') : '';
-      publicationInput.value = typeof doc?.publication === 'string' ? doc.publication : '';
+      const storedPublication = typeof doc?.publication === 'string' ? doc.publication : '';
+      if (storedPublication && ![...publicationInput.options].some((option) => option.value === storedPublication)) {
+        const option = document.createElement('option');
+        option.value = storedPublication;
+        option.textContent = storedPublication;
+        publicationInput.append(option);
+      }
+      publicationInput.value = storedPublication;
       if (doc?.coverImage && typeof doc.coverImage === 'object') {
         state.cover = doc.coverImage;
         const cid = (doc.coverImage as { ref?: { $link?: unknown } }).ref?.$link;

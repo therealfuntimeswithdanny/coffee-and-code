@@ -826,7 +826,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <label>Title<input name="draft-title" maxlength="5000" placeholder="Untitled" data-draft-field="title"></label>
             <label>Description<textarea name="draft-description" rows="2" maxlength="30000" data-draft-field="description"></textarea></label>
             <label>Tags<input name="draft-tags" placeholder="Comma separated" data-draft-field="tags"></label>
-            <label>Publication<input name="draft-publication" placeholder="at://did…/site.standard.publication/…" data-draft-field="publication"></label>
+            <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
             <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
             <label class="account-author-form__check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
           </details>
