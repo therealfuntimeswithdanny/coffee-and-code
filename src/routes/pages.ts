@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { renderSearchBar } from '../templates/searchBar';
-import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
+import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, fetchPublicationInfo, fetchPublicationDocuments, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
-import { toPlainText } from '../lib/contentRenderer';
+import { toPlainText, renderLeafletDocument, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
+import { routeExternalLinks } from '../lib/externalLinks';
 import { externalLinkUrl } from '../lib/externalLinks';
 import { renderLegalDocument } from '../lib/legal';
 import { isForumModerator } from './forum';
@@ -463,31 +464,7 @@ pages.get('/account', (c) => {
               <p class="account-preferences__note">Saved to your AT Protocol account and synced anywhere you sign in.</p>
             </div>
           </section>
-          <section class="account-card account-page__viewed account-page__email" aria-labelledby="email-settings-title">
-            <h2 id="email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</h2>
-            <p class="account-page__viewed-status" data-email-status role="status" aria-live="polite">Loading your email settings…</p>
-            <div data-email-settings hidden>
-              <label class="account-email__toggle"><input type="checkbox" data-email-enabled> Email me when people or tags I follow publish a story</label>
-              <fieldset class="account-email__frequency" data-email-frequency>
-                <legend>Delivery</legend>
-                <div class="account-preferences__options" role="radiogroup" aria-label="Delivery frequency">
-                  <label><input type="radio" name="email-frequency" value="instant"> As they publish</label>
-                  <label><input type="radio" name="email-frequency" value="daily"> Daily brief</label>
-                  <label><input type="radio" name="email-frequency" value="weekly"> Weekly brief</label>
-                </div>
-              </fieldset>
-              <ul class="account-email__list" data-email-list></ul>
-              <p class="account-page__blocks-note">Use “Filters” on an address to limit it to certain tags or authors — for example, send one tag to a work email and a specific author somewhere else.</p>
-              <form class="account-email__form" data-email-form>
-                <label>Email address<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="you@example.com"></label>
-                <div class="account-profile-form__actions">
-                  <button class="auth-signout" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add email</button>
-                  <button type="button" class="auth-signout" data-email-account-button hidden><i class="fa-solid fa-at" aria-hidden="true"></i> Use my account email</button>
-                </div>
-              </form>
-              <p class="account-page__blocks-note">Your account email is ready right away. Any other address gets a confirmation link before it receives stories.</p>
-            </div>
-          </section>
+          ${accountEmailCard}
           <section class="account-card account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
             <h2 id="blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</h2>
             <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
@@ -503,6 +480,33 @@ pages.get('/account', (c) => {
 
   return c.html(renderLayout(c, 'Your account', body));
 });
+
+const accountEmailCard = `
+  <section class="account-card account-page__viewed account-page__email" aria-labelledby="email-settings-title">
+    <h2 id="email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</h2>
+    <p class="account-page__viewed-status" data-email-status role="status" aria-live="polite">Loading your email settings…</p>
+    <div data-email-settings hidden>
+      <label class="account-email__toggle"><input type="checkbox" data-email-enabled> Email me when people or tags I follow publish a story</label>
+      <fieldset class="account-email__frequency" data-email-frequency>
+        <legend>Delivery</legend>
+        <div class="account-preferences__options" role="radiogroup" aria-label="Delivery frequency">
+          <label><input type="radio" name="email-frequency" value="instant"> As they publish</label>
+          <label><input type="radio" name="email-frequency" value="daily"> Daily brief</label>
+          <label><input type="radio" name="email-frequency" value="weekly"> Weekly brief</label>
+        </div>
+      </fieldset>
+      <ul class="account-email__list" data-email-list></ul>
+      <p class="account-page__blocks-note">Choose where each tag and author is delivered on the <a href="/account/email">email routing page</a>, or use “Filters” on an address here.</p>
+      <form class="account-email__form" data-email-form>
+        <label>Email address<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="you@example.com"></label>
+        <div class="account-profile-form__actions">
+          <button class="auth-signout" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add email</button>
+          <button type="button" class="auth-signout" data-email-account-button hidden><i class="fa-solid fa-at" aria-hidden="true"></i> Use my account email</button>
+        </div>
+      </form>
+      <p class="account-page__blocks-note">Your account email is ready right away. Any other address gets a confirmation link before it receives stories.</p>
+    </div>
+  </section>`;
 
 function accountPageShell(title: string, inner: string, signedOutMessage = 'Sign in to view this page.') {
   return `
@@ -523,7 +527,9 @@ const accountSubNav = `
     <a href="/account/list">Lists</a>
     <a href="/account/reads">Recently viewed</a>
     <a href="/account/feed">Your feed</a>
+    <a href="/account/email">Email routing</a>
     <a href="/account/author">Author profile</a>
+    <a href="/account/author/draft">Drafts</a>
   </nav>`;
 
 const accountProfileSidebar = `
@@ -548,6 +554,7 @@ const accountProfileSidebar = `
         <a href="/account#followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</a>
         <a href="/account#appearance-title"><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</a>
         <a href="/account#email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</a>
+        <a href="/account/email"><i class="fa-solid fa-route" aria-hidden="true"></i> Email routing</a>
         <a href="/account#blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</a>
         <a href="/account/list"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</a>
         <a href="/account/author" data-author-settings-link hidden><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</a>
@@ -612,6 +619,28 @@ pages.get('/account/list', (c) => {
   return c.html(renderLayout(c, 'Your lists', body));
 });
 
+pages.get('/account/email', (c) => {
+  const inner = `
+    ${accountSubNav}
+    <div class="account-layout">
+    ${accountProfileSidebar}
+    <div class="account-layout__column account-layout__main">
+      <section class="account-card account-page__viewed account-page__email-routing" aria-labelledby="email-routing-title">
+        <h2 id="email-routing-title"><i class="fa-solid fa-route" aria-hidden="true"></i> Email routing</h2>
+        <p class="account-page__blocks-note">Choose which of your addresses receives stories about each tag and author you follow. An address set to “All stories” gets everything; one set to “Only selected” gets just its checked sources.</p>
+        <p class="account-page__viewed-status" data-email-routing-status role="status" aria-live="polite">Loading your email routing…</p>
+        <div class="email-routing" data-email-routing hidden></div>
+        <div class="account-profile-form__actions"><button class="auth-signout" data-email-routing-save hidden><i class="fa-solid fa-check" aria-hidden="true"></i> Save routing</button></div>
+      </section>
+    </div>
+    <div class="account-layout__column account-layout__secondary">
+      ${accountEmailCard}
+    </div>
+    </div>`;
+  const body = accountPageShell('Email routing', inner, 'Sign in to route story emails to your addresses.');
+  return c.html(renderLayout(c, 'Email routing', body));
+});
+
 pages.get('/account/feed', (c) => {
   const inner = `
     ${accountSubNav}
@@ -673,6 +702,161 @@ pages.get('/account/author', (c) => {
     </section>`;
   const body = accountPageShell('Author profile', inner, 'Sign in to manage your author profile.');
   return c.html(renderLayout(c, 'Author profile', body));
+});
+
+const draftEditorStyles = `
+  <style>
+    .draft-editor-page { max-width: 1400px; }
+    .draft-editor-page__bar { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+    .draft-editor-page__bar .read-link { font-size: 14px; }
+    .draft-editor-page__status { color: var(--muted); font-size: 13px; margin-left: auto; }
+    .draft-editor-page__actions { display: flex; gap: 8px; }
+    .draft-editor__grid { display: grid; gap: 26px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    @media (max-width: 900px) { .draft-editor__grid { grid-template-columns: 1fr; } }
+    .draft-editor__edit { min-width: 0; }
+    .draft-editor__meta { border: 1px solid var(--line); margin-bottom: 16px; padding: 14px 16px; }
+    .draft-editor__meta summary { cursor: pointer; font-weight: 700; }
+    .draft-editor__meta label { display: grid; font-size: 13px; gap: 4px; margin-top: 10px; }
+    .draft-editor__meta input, .draft-editor__meta textarea { font: inherit; }
+    .draft-toolbar { align-items: center; border: 1px solid var(--line); border-bottom: 0; display: flex; flex-wrap: wrap; gap: 2px; padding: 6px; position: sticky; top: 0; background: var(--paper); z-index: 2; }
+    .draft-toolbar button { background: transparent; border: 0; color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; min-height: 32px; min-width: 32px; padding: 4px 8px; }
+    .draft-toolbar button:hover { background: var(--paper-deep); }
+    .draft-toolbar button[aria-pressed="true"] { background: var(--paper-deep); color: var(--accent); }
+    .draft-toolbar__sep { border-left: 1px solid var(--line); height: 22px; margin: 0 4px; }
+    .draft-blocks { border: 1px solid var(--line); min-height: 300px; padding: 10px 12px; }
+    .draft-block { border-radius: 4px; margin: 2px 0; padding: 4px 6px; position: relative; }
+    .draft-block:hover { background: var(--paper-deep); }
+    .draft-block__editable { min-height: 1.4em; outline: none; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .draft-block__editable:empty::before { color: var(--muted); content: attr(data-placeholder); pointer-events: none; }
+    .draft-block[data-type="header"] .draft-block__editable { font-family: Lora, serif; font-weight: 700; line-height: 1.2; }
+    .draft-block[data-level="1"] .draft-block__editable { font-size: 30px; }
+    .draft-block[data-level="2"] .draft-block__editable { font-size: 25px; }
+    .draft-block[data-level="3"] .draft-block__editable { font-size: 21px; }
+    .draft-block[data-type="blockquote"] .draft-block__editable { border-left: 3px solid var(--accent); color: var(--muted); padding-left: 12px; }
+    .draft-block[data-type="code"] .draft-block__editable { background: var(--paper-deep); font-family: ui-monospace, monospace; font-size: 14px; padding: 10px; white-space: pre-wrap; }
+    .draft-block__fields { display: grid; gap: 8px; }
+    .draft-block__fields input { font: inherit; width: 100%; }
+    .draft-block__remove { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; opacity: 0; padding: 2px 6px; position: absolute; right: 2px; top: 2px; }
+    .draft-block:hover .draft-block__remove { opacity: 1; }
+    .draft-block__item-row { align-items: baseline; display: flex; gap: 8px; }
+    .draft-block__item-row::before { color: var(--muted); content: '•'; }
+    .draft-block[data-type="orderedList"] .draft-block__item-row { counter-increment: draft-list-item; }
+    .draft-block[data-type="orderedList"] .draft-block__item-row::before { content: counter(draft-list-item) '.'; }
+    .draft-block[data-type="orderedList"] { counter-reset: draft-list-item; }
+    .draft-block__item-row .draft-block__editable { flex: 1; }
+    .draft-block__hr { border: 0; border-top: 1px solid var(--line-strong); margin: 12px 0; }
+    .draft-block__image img { display: block; max-width: 100%; }
+    .draft-editor__add { margin-top: 10px; }
+    .draft-preview { background: var(--paper); border: 1px solid var(--line); min-width: 0; padding: 26px; }
+    .draft-preview h1.draft-preview__title { font-family: Lora, serif; font-size: 34px; line-height: 1.15; margin: 0 0 8px; overflow-wrap: anywhere; }
+    .draft-preview__description { color: var(--muted); margin: 0 0 18px; }
+    .draft-preview__cover { display: block; margin-bottom: 18px; max-width: 100%; }
+    .draft-preview p { line-height: 1.65; margin: 0 0 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .draft-preview h1, .draft-preview h2, .draft-preview h3 { font-family: Lora, serif; line-height: 1.25; margin: 20px 0 10px; overflow-wrap: anywhere; }
+    .draft-preview blockquote { border-left: 3px solid var(--accent); color: var(--muted); margin: 0 0 14px; padding-left: 14px; white-space: pre-wrap; }
+    .draft-preview pre { background: var(--paper-deep); font-size: 14px; overflow-x: auto; padding: 12px; white-space: pre-wrap; }
+    .draft-preview code { font-family: ui-monospace, monospace; }
+    .draft-preview ul, .draft-preview ol { margin: 0 0 14px; padding-left: 24px; }
+    .draft-preview li { line-height: 1.6; margin: 4px 0; white-space: pre-wrap; }
+    .draft-preview img { max-width: 100%; }
+    .draft-preview figure { margin: 0 0 14px; }
+    .draft-preview figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .draft-preview__button { background: var(--accent); color: var(--paper); display: inline-block; font-weight: 700; margin-bottom: 14px; padding: 10px 18px; }
+    .draft-preview__card { border: 1px solid var(--line); display: block; margin-bottom: 14px; padding: 12px 14px; }
+    .draft-preview__card span { color: var(--muted); display: block; font-size: 13px; }
+    .draft-preview__embed { border: 1px solid var(--line); color: var(--muted); font-size: 14px; margin-bottom: 14px; padding: 12px 14px; }
+    .draft-preview__math { font-family: ui-monospace, monospace; margin-bottom: 14px; text-align: center; }
+    .draft-preview__empty { color: var(--muted); }
+    .draft-list__item { align-items: center; display: flex; gap: 12px; }
+    .draft-list__item > a { flex: 1; min-width: 0; }
+    .draft-list__title { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .draft-list__meta { color: var(--muted); display: block; font-size: 13px; }
+  </style>`;
+
+pages.get('/account/author/draft', (c) => {
+  const inner = `
+    ${accountSubNav}
+    <section class="account-card account-page__viewed" aria-labelledby="drafts-title" data-draft-list>
+      <div class="account-card__header"><h2 id="drafts-title"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Drafts</h2><button type="button" class="auth-signout" data-draft-new><i class="fa-solid fa-plus" aria-hidden="true"></i> New draft</button></div>
+      <p class="account-page__viewed-status" data-drafts-status role="status" aria-live="polite">Loading your drafts…</p>
+      <ul data-drafts-list></ul>
+      <p class="account-page__blocks-note">Drafts are stored in your AT Protocol account as <code>cc.coffeencode.author.draft</code> records and sync automatically while you write.</p>
+    </section>
+    <section class="account-card account-page__viewed" data-draft-gate hidden aria-labelledby="draft-gate-title">
+      <h2 id="draft-gate-title">Drafts</h2>
+      <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
+    </section>`;
+  const body = accountPageShell('Drafts', inner, 'Sign in to write and manage your drafts.');
+  return c.html(renderLayout(c, 'Drafts', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
+});
+
+pages.get('/account/author/draft/:rkey', (c) => {
+  const rkey = c.req.param('rkey');
+  if (!/^[a-zA-Z0-9._~:-]{1,512}$/.test(rkey)) {
+    return c.html(renderLayout(c, 'Draft not found', '<section class="not-found"><h1>Draft not found</h1><p>This draft link is invalid.</p><a href="/account/author/draft" class="read-link">Back to drafts <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></section>'), 404);
+  }
+  const inner = `
+    <section class="draft-editor-page" data-draft-editor data-draft-rkey="${escapeHtml(rkey)}" aria-labelledby="draft-editor-title">
+      <div class="draft-editor-page__bar">
+        <a class="read-link" href="/account/author/draft"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All drafts</a>
+        <span class="draft-editor-page__status" data-draft-status role="status" aria-live="polite">Loading draft…</span>
+        <div class="draft-editor-page__actions">
+          <button type="button" class="auth-signout" data-draft-delete><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
+          <button type="button" class="auth-signout" data-draft-save><i class="fa-solid fa-check" aria-hidden="true"></i> Save</button>
+        </div>
+      </div>
+      <h1 id="draft-editor-title" class="visually-hidden">Edit draft</h1>
+      <div class="draft-editor__grid" data-draft-workspace hidden>
+        <div class="draft-editor__edit">
+          <details class="draft-editor__meta" open>
+            <summary>Metadata</summary>
+            <label>Title<input name="draft-title" maxlength="5000" placeholder="Untitled" data-draft-field="title"></label>
+            <label>Description<textarea name="draft-description" rows="2" maxlength="30000" data-draft-field="description"></textarea></label>
+            <label>Tags<input name="draft-tags" placeholder="Comma separated" data-draft-field="tags"></label>
+            <label>Publication<input name="draft-publication" placeholder="at://did…/pub.leaflet.publication/…" data-draft-field="publication"></label>
+            <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
+            <label class="account-author-form__check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
+          </details>
+          <div class="draft-toolbar" role="toolbar" aria-label="Formatting" data-draft-toolbar>
+            <button type="button" data-cmd="bold" title="Bold" aria-label="Bold"><i class="fa-solid fa-bold" aria-hidden="true"></i></button>
+            <button type="button" data-cmd="italic" title="Italic" aria-label="Italic"><i class="fa-solid fa-italic" aria-hidden="true"></i></button>
+            <button type="button" data-cmd="underline" title="Underline" aria-label="Underline"><i class="fa-solid fa-underline" aria-hidden="true"></i></button>
+            <button type="button" data-cmd="strikeThrough" title="Strikethrough" aria-label="Strikethrough"><i class="fa-solid fa-strikethrough" aria-hidden="true"></i></button>
+            <button type="button" data-cmd="inlineCode" title="Inline code" aria-label="Inline code"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
+            <button type="button" data-cmd="link" title="Link" aria-label="Link"><i class="fa-solid fa-link" aria-hidden="true"></i></button>
+            <span class="draft-toolbar__sep" aria-hidden="true"></span>
+            <button type="button" data-block="text" title="Paragraph" aria-label="Paragraph"><i class="fa-solid fa-paragraph" aria-hidden="true"></i></button>
+            <button type="button" data-block="header:1" title="Heading 1" aria-label="Heading 1">H1</button>
+            <button type="button" data-block="header:2" title="Heading 2" aria-label="Heading 2">H2</button>
+            <button type="button" data-block="header:3" title="Heading 3" aria-label="Heading 3">H3</button>
+            <button type="button" data-block="blockquote" title="Quote" aria-label="Quote"><i class="fa-solid fa-quote-left" aria-hidden="true"></i></button>
+            <button type="button" data-block="code" title="Code block" aria-label="Code block"><i class="fa-solid fa-file-code" aria-hidden="true"></i></button>
+            <button type="button" data-block="unorderedList" title="Bulleted list" aria-label="Bulleted list"><i class="fa-solid fa-list-ul" aria-hidden="true"></i></button>
+            <button type="button" data-block="orderedList" title="Numbered list" aria-label="Numbered list"><i class="fa-solid fa-list-ol" aria-hidden="true"></i></button>
+            <span class="draft-toolbar__sep" aria-hidden="true"></span>
+            <button type="button" data-block="horizontalRule" title="Divider" aria-label="Divider"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
+            <button type="button" data-block="image" title="Image" aria-label="Image"><i class="fa-solid fa-image" aria-hidden="true"></i></button>
+            <button type="button" data-block="button" title="Button" aria-label="Button"><i class="fa-solid fa-square-check" aria-hidden="true"></i></button>
+            <button type="button" data-block="website" title="Link card" aria-label="Link card"><i class="fa-solid fa-globe" aria-hidden="true"></i></button>
+            <button type="button" data-block="bskyPost" title="Bluesky post" aria-label="Bluesky post"><i class="fa-brands fa-bluesky" aria-hidden="true"></i></button>
+            <button type="button" data-block="math" title="Math" aria-label="Math">&#8721;</button>
+            <span class="draft-toolbar__sep" aria-hidden="true"></span>
+            <button type="button" data-align="#textAlignLeft" title="Align left" aria-label="Align left"><i class="fa-solid fa-align-left" aria-hidden="true"></i></button>
+            <button type="button" data-align="#textAlignCenter" title="Align center" aria-label="Align center"><i class="fa-solid fa-align-center" aria-hidden="true"></i></button>
+            <button type="button" data-align="#textAlignRight" title="Align right" aria-label="Align right"><i class="fa-solid fa-align-right" aria-hidden="true"></i></button>
+            <button type="button" data-align="#textAlignJustify" title="Justify" aria-label="Justify"><i class="fa-solid fa-align-justify" aria-hidden="true"></i></button>
+          </div>
+          <div class="draft-blocks" data-draft-blocks></div>
+        </div>
+        <article class="draft-preview" data-draft-preview aria-label="Draft preview"></article>
+      </div>
+      <section class="account-card account-page__viewed" data-draft-gate hidden aria-labelledby="draft-gate-title">
+        <h2 id="draft-gate-title">Drafts</h2>
+        <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
+      </section>
+    </section>`;
+  const body = accountPageShell('Edit draft', inner, 'Sign in to edit this draft.');
+  return c.html(renderLayout(c, 'Edit draft', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
 });
 
 pages.get('/become-an-author', (c) => {
@@ -1344,6 +1528,206 @@ pages.get('/download', (c) => {
     <link rel="canonical" href="${pageUrl}">
   `;
   return c.html(renderLayout(c, 'Coffee & Code for Android', body, metaTags));
+});
+
+const DOCS_PUBLICATION_URI = 'at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b';
+
+type DocsSection = { key: string; label: string; docs: StandardDocument[] };
+
+/** Groups publication documents by their tags; untagged docs land in "Guides". */
+function groupDocsByTag(docs: StandardDocument[]): DocsSection[] {
+  const sections = new Map<string, DocsSection>();
+  const general: DocsSection = { key: '', label: 'Guides', docs: [] };
+  for (const doc of docs) {
+    const tags = doc.tags?.length ? doc.tags : [''];
+    for (const tag of tags) {
+      if (!tag) continue;
+      const key = tag.toLocaleLowerCase();
+      const section = sections.get(key) || { key, label: tag, docs: [] };
+      section.docs.push(doc);
+      sections.set(key, section);
+    }
+    if (!doc.tags?.length) general.docs.push(doc);
+  }
+  return [...sections.values()]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .concat(general.docs.length ? [general] : []);
+}
+
+function renderDocsSidebar(sections: DocsSection[], activeRkey?: string): string {
+  const groups = sections.map((section) => `
+    <div class="docs-nav__group">
+      <h2>${escapeHtml(section.label)}</h2>
+      <ul>${section.docs.map((doc) => `
+        <li><a href="/docs/${encodeURIComponent(doc.rkey)}"${doc.rkey === activeRkey ? ' class="is-active" aria-current="page"' : ''}>${escapeHtml(doc.title)}</a></li>`).join('')}
+      </ul>
+    </div>`).join('');
+  return `
+    <nav class="docs-nav" aria-label="Documentation sections">
+      <a class="docs-nav__home" href="/docs"${!activeRkey ? ' aria-current="page"' : ''}><i class="fa-solid fa-book-open" aria-hidden="true"></i> Docs home</a>
+      ${groups}
+    </nav>`;
+}
+
+const docsPageStyles = `
+  <style>
+    .docs-layout { display: grid; gap: clamp(30px, 5vw, 70px); grid-template-columns: minmax(170px, 230px) minmax(0, 720px) minmax(160px, 220px); justify-content: center; margin: 0 auto; max-width: 1240px; }
+    .docs-layout--landing { grid-template-columns: minmax(170px, 230px) minmax(0, 820px); }
+    .docs-nav { align-self: start; position: sticky; top: 105px; }
+    .docs-nav__home { align-items: center; color: var(--ink); display: flex; font-weight: 700; gap: 9px; letter-spacing: .06em; padding-bottom: 14px; text-transform: uppercase; }
+    .docs-nav__home i { color: var(--accent); }
+    .docs-nav__group { border-top: 1px solid var(--line); padding: 14px 0; }
+    .docs-nav__group h2 { color: var(--muted); font-size: 12px; letter-spacing: .14em; margin: 0 0 8px; text-transform: uppercase; }
+    .docs-nav__group ul { list-style: none; margin: 0; padding: 0; }
+    .docs-nav__group a { border-left: 2px solid transparent; color: var(--muted); display: block; font-family: Lora, serif; font-size: 15px; font-weight: 600; line-height: 1.35; padding: 6px 0 6px 12px; text-decoration: none; }
+    .docs-nav__group a:hover { color: var(--ink); }
+    .docs-nav__group a.is-active { border-left-color: var(--accent); color: var(--accent); }
+    .docs-article__back { color: var(--accent); display: inline-block; font-size: 14px; font-weight: 700; letter-spacing: .04em; margin-bottom: 34px; text-transform: uppercase; }
+    .docs-article__header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 24px; }
+    .docs-article__header .eyebrow { color: var(--accent); margin: 0 0 10px; }
+    .docs-article__header h1 { font-family: Lora, serif; font-size: clamp(2.3rem, 5vw, 3.6rem); letter-spacing: -.045em; line-height: 1.08; margin: 0; }
+    .docs-article__dek { color: var(--muted); font-family: Lora, serif; font-size: 20px; line-height: 1.4; margin: 14px 0 0; }
+    .docs-article__date { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
+    .docs-article__footer { border-top: 1px solid var(--line); display: flex; font-size: 14px; justify-content: flex-end; margin-top: 48px; padding-top: 22px; }
+    .docs-article__footer a { color: var(--accent); }
+    .docs-notes { align-self: start; border-top: 3px solid var(--ink); padding-top: 12px; position: sticky; top: 105px; }
+    .docs-notes h2 { color: var(--muted); font-size: 12px; letter-spacing: .14em; margin: 0 0 10px; text-transform: uppercase; }
+    .docs-notes ol { font-size: 14px; margin: 0; padding-left: 20px; }
+    .docs-notes li { color: var(--muted); line-height: 1.55; margin: 0 0 12px; }
+    .docs-notes li::marker { color: var(--accent); font-weight: 700; }
+    .docs-notes a { color: var(--accent); }
+    .docs-landing__hero { border-bottom: 2px solid var(--ink); margin-bottom: 8px; padding-bottom: 26px; }
+    .docs-landing__hero h1 { font-family: Lora, serif; font-size: clamp(2.6rem, 6vw, 4.4rem); letter-spacing: -.05em; line-height: 1.05; margin: 0; }
+    .docs-landing__intro { color: var(--muted); font-size: clamp(1.1rem, 2vw, 1.3rem); line-height: 1.6; margin: 18px 0 0; max-width: 660px; }
+    .docs-section { border-bottom: 1px solid var(--line); padding: 26px 0; }
+    .docs-section > h2 { font-family: Lora, serif; font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.03em; margin: 0 0 6px; }
+    .docs-section ul { list-style: none; margin: 0; padding: 0; }
+    .docs-section li { border-top: 1px solid var(--line); padding: 18px 0; }
+    .docs-section li:first-child { border-top: 0; }
+    .docs-section__link { align-items: baseline; display: flex; gap: 14px; justify-content: space-between; }
+    .docs-section__link > a { color: var(--ink); font-family: Lora, serif; font-size: 20px; font-weight: 700; line-height: 1.3; text-decoration: none; }
+    .docs-section__link > a:hover { color: var(--accent); }
+    .docs-section__link time { color: var(--muted); flex: 0 0 auto; font-size: 13px; }
+    .docs-section__link > a i { color: var(--accent); font-size: 13px; margin-left: 8px; }
+    .docs-section p { color: var(--muted); line-height: 1.6; margin: 8px 0 0; max-width: 640px; }
+    @media (max-width: 1080px) {
+      .docs-layout, .docs-layout--landing { grid-template-columns: 1fr; }
+      .docs-nav { border-bottom: 1px solid var(--line); padding-bottom: 16px; position: static; }
+      .docs-nav__group ul { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+      .docs-nav__group a { border-left: 0; border-bottom: 2px solid transparent; padding: 4px 0; }
+      .docs-nav__group a.is-active { border-bottom-color: var(--accent); }
+      .docs-notes { border-top: 1px solid var(--line); position: static; }
+    }
+  </style>`;
+
+pages.get('/docs', async (c) => {
+  const [info, docs] = await Promise.all([
+    fetchPublicationInfo(DOCS_PUBLICATION_URI, c.env.OWNER_PDS),
+    fetchPublicationDocuments(DOCS_PUBLICATION_URI, c.env.OWNER_PDS),
+  ]);
+  const title = info?.name || 'Developer Docs';
+  const sections = groupDocsByTag(docs);
+  const sectionHtml = sections.map((section) => `
+    <section class="docs-section" aria-labelledby="docs-section-${escapeHtml(section.key || 'guides')}">
+      <h2 id="docs-section-${escapeHtml(section.key || 'guides')}">${escapeHtml(section.label)}</h2>
+      <ul>${section.docs.map((doc) => `
+        <li>
+          <div class="docs-section__link"><a href="/docs/${encodeURIComponent(doc.rkey)}">${escapeHtml(doc.title)} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a><time datetime="${escapeHtml(doc.publishedAt)}">${escapeHtml(formatDate(doc.publishedAt))}</time></div>
+          ${doc.description ? `<p>${escapeHtml(doc.description)}</p>` : ''}
+        </li>`).join('')}
+      </ul>
+    </section>`).join('');
+  const body = `
+    <div class="docs-layout docs-layout--landing">
+      ${renderDocsSidebar(sections)}
+      <div class="docs-landing">
+        <header class="docs-landing__hero">
+          <h1>${escapeHtml(title)}</h1>
+          ${info?.description ? `<p class="docs-landing__intro">${escapeHtml(info.description)}</p>` : '<p class="docs-landing__intro">Guides and references for building on and with Coffee &amp; Code.</p>'}
+        </header>
+        ${sectionHtml || '<p class="empty-state">Documentation is on the way — check back soon.</p>'}
+      </div>
+    </div>
+    ${docsPageStyles}
+  `;
+  const pageUrl = new URL(c.req.url).toString();
+  const metaTags = `
+    <meta name="description" content="${escapeHtml(info?.description || 'Developer documentation for Coffee & Code.')}">
+    <meta property="og:title" content="${escapeHtml(title)} | Coffee and Code">
+    <meta property="og:description" content="${escapeHtml(info?.description || 'Developer documentation for Coffee & Code.')}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+  return c.html(renderLayout(c, title, body, metaTags, `${title} | Coffee & Code`));
+});
+
+pages.get('/docs/:rkey', async (c) => {
+  const rkey = c.req.param('rkey');
+  const docs = await fetchPublicationDocuments(DOCS_PUBLICATION_URI, c.env.OWNER_PDS);
+  const doc = docs.find((item) => item.rkey === rkey);
+  if (!doc) {
+    return c.html(renderLayout(c, 'Doc Not Found', `
+      <section class="not-found">
+        <h1>Doc not found</h1>
+        <p>The requested page could not be located in the developer docs.</p>
+        <div class="not-found__actions">
+          <a href="/docs" class="read-link">All docs <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        </div>
+      </section>
+    `), 404);
+  }
+
+  const { html, footnotes } = renderLeafletDocument(doc.content || '');
+  const requestOrigin = new URL(c.req.url).origin;
+  const processed = processImages(html, (source) => {
+    if (source.startsWith('/api/blob/')) {
+      const cid = source.replace(/^\/api\/blob\//, '');
+      const blobUrl = `${doc.pdsUrl || c.env.OWNER_PDS}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(doc.repoDid || c.env.OWNER_DID)}&cid=${encodeURIComponent(cid)}`;
+      return proxyImageUrl(blobUrl, requestOrigin);
+    }
+    return proxyImageUrl(source, requestOrigin);
+  });
+  const content = routeExternalLinks(enhanceHtmlStructure(processed));
+  const notesHtml = footnotes.length ? `
+    <aside class="docs-notes" aria-label="Footnotes">
+      <h2>Notes</h2>
+      <ol>${footnotes.map((note) => `<li id="fn-${note.number}">${note.html} <a class="prose-footnote-back" href="#fnref-${note.number}" aria-label="Back to reference ${note.number}">↩</a></li>`).join('')}</ol>
+    </aside>` : '';
+  const pageUrl = new URL(c.req.url).toString();
+  const body = `
+    <div class="docs-layout">
+      ${renderDocsSidebar(groupDocsByTag(docs), doc.rkey)}
+      <article class="docs-article">
+        <a class="docs-article__back" href="/docs"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All docs</a>
+        <header class="docs-article__header">
+          <p class="eyebrow">Developer docs</p>
+          <h1>${escapeHtml(doc.title)}</h1>
+          ${doc.description ? `<p class="docs-article__dek">${escapeHtml(doc.description)}</p>` : ''}
+          ${formatDate(doc.publishedAt) ? `<p class="docs-article__date">Updated ${escapeHtml(formatDate(doc.publishedAt))}</p>` : ''}
+        </header>
+        <div class="prose">${content}</div>
+        <footer class="docs-article__footer">
+          <a href="${escapeHtml(externalLinkUrl(`https://pdsls.dev/${doc.uri}`))}" target="_blank" rel="noopener">View record on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        </footer>
+      </article>
+      ${notesHtml}
+    </div>
+    ${docsPageStyles}
+  `;
+  const metaTags = `
+    <link rel="site.standard.document" href="${escapeHtml(doc.uri)}">
+    <meta name="atproto:uri" content="${escapeHtml(doc.uri)}">
+    <meta name="description" content="${escapeHtml(doc.description || doc.title)}">
+    <meta property="og:title" content="${escapeHtml(doc.title)} | Coffee and Code Docs">
+    <meta property="og:description" content="${escapeHtml(doc.description || 'Developer documentation for Coffee & Code.')}">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="${escapeHtml(pageUrl)}">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  `;
+  return c.html(renderLayout(c, doc.title, body, metaTags, `${doc.title} | Coffee & Code Docs`));
 });
 
 export default pages;

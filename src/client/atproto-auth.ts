@@ -430,7 +430,10 @@ function renderAccount() {
       void loadAccountLists(did);
       void renderTagFollows(did);
       void loadEmailSettings(did);
+      void loadEmailRouting(did);
       void loadAuthorProfileEditor(did);
+      void loadDraftListPage(did);
+      void loadDraftEditor(did);
     }
 
   }
@@ -993,6 +996,214 @@ function buildEmailFilters(
     }
   });
   return filters;
+}
+
+type EmailRouteSource = { kind: 'tag' | 'author'; value: string; label: string; stale?: boolean };
+
+// The /account/email routing matrix: followed tags and authors down the left,
+// addresses across the top. Checking a cell routes that source to that
+// address. An address in "All stories" mode has empty filters and receives
+// everything; "Selected sources only" narrows it to its checked rows.
+async function loadEmailRouting(did: string) {
+  const container = accountPage?.querySelector<HTMLElement>('[data-email-routing]');
+  const status = accountPage?.querySelector<HTMLElement>('[data-email-routing-status]');
+  const saveButton = accountPage?.querySelector<HTMLButtonElement>('[data-email-routing-save]');
+  if (!container || !status || !saveButton) return;
+
+  let settings: EmailSettingsResponse;
+  let sources: EmailRouteSource[];
+  try {
+    const [settingsResponse, tagRecords, followRecords, siteAuthors] = await Promise.all([
+      fetch(`/api/email/settings?did=${encodeURIComponent(did)}`, { cache: 'no-store' }),
+      listTagFollows(did),
+      listGraphFollows(did).catch(() => [] as GraphFollowRecord[]),
+      listSiteAuthors().catch(() => new Map<string, SiteAuthor>()),
+    ]);
+    if (!settingsResponse.ok) throw new Error(`Could not load your email settings (${settingsResponse.status}).`);
+    settings = await settingsResponse.json() as EmailSettingsResponse;
+    if (session?.did !== did) return;
+
+    const tags = new Map<string, EmailRouteSource>();
+    tagRecords.forEach((record) => tags.set(record.tag.toLowerCase(), { kind: 'tag', value: record.tag, label: `#${record.tag}` }));
+    const authors = new Map<string, EmailRouteSource>();
+    followRecords.forEach((record) => {
+      const author = siteAuthors.get(record.subject.toLowerCase());
+      if (!author) return;
+      authors.set(author.did.toLowerCase(), {
+        kind: 'author', value: author.did, label: `${author.displayName} (@${author.handle})`,
+      });
+    });
+    // Keep sources saved in a filter but no longer followed so they can be
+    // unchecked instead of silently disappearing.
+    settings.emails.forEach((entry) => {
+      (entry.tags || []).forEach((tag) => {
+        if (!tags.has(tag.toLowerCase())) tags.set(tag.toLowerCase(), { kind: 'tag', value: tag, label: `#${tag}`, stale: true });
+      });
+      (entry.authors || []).forEach((author) => {
+        const key = author.toLowerCase();
+        if (!authors.has(key)) authors.set(key, { kind: 'author', value: author, label: author, stale: true });
+      });
+    });
+    sources = [...tags.values(), ...authors.values()];
+  } catch (error) {
+    status.textContent = errorMessage(error);
+    return;
+  }
+
+  if (!settings.emails.length) {
+    status.textContent = 'Add an email address above, then choose where each kind of story goes.';
+    return;
+  }
+  if (!sources.length) {
+    status.textContent = 'You are not following any tags or authors yet, so every address gets every story. Follow some, then come back to route them.';
+    return;
+  }
+
+  const selectedFor = (entry: EmailAddressEntry) => {
+    const tags = new Set((entry.tags || []).map((tag) => tag.toLowerCase()));
+    const authors = new Set((entry.authors || []).map((author) => author.toLowerCase()));
+    return (source: EmailRouteSource) => (source.kind === 'tag' ? tags : authors).has(source.value.toLowerCase());
+  };
+  const receivesAll = (entry: EmailAddressEntry) => !(entry.tags?.length || entry.authors?.length);
+
+  const table = document.createElement('table');
+  table.className = 'email-routing__table';
+  const head = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  headRow.append(Object.assign(document.createElement('th'), { scope: 'col', textContent: 'Stories about…' }));
+  const modeSelects: HTMLSelectElement[] = [];
+  settings.emails.forEach((entry) => {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    const name = document.createElement('span');
+    name.className = 'email-routing__address';
+    name.textContent = entry.address;
+    th.append(name);
+    if (!entry.verified) {
+      const badge = document.createElement('small');
+      badge.className = 'email-routing__badge';
+      badge.textContent = 'unconfirmed';
+      th.append(badge);
+    }
+    const select = document.createElement('select');
+    select.className = 'email-routing__mode';
+    select.setAttribute('aria-label', `What ${entry.address} receives`);
+    [['all', 'All stories'], ['custom', 'Only selected']].forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.append(option);
+    });
+    select.value = receivesAll(entry) ? 'all' : 'custom';
+    modeSelects.push(select);
+    th.append(select);
+    headRow.append(th);
+  });
+  head.append(headRow);
+  table.append(head);
+
+  const body = document.createElement('tbody');
+  const tagSources = sources.filter((source) => source.kind === 'tag');
+  const authorSources = sources.filter((source) => source.kind === 'author');
+  const groupHeader = (label: string) => {
+    const row = document.createElement('tr');
+    row.className = 'email-routing__group';
+    const cell = document.createElement('th');
+    cell.colSpan = settings.emails.length + 1;
+    cell.scope = 'rowgroup';
+    cell.textContent = label;
+    row.append(cell);
+    body.append(row);
+  };
+  const sourceRow = (source: EmailRouteSource) => {
+    const row = document.createElement('tr');
+    const label = document.createElement('th');
+    label.scope = 'row';
+    label.textContent = source.label;
+    if (source.stale) {
+      label.title = 'Saved route for something you no longer follow';
+      const stale = document.createElement('small');
+      stale.className = 'email-routing__badge';
+      stale.textContent = 'no longer followed';
+      label.append(document.createTextNode(' '), stale);
+    }
+    row.append(label);
+    settings.emails.forEach((entry, column) => {
+      const cell = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.dataset.emailRoutingAddress = entry.address;
+      input.dataset.emailRoutingKind = source.kind;
+      input.dataset.emailRoutingValue = source.value;
+      input.checked = receivesAll(entry) || selectedFor(entry)(source);
+      input.disabled = receivesAll(entry);
+      input.setAttribute('aria-label', `Send stories about ${source.label} to ${entry.address}`);
+      cell.append(input);
+      row.append(cell);
+    });
+    body.append(row);
+  };
+  if (tagSources.length) { groupHeader('Tags you follow'); tagSources.forEach(sourceRow); }
+  if (authorSources.length) { groupHeader('Authors you follow'); authorSources.forEach(sourceRow); }
+  table.append(body);
+  container.replaceChildren(table);
+
+  modeSelects.forEach((select, column) => {
+    select.addEventListener('change', () => {
+      const all = select.value === 'all';
+      const entry = settings.emails[column];
+      const selected = selectedFor(entry);
+      table.querySelectorAll<HTMLInputElement>(`input[data-email-routing-address="${CSS.escape(entry.address)}"]`)
+        .forEach((input) => {
+          input.disabled = all;
+          input.checked = all || selected({
+            kind: input.dataset.emailRoutingKind === 'tag' ? 'tag' : 'author',
+            value: input.dataset.emailRoutingValue || '',
+            label: '',
+          });
+        });
+      status.textContent = all
+        ? `${entry.address} will receive every story.`
+        : `${entry.address} will only receive the sources checked below. Save routing to apply.`;
+    });
+  });
+  container.hidden = false;
+  saveButton.hidden = false;
+  status.textContent = 'Check where each tag and author should be delivered, then save. Columns on “All stories” receive everything regardless of the checks.';
+  saveButton.onclick = async () => {
+    saveButton.disabled = true;
+    status.textContent = 'Saving your routing…';
+    try {
+      for (let column = 0; column < settings.emails.length; column += 1) {
+        const entry = settings.emails[column];
+        const all = modeSelects[column].value === 'all';
+        const tags: string[] = [];
+        const authors: string[] = [];
+        if (!all) {
+          table.querySelectorAll<HTMLInputElement>(`input[data-email-routing-address="${CSS.escape(entry.address)}"]:checked`)
+            .forEach((input) => {
+              if (input.dataset.emailRoutingKind === 'tag') tags.push(input.dataset.emailRoutingValue || '');
+              else if (input.dataset.emailRoutingKind === 'author') authors.push(input.dataset.emailRoutingValue || '');
+            });
+        }
+        const response = await fetch('/api/email/addresses', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ did, email: entry.address, tags, authors }),
+        });
+        const result = await response.json() as EmailSettingsResponse & { error?: string };
+        if (!response.ok) throw new Error(result.error || `Could not save the route for ${entry.address}.`);
+        if (session?.did !== did) return;
+        settings = result;
+      }
+      status.textContent = 'Routing saved. Stories will be delivered where you selected.';
+      saveButton.disabled = false;
+      await loadEmailRouting(did);
+    } catch (error) {
+      status.textContent = errorMessage(error);
+      saveButton.disabled = false;
+    }
+  };
 }
 
 async function loadEmailSettings(did: string) {
@@ -4356,3 +4567,1078 @@ document.querySelectorAll<HTMLElement>('.article-share').forEach((shareSection) 
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Author drafts — cc.coffeencode.author.draft records whose `document` field
+// holds a pub.leaflet.document built from pub.leaflet.blocks.* blocks.
+// ---------------------------------------------------------------------------
+
+const DRAFT_COLLECTION = 'cc.coffeencode.author.draft';
+const DRAFT_SYNC_INTERVAL_MS = 15000;
+const LEAFLET_FACET = 'pub.leaflet.richtext.facet';
+
+type DraftFacetFeature = Record<string, unknown> & { $type: string };
+type DraftFacet = { index: { byteStart: number; byteEnd: number }; features: DraftFacetFeature[] };
+type DraftBlockType = 'text' | 'header' | 'blockquote' | 'code' | 'unorderedList' | 'orderedList'
+  | 'horizontalRule' | 'image' | 'button' | 'website' | 'bskyPost' | 'math';
+type DraftBlock = {
+  id: string;
+  type: DraftBlockType;
+  alignment?: string;
+  level?: number;
+  language?: string;
+  image?: unknown;
+  imageObjectUrl?: string;
+  alt?: string;
+  aspectRatio?: { width: number; height: number };
+  url?: string;
+  label?: string;
+  title?: string;
+  description?: string;
+  tex?: string;
+  postRef?: { uri: string; cid: string };
+};
+
+function draftEscapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Serialize a contenteditable element into plaintext + pub.leaflet.richtext.facet facets.
+function serializeEditable(root: HTMLElement): { plaintext: string; facets: DraftFacet[] } {
+  const encoder = new TextEncoder();
+  let plaintext = '';
+  const facets: DraftFacet[] = [];
+  const byteLength = () => encoder.encode(plaintext).length;
+  const featuresFor = (element: HTMLElement): DraftFacetFeature[] => {
+    switch (element.tagName) {
+      case 'B': case 'STRONG': return [{ $type: `${LEAFLET_FACET}#bold` }];
+      case 'I': case 'EM': return [{ $type: `${LEAFLET_FACET}#italic` }];
+      case 'U': case 'INS': return [{ $type: `${LEAFLET_FACET}#underline` }];
+      case 'S': case 'STRIKE': case 'DEL': return [{ $type: `${LEAFLET_FACET}#strikethrough` }];
+      case 'CODE': return [{ $type: `${LEAFLET_FACET}#code` }];
+      case 'MARK': return [{ $type: `${LEAFLET_FACET}#highlight` }];
+      case 'A': {
+        const href = element.getAttribute('href');
+        return href ? [{ $type: `${LEAFLET_FACET}#link`, uri: href }] : [];
+      }
+      default: return [];
+    }
+  };
+  const walk = (node: Node, active: DraftFacetFeature[]) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent || '';
+      if (!text) return;
+      const byteStart = byteLength();
+      plaintext += text;
+      const byteEnd = byteLength();
+      if (active.length && byteEnd > byteStart) {
+        facets.push({ index: { byteStart, byteEnd }, features: [...active] });
+      }
+      return;
+    }
+    if (!(node instanceof HTMLElement)) return;
+    if (node.tagName === 'BR') { plaintext += '\n'; return; }
+    const isContainer = node.tagName === 'DIV' || node.tagName === 'P';
+    if (isContainer && plaintext && !plaintext.endsWith('\n')) plaintext += '\n';
+    const added = featuresFor(node);
+    const next = added.length ? [...active, ...added] : active;
+    node.childNodes.forEach((child) => walk(child, next));
+    if (isContainer && plaintext && !plaintext.endsWith('\n')) plaintext += '\n';
+  };
+  root.childNodes.forEach((child) => walk(child, []));
+  return { plaintext, facets };
+}
+
+// Render plaintext + leaflet facets to escaped HTML for the preview.
+function richTextToHtml(plaintext: string, facets?: DraftFacet[]): string {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const bytes = encoder.encode(plaintext);
+  const boundaries = new Set<number>([0, bytes.length]);
+  const valid: DraftFacet[] = [];
+  for (const facet of facets || []) {
+    const { byteStart, byteEnd } = facet?.index || {};
+    if (!Number.isInteger(byteStart) || !Number.isInteger(byteEnd)
+      || byteStart < 0 || byteEnd <= byteStart || byteEnd > bytes.length
+      || !Array.isArray(facet.features)) continue;
+    valid.push(facet);
+    boundaries.add(byteStart);
+    boundaries.add(byteEnd);
+  }
+  const order = [...boundaries].sort((a, b) => a - b);
+  let html = '';
+  for (let index = 0; index + 1 < order.length; index += 1) {
+    const start = order[index];
+    const end = order[index + 1];
+    let segment = draftEscapeHtml(decoder.decode(bytes.slice(start, end))).replace(/\n/g, '<br>');
+    const active = new Set<string>();
+    let link: string | undefined;
+    for (const facet of valid) {
+      if (facet.index.byteStart <= start && facet.index.byteEnd >= end) {
+        for (const feature of facet.features) {
+          active.add(feature.$type);
+          if (feature.$type === `${LEAFLET_FACET}#link` && typeof feature.uri === 'string') link = feature.uri;
+        }
+      }
+    }
+    if (active.has(`${LEAFLET_FACET}#bold`)) segment = `<strong>${segment}</strong>`;
+    if (active.has(`${LEAFLET_FACET}#italic`)) segment = `<em>${segment}</em>`;
+    if (active.has(`${LEAFLET_FACET}#underline`)) segment = `<u>${segment}</u>`;
+    if (active.has(`${LEAFLET_FACET}#strikethrough`)) segment = `<s>${segment}</s>`;
+    if (active.has(`${LEAFLET_FACET}#highlight`)) segment = `<mark>${segment}</mark>`;
+    if (active.has(`${LEAFLET_FACET}#code`)) segment = `<code>${segment}</code>`;
+    if (link) segment = `<a href="${draftEscapeHtml(link)}" target="_blank" rel="noopener">${segment}</a>`;
+    html += segment;
+  }
+  return html;
+}
+
+const DRAFT_TEXT_TYPES: DraftBlockType[] = ['text', 'header', 'blockquote', 'code'];
+const draftBlockLabel: Record<DraftBlockType, string> = {
+  text: 'Write something…',
+  header: 'Heading',
+  blockquote: 'Quote',
+  code: 'Code',
+  unorderedList: 'List item',
+  orderedList: 'List item',
+  horizontalRule: '',
+  image: '',
+  button: '',
+  website: '',
+  bskyPost: '',
+  math: '',
+};
+
+function draftBlockFromLeaflet(block: Record<string, unknown>, alignment?: string): DraftBlock | undefined {
+  const type = typeof block.$type === 'string' ? block.$type.split('.').pop() || '' : '';
+  const base: DraftBlock = { id: crypto.randomUUID(), type: 'text' };
+  if (alignment && /^#textAlign(Left|Center|Right|Justify)$/.test(alignment)) base.alignment = alignment;
+  switch (type) {
+    case 'text': case 'blockquote': case 'math': case 'button': case 'website':
+    case 'bskyPost': case 'horizontalRule': case 'unorderedList': case 'orderedList':
+      break;
+    case 'header': base.level = Number.isInteger(block.level) ? Math.min(6, Math.max(1, block.level as number)) : 2; break;
+    case 'code': base.language = typeof block.language === 'string' ? block.language : ''; break;
+    case 'image': {
+      base.image = block.image;
+      base.alt = typeof block.alt === 'string' ? block.alt : '';
+      const ratio = block.aspectRatio as { width?: unknown; height?: unknown } | undefined;
+      if (Number.isInteger(ratio?.width) && Number.isInteger(ratio?.height) && (ratio!.width as number) > 0) {
+        base.aspectRatio = { width: ratio!.width as number, height: ratio!.height as number };
+      }
+      base.type = 'image';
+      return base;
+    }
+    default: return undefined;
+  }
+  base.type = type as DraftBlockType;
+  if (type === 'math') base.tex = typeof block.tex === 'string' ? block.tex : '';
+  if (type === 'button') {
+    base.label = typeof block.text === 'string' ? block.text : '';
+    base.url = typeof block.url === 'string' ? block.url : '';
+  }
+  if (type === 'website') {
+    base.url = typeof block.src === 'string' ? block.src : '';
+    base.title = typeof block.title === 'string' ? block.title : '';
+    base.description = typeof block.description === 'string' ? block.description : '';
+  }
+  if (type === 'bskyPost') {
+    const ref = block.postRef as { uri?: unknown; cid?: unknown } | undefined;
+    if (typeof ref?.uri === 'string' && typeof ref?.cid === 'string') {
+      base.postRef = { uri: ref.uri, cid: ref.cid };
+      base.url = ref.uri;
+    }
+  }
+  return base;
+}
+
+async function loadDraftListPage(did: string) {
+  if (!accountPage) return;
+  const section = accountPage.querySelector<HTMLElement>('[data-draft-list]');
+  if (!section || section.dataset.draftLoaded === did) return;
+  section.dataset.draftLoaded = did;
+  const list = section.querySelector<HTMLElement>('[data-drafts-list]');
+  const status = section.querySelector<HTMLElement>('[data-drafts-status]');
+  const newButton = section.querySelector<HTMLButtonElement>('[data-draft-new]');
+  const gate = accountPage.querySelector<HTMLElement>('[data-draft-gate]');
+  if (!list || !status) return;
+
+  newButton?.addEventListener('click', () => {
+    window.location.assign(`/account/author/draft/${createTid()}`);
+  });
+
+  const showGate = async () => {
+    try {
+      const postsResponse = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
+      const posts = postsResponse.ok ? await postsResponse.json() as unknown[] : [];
+      if (!Array.isArray(posts) || posts.length === 0) {
+        section.hidden = true;
+        if (gate) gate.hidden = false;
+        return true;
+      }
+    } catch { /* fall through to the generic error */ }
+    return false;
+  };
+
+  try {
+    const query = new URLSearchParams({ repo: did, collection: DRAFT_COLLECTION, limit: '100' });
+    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const payload = await response.json() as {
+      records?: Array<{ uri?: unknown; value?: Record<string, unknown> }>;
+    };
+    if (session?.did !== did) return;
+    const drafts = (payload.records || []).flatMap((record) => {
+      if (typeof record.uri !== 'string' || !record.value || typeof record.value !== 'object') return [];
+      const value = record.value;
+      let rkey: string;
+      try { rkey = recordKeyFromUri(record.uri); } catch { return []; }
+      const doc = value.document as Record<string, unknown> | undefined;
+      const title = typeof doc?.title === 'string' && doc.title.trim() ? doc.title.trim() : 'Untitled';
+      const updatedAt = typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt))
+        ? value.updatedAt
+        : typeof value.createdAt === 'string' ? value.createdAt : '';
+      return [{ uri: record.uri, rkey, title, updatedAt }];
+    }).sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+
+    list.replaceChildren();
+    for (const draft of drafts) {
+      const item = document.createElement('li');
+      item.className = 'draft-list__item';
+      const link = document.createElement('a');
+      link.href = `/account/author/draft/${encodeURIComponent(draft.rkey)}`;
+      const title = document.createElement('span');
+      title.className = 'draft-list__title';
+      title.textContent = draft.title;
+      const meta = document.createElement('span');
+      meta.className = 'draft-list__meta';
+      meta.textContent = draft.updatedAt
+        ? `Updated ${new Date(draft.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
+        : 'Draft';
+      link.append(title, meta);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'auth-signout';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', async () => {
+        if (!window.confirm(`Delete the draft “${draft.title}”?`)) return;
+        remove.disabled = true;
+        try {
+          await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: DRAFT_COLLECTION, rkey: draft.rkey });
+          item.remove();
+          if (!list.children.length) status.textContent = 'You have no drafts yet.';
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          remove.disabled = false;
+        }
+      });
+      item.append(link, remove);
+      list.append(item);
+    }
+    status.textContent = drafts.length ? '' : 'You have no drafts yet. Start a new one.';
+  } catch (error) {
+    if (session?.did !== did) return;
+    if (await showGate()) return;
+    status.textContent = errorMessage(error);
+  }
+}
+
+async function loadDraftEditor(did: string) {
+  if (!accountPage) return;
+  const page = accountPage.querySelector<HTMLElement>('[data-draft-editor]');
+  if (!page || page.dataset.draftLoaded === did) return;
+  page.dataset.draftLoaded = did;
+  const rkey = page.dataset.draftRkey || '';
+  if (!/^[a-zA-Z0-9._~:-]+$/.test(rkey)) return;
+  const blocksEl = page.querySelector<HTMLElement>('[data-draft-blocks]');
+  const previewEl = page.querySelector<HTMLElement>('[data-draft-preview]');
+  const statusEl = page.querySelector<HTMLElement>('[data-draft-status]');
+  const workspace = page.querySelector<HTMLElement>('[data-draft-workspace]');
+  const gate = page.querySelector<HTMLElement>('[data-draft-gate]');
+  const toolbar = page.querySelector<HTMLElement>('[data-draft-toolbar]');
+  const saveButton = page.querySelector<HTMLButtonElement>('[data-draft-save]');
+  const deleteButton = page.querySelector<HTMLButtonElement>('[data-draft-delete]');
+  const metaForm = page.querySelector<HTMLElement>('.draft-editor__meta');
+  if (!blocksEl || !previewEl || !statusEl || !workspace || !toolbar || !saveButton || !deleteButton || !metaForm) return;
+  const titleInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="title"]')!;
+  const descriptionInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="description"]')!;
+  const tagsInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="tags"]')!;
+  const publicationInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="publication"]')!;
+  const coverInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="cover"]')!;
+  const coverRemoveInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="coverRemove"]')!;
+
+  const state = {
+    blocks: [] as DraftBlock[],
+    blockElements: new Map<string, HTMLElement>(),
+    createdAt: undefined as string | undefined,
+    cover: undefined as unknown,
+    coverObjectUrl: undefined as string | undefined,
+    version: 0,
+    savedVersion: -1,
+    syncing: false,
+    exists: false,
+  };
+  const markDirty = () => { state.version += 1; };
+
+  const currentBlockElement = (): HTMLElement | undefined => {
+    const node = window.getSelection()?.anchorNode;
+    const element = node instanceof HTMLElement ? node : node?.parentElement;
+    return element?.closest<HTMLElement>('[data-block-id]') ?? undefined;
+  };
+  const blockFor = (element: HTMLElement) => state.blocks.find((block) => block.id === element.dataset.blockId);
+
+  const serializeBlock = (block: DraftBlock, element: HTMLElement): Record<string, unknown> | undefined => {
+    const editable = element.querySelector<HTMLElement>('.draft-block__editable');
+    switch (block.type) {
+      case 'text': case 'blockquote': {
+        const { plaintext, facets } = editable ? serializeEditable(editable) : { plaintext: '', facets: [] };
+        const out: Record<string, unknown> = { $type: `pub.leaflet.blocks.${block.type}`, plaintext };
+        if (facets.length) out.facets = facets;
+        return out;
+      }
+      case 'header': {
+        const { plaintext, facets } = editable ? serializeEditable(editable) : { plaintext: '', facets: [] };
+        const out: Record<string, unknown> = { $type: 'pub.leaflet.blocks.header', level: block.level || 2, plaintext };
+        if (facets.length) out.facets = facets;
+        return out;
+      }
+      case 'code': {
+        const out: Record<string, unknown> = { $type: 'pub.leaflet.blocks.code', plaintext: editable?.textContent || '' };
+        const language = element.querySelector<HTMLInputElement>('[data-field="language"]')?.value.trim();
+        if (language) out.language = language;
+        return out;
+      }
+      case 'unorderedList': case 'orderedList': {
+        const rows = [...element.querySelectorAll<HTMLElement>('.draft-block__item-editable')];
+        const children = rows.map((row) => {
+          const { plaintext, facets } = serializeEditable(row);
+          const content: Record<string, unknown> = { $type: 'pub.leaflet.blocks.text', plaintext };
+          if (facets.length) content.facets = facets;
+          return { content };
+        }).filter((item) => (item.content.plaintext as string).trim().length > 0);
+        if (!children.length) return undefined;
+        const out: Record<string, unknown> = { $type: `pub.leaflet.blocks.${block.type}`, children };
+        if (block.type === 'orderedList' && block.level) out.startIndex = block.level;
+        return out;
+      }
+      case 'horizontalRule': return { $type: 'pub.leaflet.blocks.horizontalRule' };
+      case 'image': {
+        if (!block.image || !block.aspectRatio) return undefined;
+        const alt = element.querySelector<HTMLInputElement>('[data-field="alt"]')?.value.trim();
+        const out: Record<string, unknown> = {
+          $type: 'pub.leaflet.blocks.image',
+          image: block.image,
+          aspectRatio: block.aspectRatio,
+        };
+        if (alt) out.alt = alt;
+        return out;
+      }
+      case 'button': {
+        const label = element.querySelector<HTMLInputElement>('[data-field="label"]')?.value.trim() || '';
+        const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || '';
+        if (!label || !url) return undefined;
+        return { $type: 'pub.leaflet.blocks.button', text: label, url };
+      }
+      case 'website': {
+        const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || '';
+        if (!url) return undefined;
+        const out: Record<string, unknown> = { $type: 'pub.leaflet.blocks.website', src: url };
+        const title = element.querySelector<HTMLInputElement>('[data-field="title"]')?.value.trim();
+        const description = element.querySelector<HTMLInputElement>('[data-field="description"]')?.value.trim();
+        if (title) out.title = title;
+        if (description) out.description = description;
+        return out;
+      }
+      case 'bskyPost': {
+        if (!block.postRef) return undefined;
+        const out: Record<string, unknown> = { $type: 'pub.leaflet.blocks.bskyPost', postRef: block.postRef };
+        out.clientHost = 'coffeencode.cc';
+        return out;
+      }
+      case 'math': {
+        const tex = element.querySelector<HTMLInputElement>('[data-field="tex"]')?.value.trim() || block.tex || '';
+        if (!tex) return undefined;
+        return { $type: 'pub.leaflet.blocks.math', tex };
+      }
+      default: return undefined;
+    }
+  }
+
+  const renderPreview = () => {
+    const title = titleInput.value.trim();
+    const description = descriptionInput.value.trim();
+    const parts: string[] = [];
+    if (state.coverObjectUrl) parts.push(`<img class="draft-preview__cover" src="${state.coverObjectUrl}" alt="">`);
+    parts.push(`<h1 class="draft-preview__title">${draftEscapeHtml(title || 'Untitled')}</h1>`);
+    if (description) parts.push(`<p class="draft-preview__description">${draftEscapeHtml(description)}</p>`);
+    let body = '';
+    for (const block of state.blocks) {
+      const element = state.blockElements.get(block.id);
+      if (!element) continue;
+      const align = block.alignment && block.alignment !== '#textAlignLeft'
+        ? ` style="text-align:${block.alignment.slice(10).toLowerCase()}"` : '';
+      const editable = element.querySelector<HTMLElement>('.draft-block__editable');
+      const rich = () => {
+        const { plaintext, facets } = editable ? serializeEditable(editable) : { plaintext: '', facets: [] };
+        return richTextToHtml(plaintext, facets);
+      };
+      switch (block.type) {
+        case 'text': body += `<p${align}>${rich()}</p>`; break;
+        case 'header': {
+          const level = Math.min(3, Math.max(1, block.level || 2));
+          body += `<h${level}${align}>${rich()}</h${level}>`;
+          break;
+        }
+        case 'blockquote': body += `<blockquote${align}>${rich()}</blockquote>`; break;
+        case 'code': body += `<pre><code>${draftEscapeHtml(editable?.textContent || '')}</code></pre>`; break;
+        case 'unorderedList': case 'orderedList': {
+          const tag = block.type === 'unorderedList' ? 'ul' : 'ol';
+          const rows = [...element.querySelectorAll<HTMLElement>('.draft-block__item-editable')]
+            .map((row) => {
+              const { plaintext, facets } = serializeEditable(row);
+              return `<li>${richTextToHtml(plaintext, facets)}</li>`;
+            }).join('');
+          body += `<${tag}${align}>${rows}</${tag}>`;
+          break;
+        }
+        case 'horizontalRule': body += '<hr>'; break;
+        case 'image': {
+          if (!block.imageObjectUrl) break;
+          const alt = element.querySelector<HTMLInputElement>('[data-field="alt"]')?.value.trim() || '';
+          body += `<figure><img src="${block.imageObjectUrl}" alt="${draftEscapeHtml(alt)}">${alt ? `<figcaption>${draftEscapeHtml(alt)}</figcaption>` : ''}</figure>`;
+          break;
+        }
+        case 'button': {
+          const label = element.querySelector<HTMLInputElement>('[data-field="label"]')?.value.trim() || 'Button';
+          const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || '#';
+          body += `<a class="draft-preview__button" href="${draftEscapeHtml(url)}">${draftEscapeHtml(label)}</a><br>`;
+          break;
+        }
+        case 'website': {
+          const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || '#';
+          const title = element.querySelector<HTMLInputElement>('[data-field="title"]')?.value.trim() || url;
+          const description = element.querySelector<HTMLInputElement>('[data-field="description"]')?.value.trim() || '';
+          body += `<a class="draft-preview__card" href="${draftEscapeHtml(url)}"><strong>${draftEscapeHtml(title)}</strong>${description ? `<span>${draftEscapeHtml(description)}</span>` : ''}<span>${draftEscapeHtml(url)}</span></a>`;
+          break;
+        }
+        case 'bskyPost': {
+          const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || block.url || '';
+          body += `<div class="draft-preview__embed"><i class="fa-brands fa-bluesky" aria-hidden="true"></i> Bluesky post${url ? ` — ${draftEscapeHtml(url)}` : ''}</div>`;
+          break;
+        }
+        case 'math': {
+          const tex = element.querySelector<HTMLInputElement>('[data-field="tex"]')?.value.trim() || '';
+          body += `<div class="draft-preview__math">${draftEscapeHtml(tex)}</div>`;
+          break;
+        }
+      }
+    }
+    parts.push(body || '<p class="draft-preview__empty">Start writing to see a preview.</p>');
+    previewEl.innerHTML = parts.join('');
+  }
+
+  let previewQueued = false;
+  const queuePreview = () => {
+    if (previewQueued) return;
+    previewQueued = true;
+    requestAnimationFrame(() => { previewQueued = false; renderPreview(); });
+  };
+  const changed = () => { markDirty(); queuePreview(); };
+
+  const caretAtStart = (editable: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !selection.isCollapsed) return false;
+    const range = selection.getRangeAt(0).cloneRange();
+    range.selectNodeContents(editable);
+    range.setEnd(selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset);
+    return range.toString().length === 0;
+  }
+
+  const placeCaretAtEnd = (editable: HTMLElement) => {
+    const range = document.createRange();
+    range.selectNodeContents(editable);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  const makeEditable = (block: DraftBlock, itemHtml = '', className = 'draft-block__editable') => {
+    const editable = document.createElement('div');
+    editable.className = className;
+    editable.contentEditable = 'true';
+    editable.dataset.placeholder = draftBlockLabel[block.type];
+    editable.innerHTML = itemHtml;
+    editable.addEventListener('input', changed);
+    editable.addEventListener('keydown', (event) => {
+      const element = editable.closest<HTMLElement>('[data-block-id]');
+      const owner = element ? blockFor(element) : undefined;
+      if (!element || !owner) return;
+      if (event.key === 'Enter' && !event.shiftKey && owner.type !== 'code') {
+        event.preventDefault();
+        const selection = window.getSelection();
+        const fragment = document.createDocumentFragment();
+        if (selection?.rangeCount) {
+          const range = selection.getRangeAt(0);
+          const post = range.cloneRange();
+          post.selectNodeContents(editable);
+          post.setStart(range.endContainer, range.endOffset);
+          post.deleteContents();
+          fragment.append(post.extractContents());
+        }
+        if (editable.classList.contains('draft-block__item-editable')) {
+          const row = document.createElement('div');
+          row.className = 'draft-block__item-row';
+          const next = makeEditable(owner, '', 'draft-block__editable draft-block__item-editable');
+          next.append(fragment);
+          row.append(next);
+          editable.closest('.draft-block__item-row')?.after(row);
+          placeCaretAtEnd(next);
+          next.focus();
+        } else {
+          const next = insertBlock({ id: crypto.randomUUID(), type: 'text' }, element);
+          const nextEditable = next.querySelector<HTMLElement>('.draft-block__editable');
+          nextEditable?.append(fragment);
+          if (nextEditable) { nextEditable.focus(); }
+        }
+        changed();
+        return;
+      }
+      if (event.key === 'Backspace' && selectionAtStart(editable)) {
+        if (editable.classList.contains('draft-block__item-editable')) {
+          const rows = element.querySelectorAll('.draft-block__item-editable');
+          if (rows.length <= 1) {
+            event.preventDefault();
+            convertBlock(element, 'text');
+            return;
+          }
+          const row = editable.closest<HTMLElement>('.draft-block__item-row');
+          const previous = row?.previousElementSibling?.querySelector<HTMLElement>('.draft-block__item-editable');
+          if (previous && (editable.textContent || '') === '') {
+            event.preventDefault();
+            row?.remove();
+            placeCaretAtEnd(previous);
+            previous.focus();
+            changed();
+          }
+          return;
+        }
+        const previous = element.previousElementSibling as HTMLElement | null;
+        if ((editable.textContent || '') === '') {
+          event.preventDefault();
+          if (state.blocks.length > 1) {
+            removeBlock(element);
+            const target = previous?.querySelector<HTMLElement>('.draft-block__editable:not(.draft-block__item-editable)')
+              || previous?.querySelector<HTMLElement>('.draft-block__item-editable');
+            if (target) { placeCaretAtEnd(target); target.focus(); }
+          }
+          return;
+        }
+        if (previous && caretAtStart(editable)) {
+          const previousEditable = previous.querySelector<HTMLElement>('.draft-block__editable:not(.draft-block__item-editable)')
+            || previous.querySelector<HTMLElement>('.draft-block__item-editable');
+          if (!previousEditable) return;
+          event.preventDefault();
+          const marker = previousEditable.childNodes.length;
+          previousEditable.append(...editable.childNodes);
+          removeBlock(element);
+          const range = document.createRange();
+          const target = previousEditable.childNodes[marker - 1] || previousEditable;
+          range.setStartAfter(target);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          previousEditable.focus();
+          changed();
+        }
+      }
+    });
+    const selectionAtStart = (el: HTMLElement) => {
+      const selection = window.getSelection();
+      if (!selection?.rangeCount || !selection.isCollapsed) return false;
+      return caretAtStart(el);
+    };
+    return editable;
+  };
+
+  const removeBlock = (element: HTMLElement) => {
+    const block = blockFor(element);
+    if (block) {
+      state.blocks = state.blocks.filter((item) => item !== block);
+      state.blockElements.delete(block.id);
+    }
+    element.remove();
+    changed();
+  }
+
+  const createField = (label: string, field: string, value: string, placeholder = '') => {
+    const input = document.createElement('input');
+    input.dataset.field = field;
+    input.value = value;
+    input.placeholder = placeholder || label;
+    input.setAttribute('aria-label', label);
+    input.addEventListener('input', changed);
+    return input;
+  }
+
+  const createBlockElement = (block: DraftBlock, innerHtml = ''): HTMLElement => {
+    const element = document.createElement('div');
+    element.className = 'draft-block';
+    element.dataset.blockId = block.id;
+    element.dataset.type = block.type;
+    if (block.level) element.dataset.level = String(block.level);
+    if (block.alignment) element.dataset.align = block.alignment;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'draft-block__remove';
+    remove.textContent = '×';
+    remove.title = 'Remove block';
+    remove.addEventListener('click', () => removeBlock(element));
+    element.append(remove);
+
+    if (DRAFT_TEXT_TYPES.includes(block.type)) {
+      element.append(makeEditable(block, innerHtml));
+      if (block.type === 'code') {
+        const language = createField('Code language (optional)', 'language', block.language || '', 'Language');
+        element.append(language);
+      }
+      return element;
+    }
+    if (block.type === 'unorderedList' || block.type === 'orderedList') {
+      const rows = innerHtml ? [innerHtml] : [''];
+      for (const html of rows) {
+        const row = document.createElement('div');
+        row.className = 'draft-block__item-row';
+        row.append(makeEditable(block, html, 'draft-block__editable draft-block__item-editable'));
+        element.append(row);
+      }
+      return element;
+    }
+    if (block.type === 'horizontalRule') {
+      const rule = document.createElement('hr');
+      rule.className = 'draft-block__hr';
+      element.append(rule);
+      return element;
+    }
+    const fields = document.createElement('div');
+    fields.className = 'draft-block__fields';
+    if (block.type === 'image') {
+      const preview = document.createElement('div');
+      preview.className = 'draft-block__image';
+      const show = (url?: string) => {
+        preview.replaceChildren();
+        if (url) {
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = '';
+          preview.append(img);
+        }
+      };
+      show(block.imageObjectUrl);
+      const file = document.createElement('input');
+      file.type = 'file';
+      file.accept = 'image/*';
+      file.setAttribute('aria-label', 'Block image');
+      file.addEventListener('change', async () => {
+        const picked = file.files?.[0];
+        if (!picked) return;
+        statusEl.textContent = 'Uploading image…';
+        try {
+          block.image = await uploadAuthorImage(picked);
+          const url = URL.createObjectURL(picked);
+          block.imageObjectUrl = url;
+          const dims = await new Promise<{ width: number; height: number }>((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+            img.onerror = () => resolve({ width: 1, height: 1 });
+            img.src = url;
+          });
+          block.aspectRatio = dims;
+          show(url);
+          statusEl.textContent = '';
+          changed();
+        } catch (error) {
+          statusEl.textContent = errorMessage(error);
+        }
+      });
+      const alt = createField('Alt text', 'alt', block.alt || '', 'Describe this image');
+      fields.append(file, preview, alt);
+      element.append(fields);
+      return element;
+    }
+    if (block.type === 'button') {
+      fields.append(
+        createField('Button text', 'label', block.label || '', 'Button text'),
+        createField('Button link URL', 'url', block.url || '', 'https://…'),
+      );
+      element.append(fields);
+      return element;
+    }
+    if (block.type === 'website') {
+      fields.append(
+        createField('Link URL', 'url', block.url || '', 'https://…'),
+        createField('Card title (optional)', 'title', block.title || '', 'Title'),
+        createField('Card description (optional)', 'description', block.description || '', 'Description'),
+      );
+      element.append(fields);
+      return element;
+    }
+    if (block.type === 'bskyPost') {
+      fields.append(createField('Bluesky post URL or at:// URI', 'url', block.url || '', 'https://bsky.app/profile/…/post/…'));
+      element.append(fields);
+      return element;
+    }
+    if (block.type === 'math') {
+      fields.append(createField('TeX expression', 'tex', block.tex || '', 'e = mc^2'));
+      element.append(fields);
+      return element;
+    }
+    return element;
+  }
+
+  const insertBlock = (block: DraftBlock, after: HTMLElement | undefined, innerHtml = ''): HTMLElement => {
+    const element = createBlockElement(block, innerHtml);
+    state.blockElements.set(block.id, element);
+    const index = state.blocks.length;
+    state.blocks.push(block);
+    if (after && after.parentElement === blocksEl) {
+      const afterBlock = blockFor(after);
+      if (afterBlock) {
+        const afterIndex = state.blocks.indexOf(afterBlock);
+        state.blocks.splice(index, 1);
+        state.blocks.splice(afterIndex + 1, 0, block);
+      }
+      after.after(element);
+    } else {
+      blocksEl.append(element);
+    }
+    return element;
+  }
+
+  const convertBlock = (element: HTMLElement, type: DraftBlockType, level?: number) => {
+    const block = blockFor(element);
+    if (!block) return;
+    const editable = element.querySelector<HTMLElement>('.draft-block__editable');
+    const html = editable?.innerHTML || '';
+    block.type = type;
+    block.level = level;
+    const replacement = createBlockElement(block, html);
+    state.blockElements.set(block.id, replacement);
+    element.replaceWith(replacement);
+    const target = replacement.querySelector<HTMLElement>('.draft-block__editable');
+    if (target) { target.focus(); placeCaretAtEnd(target); }
+    changed();
+  }
+
+  const toggleInlineCode = () => {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    const ancestor = range.commonAncestorContainer;
+    const host = ancestor instanceof HTMLElement ? ancestor : ancestor.parentElement;
+    const code = host?.closest('code');
+    if (code && code.parentElement) {
+      const parent = code.parentElement;
+      while (code.firstChild) parent.insertBefore(code.firstChild, code);
+      parent.removeChild(code);
+      parent.normalize();
+    } else {
+      const element = document.createElement('code');
+      try {
+        range.surroundContents(element);
+      } catch {
+        element.append(range.extractContents());
+        range.insertNode(element);
+      }
+    }
+    changed();
+  }
+
+  toolbar.addEventListener('mousedown', (event) => event.preventDefault());
+  toolbar.addEventListener('click', (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!button) return;
+    const command = button.dataset.cmd;
+    if (command === 'inlineCode') { toggleInlineCode(); return; }
+    if (command === 'link') {
+      const url = window.prompt('Link URL (leave empty to remove a link):');
+      if (url === null) return;
+      if (url.trim()) document.execCommand('createLink', false, url.trim());
+      else document.execCommand('unlink');
+      changed();
+      return;
+    }
+    if (command) {
+      document.execCommand(command);
+      changed();
+      return;
+    }
+    const align = button.dataset.align;
+    const current = currentBlockElement();
+    if (align) {
+      const block = current ? blockFor(current) : undefined;
+      if (block && current) {
+        block.alignment = block.alignment === align ? undefined : align;
+        current.dataset.align = block.alignment || '';
+        changed();
+      }
+      return;
+    }
+    const blockSpec = button.dataset.block;
+    if (!blockSpec) return;
+    const [type, level] = blockSpec.split(':') as [DraftBlockType, string?];
+    const structural: DraftBlockType[] = ['horizontalRule', 'image', 'button', 'website', 'bskyPost', 'math'];
+    if (DRAFT_TEXT_TYPES.includes(type) || type === 'unorderedList' || type === 'orderedList') {
+      if (current) convertBlock(current, type, level ? Number(level) : undefined);
+      else {
+        const element = insertBlock({ id: crypto.randomUUID(), type, level: level ? Number(level) : undefined }, undefined);
+        element.querySelector<HTMLElement>('.draft-block__editable')?.focus();
+      }
+      return;
+    }
+    if (structural.includes(type)) {
+      const block: DraftBlock = { id: crypto.randomUUID(), type };
+      const element = insertBlock(block, current);
+      element.querySelector('input')?.focus();
+      changed();
+    }
+  });
+
+  [titleInput, descriptionInput, tagsInput, publicationInput].forEach((input) => input.addEventListener('input', changed));
+  coverInput.addEventListener('change', async () => {
+    const picked = coverInput.files?.[0];
+    if (!picked) return;
+    statusEl.textContent = 'Uploading cover image…';
+    try {
+      state.cover = await uploadAuthorImage(picked);
+      if (state.coverObjectUrl) URL.revokeObjectURL(state.coverObjectUrl);
+      state.coverObjectUrl = URL.createObjectURL(picked);
+      coverRemoveInput.checked = false;
+      statusEl.textContent = '';
+      changed();
+    } catch (error) {
+      statusEl.textContent = errorMessage(error);
+    }
+  });
+  coverRemoveInput.addEventListener('change', () => {
+    if (coverRemoveInput.checked) {
+      state.cover = undefined;
+      if (state.coverObjectUrl) { URL.revokeObjectURL(state.coverObjectUrl); state.coverObjectUrl = undefined; }
+    }
+    changed();
+  });
+
+  const resolveBskyPostRef = async (input: string): Promise<{ uri: string; cid: string }> => {
+    let uri = input.trim();
+    const web = uri.match(/^https?:\/\/(?:www\.)?bsky\.app\/profile\/([^/]+)\/post\/([a-zA-Z0-9._~:-]+)/);
+    if (web) {
+      const profile: { did?: string } = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(web[1])}`)
+        .then(async (response): Promise<{ did?: string }> => response.ok ? await response.json() as { did?: string } : {});
+      if (!profile.did) throw new Error(`Could not resolve the Bluesky account "${web[1]}".`);
+      uri = `at://${profile.did}/app.bsky.feed.post/${web[2]}`;
+    }
+    if (!/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/app\.bsky\.feed\.post\/[a-zA-Z0-9._~:-]+$/.test(uri)) {
+      throw new Error('A Bluesky post block needs a bsky.app post link or an at:// post URI.');
+    }
+    const posts: { posts?: Array<{ cid?: string }> } = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts?uris=${encodeURIComponent(uri)}`)
+      .then(async (response): Promise<{ posts?: Array<{ cid?: string }> }> => response.ok ? await response.json() as { posts?: Array<{ cid?: string }> } : {});
+    const cid = posts.posts?.[0]?.cid;
+    if (!cid) throw new Error('That Bluesky post could not be found.');
+    return { uri, cid };
+  }
+
+  const serializeDraft = () => {
+    const document: Record<string, unknown> = {
+      $type: 'pub.leaflet.document',
+      author: did,
+      title: titleInput.value.trim() || 'Untitled',
+      pages: [{
+        $type: 'pub.leaflet.pages.linearDocument',
+        blocks: state.blocks.flatMap((block) => {
+          const element = state.blockElements.get(block.id);
+          if (!element) return [];
+          const serialized = serializeBlock(block, element);
+          if (!serialized) return [];
+          return [{ block: serialized, ...(block.alignment && block.alignment !== '#textAlignLeft' ? { alignment: block.alignment } : {}) }];
+        }),
+      }],
+    };
+    const description = descriptionInput.value.trim();
+    if (description) document.description = description;
+    const tags = tagsInput.value.split(',').map((tag) => tag.trim()).filter(Boolean).slice(0, 25);
+    if (tags.length) document.tags = tags;
+    const publication = publicationInput.value.trim();
+    if (publication) {
+      if (!/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/pub\.leaflet\.publication\/[a-zA-Z0-9._~:-]+$/.test(publication)) {
+        throw new Error('The publication must be an at:// URI of a pub.leaflet.publication record.');
+      }
+      document.publication = publication;
+    }
+    if (state.cover) document.coverImage = state.cover;
+    return document;
+  }
+
+  const sync = async (manual = false) => {
+    if (state.syncing) return;
+    state.syncing = true;
+    const versionAtStart = state.version;
+    saveButton.disabled = true;
+    statusEl.textContent = 'Syncing draft…';
+    try {
+      for (const block of state.blocks) {
+        if (block.type === 'bskyPost' && !block.postRef) {
+          const element = state.blockElements.get(block.id);
+          const input = element?.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim();
+          if (input) block.postRef = await resolveBskyPostRef(input);
+        }
+      }
+      const now = new Date().toISOString();
+      state.createdAt = state.createdAt || now;
+      await repoRequest('com.atproto.repo.putRecord', {
+        repo: did,
+        collection: DRAFT_COLLECTION,
+        rkey,
+        record: {
+          $type: DRAFT_COLLECTION,
+          createdAt: state.createdAt,
+          updatedAt: now,
+          document: serializeDraft(),
+        },
+      });
+      state.exists = true;
+      state.savedVersion = versionAtStart;
+      statusEl.textContent = `Synced at ${new Date().toLocaleTimeString(undefined, { timeStyle: 'short' })}.`;
+    } catch (error) {
+      statusEl.textContent = error instanceof Error ? error.message : 'The draft could not be synced.';
+      if (manual) throw error;
+    } finally {
+      state.syncing = false;
+      saveButton.disabled = false;
+    }
+  }
+
+  saveButton.addEventListener('click', () => { void sync(true).catch(() => {}); });
+  deleteButton.addEventListener('click', async () => {
+    if (!window.confirm('Delete this draft? This cannot be undone.')) return;
+    deleteButton.disabled = true;
+    try {
+      if (state.exists) {
+        await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: DRAFT_COLLECTION, rkey });
+      }
+      state.savedVersion = state.version;
+      window.location.assign('/account/author/draft');
+    } catch (error) {
+      statusEl.textContent = errorMessage(error);
+      deleteButton.disabled = false;
+    }
+  });
+  window.addEventListener('beforeunload', (event) => {
+    if (state.version !== state.savedVersion && !state.syncing) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
+  const timer = window.setInterval(() => {
+    if (state.version !== state.savedVersion) void sync();
+  }, DRAFT_SYNC_INTERVAL_MS);
+  window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
+
+  // Load the existing record (if any) and hydrate the editor.
+  try {
+    const query = new URLSearchParams({ repo: did, collection: DRAFT_COLLECTION, rkey });
+    const activeSession = requireSession();
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+    if (response.ok) {
+      const payload = await response.json() as { value?: Record<string, unknown> };
+      const value = payload.value;
+      if (session?.did !== did) return;
+      state.exists = true;
+      state.createdAt = typeof value?.createdAt === 'string' ? value.createdAt : undefined;
+      const doc = value?.document as Record<string, unknown> | undefined;
+      titleInput.value = typeof doc?.title === 'string' ? doc.title : '';
+      descriptionInput.value = typeof doc?.description === 'string' ? doc.description : '';
+      tagsInput.value = Array.isArray(doc?.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string').join(', ') : '';
+      publicationInput.value = typeof doc?.publication === 'string' ? doc.publication : '';
+      if (doc?.coverImage && typeof doc.coverImage === 'object') {
+        state.cover = doc.coverImage;
+        const cid = (doc.coverImage as { ref?: { $link?: unknown } }).ref?.$link;
+        if (typeof cid === 'string') {
+          const blobResponse = await activeSession.fetchHandler(`/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`);
+          if (blobResponse.ok) state.coverObjectUrl = URL.createObjectURL(await blobResponse.blob());
+        }
+      }
+      const pages = Array.isArray(doc?.pages) ? doc.pages : [];
+      const linear = pages.find((entry): entry is Record<string, unknown> => Boolean(entry)
+        && typeof entry === 'object' && (entry as Record<string, unknown>).$type === 'pub.leaflet.pages.linearDocument'
+        && Array.isArray((entry as Record<string, unknown>).blocks));
+      for (const wrapper of (linear?.blocks as Array<Record<string, unknown>> | undefined) || []) {
+        const raw = wrapper?.block as Record<string, unknown> | undefined;
+        if (!raw || typeof raw !== 'object') continue;
+        const alignment = typeof wrapper?.alignment === 'string' ? wrapper.alignment : undefined;
+        const model = draftBlockFromLeaflet(raw, alignment);
+        if (!model) continue;
+        let inner = '';
+        if (model.type === 'unorderedList' || model.type === 'orderedList') {
+          const flatten = (children: unknown): string[] => {
+            if (!Array.isArray(children)) return [];
+            return children.flatMap((child) => {
+              const item = child as { content?: { plaintext?: unknown; facets?: DraftFacet[] }; children?: unknown; orderedListChildren?: { children?: unknown }; unorderedListChildren?: { children?: unknown } };
+              const text = typeof item?.content?.plaintext === 'string'
+                ? richTextToHtml(item.content.plaintext, Array.isArray(item.content.facets) ? item.content.facets : undefined)
+                : '';
+              return [text, ...flatten(item?.children), ...flatten(item?.orderedListChildren?.children), ...flatten(item?.unorderedListChildren?.children)];
+            });
+          };
+          const rows = flatten((raw as { children?: unknown }).children);
+          insertBlock(model, undefined, rows[0] || '');
+          const element = state.blockElements.get(model.id)!;
+          for (const html of rows.slice(1)) {
+            const row = document.createElement('div');
+            row.className = 'draft-block__item-row';
+            row.append(makeEditable(model, html, 'draft-block__editable draft-block__item-editable'));
+            element.append(row);
+          }
+          continue;
+        }
+        if (DRAFT_TEXT_TYPES.includes(model.type) && typeof raw.plaintext === 'string') {
+          inner = model.type === 'code'
+            ? draftEscapeHtml(raw.plaintext)
+            : richTextToHtml(raw.plaintext, Array.isArray(raw.facets) ? raw.facets as DraftFacet[] : undefined);
+        }
+        if (model.type === 'image' && model.image && typeof model.image === 'object') {
+          const cid = (model.image as { ref?: { $link?: unknown } }).ref?.$link;
+          if (typeof cid === 'string') {
+            const blobResponse = await activeSession.fetchHandler(`/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`);
+            if (blobResponse.ok) model.imageObjectUrl = URL.createObjectURL(await blobResponse.blob());
+          }
+        }
+        insertBlock(model, undefined, inner);
+      }
+    } else {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      const missing = response.status === 404 || (response.status === 400 && payload?.error === 'RecordNotFound');
+      if (!missing) {
+        if (response.status === 401 || response.status === 403) {
+          statusEl.textContent = 'Your account needs author permissions for drafts. Sign out, then sign in again and approve the requested permissions.';
+          if (gate) gate.hidden = false;
+          return;
+        }
+        throw new Error(payload?.error || `Could not load the draft (${response.status}).`);
+      }
+    }
+  } catch (error) {
+    statusEl.textContent = error instanceof Error ? error.message : 'Could not load the draft.';
+    return;
+  }
+
+  if (!state.blocks.length) insertBlock({ id: crypto.randomUUID(), type: 'text' }, undefined);
+  state.savedVersion = state.version;
+  workspace.hidden = false;
+  statusEl.textContent = state.exists ? 'Draft loaded.' : 'New draft — it will sync automatically.';
+  renderPreview();
+}

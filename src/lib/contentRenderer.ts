@@ -11,7 +11,17 @@ function sanitizeContentHtml(html: string): string {
       'tr', 'th', 'td', 'sup', 'sub',
     ],
     allowedAttributes: {
-      a: ['href', 'name', 'target', 'rel', 'class'],
+      a: ['href', 'name', 'target', 'rel', 'class', 'id', 'aria-label'],
+      sup: ['id', 'class'],
+      li: ['id', 'class'],
+      ol: ['class', 'start'],
+      mark: ['class'],
+      del: ['class'],
+      span: ['class'],
+      h2: ['class', 'id'],
+      h3: ['class', 'id'],
+      h4: ['class', 'id'],
+      hr: ['class'],
       img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'decoding', 'class'],
       code: ['class'],
       pre: ['class'],
@@ -214,51 +224,155 @@ function safeLinkUrl(uri: unknown): string | undefined {
   return undefined;
 }
 
-function renderLeafletText(text: string, facets: any[] = []): string {
-  const linkRanges = facets
-    .map(facet => {
-      const feature = facet?.features?.find(
-        (candidate: any) => candidate?.$type === 'pub.leaflet.richtext.facet#link'
-      );
-      const href = safeLinkUrl(feature?.uri);
-      const byteStart = facet?.index?.byteStart;
-      const byteEnd = facet?.index?.byteEnd;
+export type LeafletFootnote = {
+  id: string;
+  number: number;
+  html: string;
+};
 
-      if (!href || !Number.isInteger(byteStart) || !Number.isInteger(byteEnd) || byteStart < 0 || byteEnd <= byteStart) {
-        return undefined;
-      }
+type LeafletSpanFeature =
+  | { kind: 'link'; href: string }
+  | { kind: 'bold' }
+  | { kind: 'italic' }
+  | { kind: 'code' }
+  | { kind: 'strikethrough' }
+  | { kind: 'underline' }
+  | { kind: 'highlight' };
 
-      return { byteStart, byteEnd, href };
-    })
-    .filter((range): range is { byteStart: number; byteEnd: number; href: string } => Boolean(range))
-    .sort((left, right) => left.byteStart - right.byteStart);
+function leafletSpanFeature(feature: any): LeafletSpanFeature | undefined {
+  const type = feature?.$type || '';
+  if (type === 'pub.leaflet.richtext.facet#link') {
+    const href = safeLinkUrl(feature?.uri);
+    return href ? { kind: 'link', href } : undefined;
+  }
+  if (type === 'pub.leaflet.richtext.facet#didMention') {
+    const did = typeof feature?.did === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(feature.did)
+      ? feature.did
+      : undefined;
+    return did ? { kind: 'link', href: `https://bsky.app/profile/${did}` } : undefined;
+  }
+  if (type === 'pub.leaflet.richtext.facet#bold') return { kind: 'bold' };
+  if (type === 'pub.leaflet.richtext.facet#italic') return { kind: 'italic' };
+  if (type === 'pub.leaflet.richtext.facet#code') return { kind: 'code' };
+  if (type === 'pub.leaflet.richtext.facet#strikethrough') return { kind: 'strikethrough' };
+  if (type === 'pub.leaflet.richtext.facet#underline') return { kind: 'underline' };
+  if (type === 'pub.leaflet.richtext.facet#highlight') return { kind: 'highlight' };
+  return undefined;
+}
 
-  if (!linkRanges.length) return escapeHtml(text);
-
+/**
+ * Renders Leaflet richtext plaintext with facets (links, mentions, formatting,
+ * footnotes). Facet byte ranges are mapped to character offsets so overlapping
+ * marks nest correctly. Footnote facets register markers in `footnotes` and
+ * emit <sup> references at their anchor position.
+ */
+export function renderLeafletText(text: string, facets: any[] = [], footnotes?: LeafletFootnote[]): string {
   const characters = Array.from(text);
+  if (!characters.length) {
+    if (footnotes) collectFacetFootnotes(facets, characters, 0, footnotes);
+    return '';
+  }
+
   const byteOffsets = [0];
   for (const character of characters) {
     byteOffsets.push(byteOffsets[byteOffsets.length - 1] + new TextEncoder().encode(character).length);
   }
-
   const indexForByteOffset = (offset: number): number => {
     const index = byteOffsets.indexOf(offset);
     return index >= 0 ? index : characters.length;
   };
 
-  let rendered = '';
-  let characterIndex = 0;
-  for (const range of linkRanges) {
-    const start = Math.max(characterIndex, indexForByteOffset(range.byteStart));
-    const end = Math.max(start, indexForByteOffset(range.byteEnd));
-    if (start > characterIndex) rendered += escapeHtml(characters.slice(characterIndex, start).join(''));
-    if (end > start) {
-      rendered += `<a href="${escapeHtml(range.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(characters.slice(start, end).join(''))}</a>`;
-      characterIndex = end;
+  const intervals: { start: number; end: number; feature: LeafletSpanFeature }[] = [];
+  const footnoteMarks: { position: number; feature: any }[] = [];
+  for (const facet of facets || []) {
+    const byteStart = facet?.index?.byteStart;
+    const byteEnd = facet?.index?.byteEnd;
+    if (!Number.isInteger(byteStart) || !Number.isInteger(byteEnd) || byteStart < 0 || byteEnd < byteStart) continue;
+    const start = Math.min(characters.length, indexForByteOffset(byteStart));
+    const end = Math.min(characters.length, indexForByteOffset(byteEnd));
+    for (const feature of facet?.features || []) {
+      const type = feature?.$type || '';
+      if (type === 'pub.leaflet.richtext.facet#footnote') {
+        footnoteMarks.push({ position: end > start ? end : start, feature });
+        continue;
+      }
+      const span = leafletSpanFeature(feature);
+      if (span && end > start) intervals.push({ start, end, feature: span });
     }
   }
 
-  return rendered + escapeHtml(characters.slice(characterIndex).join(''));
+  if (!intervals.length && !footnoteMarks.length) return escapeHtml(text);
+
+  const markersByPosition = new Map<number, any[]>();
+  for (const mark of footnoteMarks) {
+    const list = markersByPosition.get(mark.position) || [];
+    list.push(mark.feature);
+    markersByPosition.set(mark.position, list);
+  }
+
+  const emitMarkers = (position: number): string => {
+    const features = markersByPosition.get(position);
+    if (!features) return '';
+    return features.map((feature) => {
+      const id = typeof feature?.footnoteId === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(feature.footnoteId)
+        ? feature.footnoteId
+        : `n${(footnotes?.length || 0) + 1}`;
+      const contentText = typeof feature?.contentPlaintext === 'string' ? feature.contentPlaintext : '';
+      const contentHtml = renderLeafletText(contentText, feature?.contentFacets, footnotes);
+      const number = (footnotes?.length || 0) + 1;
+      footnotes?.push({ id, number, html: contentHtml });
+      return `<sup class="prose-footnote-ref" id="fnref-${number}"><a href="#fn-${number}" aria-label="Footnote ${number}">${number}</a></sup>`;
+    }).join('');
+  };
+
+  const boundaries = new Set<number>([0, characters.length]);
+  intervals.forEach(({ start, end }) => { boundaries.add(start); boundaries.add(end); });
+  markersByPosition.forEach((_value, position) => boundaries.add(position));
+  const sorted = [...boundaries].sort((a, b) => a - b);
+
+  const wrap = (html: string, feature: LeafletSpanFeature): string => {
+    switch (feature.kind) {
+      case 'link': return `<a href="${escapeHtml(feature.href)}" target="_blank" rel="noopener noreferrer">${html}</a>`;
+      case 'bold': return `<strong>${html}</strong>`;
+      case 'italic': return `<em>${html}</em>`;
+      case 'code': return `<code>${html}</code>`;
+      case 'strikethrough': return `<del>${html}</del>`;
+      case 'underline': return `<span class="prose-underline">${html}</span>`;
+      case 'highlight': return `<mark>${html}</mark>`;
+    }
+  };
+
+  let rendered = '';
+  for (let index = 0; index < sorted.length; index += 1) {
+    const position = sorted[index];
+    rendered += emitMarkers(position);
+    const next = sorted[index + 1];
+    if (next === undefined || next <= position) continue;
+    let segment = escapeHtml(characters.slice(position, next).join(''));
+    const active = intervals.filter((interval) => interval.start <= position && interval.end >= next);
+    const order = { highlight: 0, code: 1, italic: 2, strikethrough: 3, underline: 4, bold: 5, link: 6 } as const;
+    active.sort((a, b) => order[a.feature.kind] - order[b.feature.kind]);
+    for (const { feature } of active) segment = wrap(segment, feature);
+    rendered += segment;
+  }
+  return rendered;
+}
+
+function collectFacetFootnotes(facets: any[], characters: string[], position: number, footnotes: LeafletFootnote[]) {
+  for (const facet of facets || []) {
+    for (const feature of facet?.features || []) {
+      if (feature?.$type !== 'pub.leaflet.richtext.facet#footnote') continue;
+      const contentText = typeof feature?.contentPlaintext === 'string' ? feature.contentPlaintext : '';
+      const id = typeof feature?.footnoteId === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(feature.footnoteId)
+        ? feature.footnoteId
+        : `n${footnotes.length + 1}`;
+      footnotes.push({
+        id,
+        number: footnotes.length + 1,
+        html: renderLeafletText(contentText, feature?.contentFacets, footnotes),
+      });
+    }
+  }
 }
 
 /**
@@ -426,110 +540,172 @@ function renderLeafletEmbed(block: any, useSrcdoc = false): string {
   return `<iframe class="prose-embed" title="${escapeHtml(title)}" src="${escapeHtml(src)}" sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" loading="lazy" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen style="width:100%;${height}"></iframe>`;
 }
 
+function renderLeafletImage(item: any, defaultAlt: string): string {
+  const imageRef = item?.image?.ref?.$link;
+  if (!imageRef) return '';
+
+  const aspectRatio = item.aspectRatio;
+  const imageDid = item.image?.ref?.did || item.image?.did;
+  const safeImageUrl = imageDid
+    ? proxyBlobUrl({ did: imageDid, cid: imageRef })
+    : `/api/blob/${encodeURIComponent(imageRef)}`;
+  return `
+    <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
+      <img
+        src="${escapeHtml(safeImageUrl)}"
+        alt="${escapeHtml(item.alt || item.title || defaultAlt)}"
+        class="prose-image"
+        loading="lazy"
+      />
+    </figure>
+  `;
+}
+
+function leafletHeadingId(text: string, used: Set<string>): string | undefined {
+  const base = Array.from(text.toLowerCase())
+    .map((character) => (/[a-z0-9]/.test(character) ? character : '-'))
+    .join('')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64);
+  if (!base) return undefined;
+  let slug = base;
+  let suffix = 2;
+  while (used.has(slug)) {
+    slug = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(slug);
+  return slug;
+}
+
+function renderLeafletBlock(block: any, footnotes: LeafletFootnote[], headingIds: Set<string>): string {
+  const blockType = block?.$type || '';
+  const text = block?.plaintext || block?.text || '';
+
+  if (blockType === 'pub.leaflet.blocks.text') {
+    const sizeClass = block.textSize === 'large' ? ' prose-paragraph--large' : block.textSize === 'small' ? ' prose-paragraph--small' : '';
+    return `<p class="prose-paragraph${sizeClass}">${renderLeafletText(text, block.facets, footnotes)}</p>`;
+  }
+
+  if (blockType === 'pub.leaflet.blocks.header') {
+    const level = Math.min(4, Math.max(2, Number.isInteger(block.level) ? block.level + 1 : 2));
+    const id = leafletHeadingId(text, headingIds);
+    return `<h${level} class="prose-heading prose-heading--${level}"${id ? ` id="${id}"` : ''}>${renderLeafletText(text, block.facets, footnotes)}</h${level}>`;
+  }
+
+  if (blockType === 'pub.leaflet.blocks.blockquote') {
+    return `<blockquote class="prose-blockquote">${renderLeafletText(text, block.facets, footnotes)}</blockquote>`;
+  }
+
+  if (blockType === 'pub.leaflet.blocks.unorderedList' || blockType === 'pub.leaflet.blocks.orderedList') {
+    const tag = blockType === 'pub.leaflet.blocks.orderedList' ? 'ol' : 'ul';
+    const items = (block.children || [])
+      .map((item: any) => {
+        const content = item?.content;
+        const inner = content && typeof content === 'object'
+          ? content.$type === 'pub.leaflet.blocks.text'
+            ? renderLeafletText(content.plaintext || content.text || '', content.facets, footnotes)
+            : renderLeafletBlock(content, footnotes, headingIds)
+          : '';
+        const nested = Array.isArray(item?.children) && item.children.length
+          ? renderLeafletBlock({ $type: tag === 'ol' ? 'pub.leaflet.blocks.orderedList' : 'pub.leaflet.blocks.unorderedList', children: item.children }, footnotes, headingIds)
+          : '';
+        return inner || nested ? `<li>${inner}${nested}</li>` : '';
+      })
+      .filter(Boolean)
+      .join('');
+    return items ? `<${tag} class="prose-list">${items}</${tag}>` : '';
+  }
+
+  if (blockType === 'pub.leaflet.blocks.code') {
+    const language = typeof block.language === 'string' && /^[a-zA-Z0-9#+_-]{1,40}$/.test(block.language) ? block.language : '';
+    return `<pre class="prose-pre"><code${language ? ` class="language-${escapeHtml(language)}"` : ''}>${escapeHtml(text)}</code></pre>`;
+  }
+
+  if (blockType === 'pub.leaflet.blocks.image') {
+    return renderLeafletImage(block, 'Article image');
+  }
+
+  if (blockType === 'pub.leaflet.blocks.imageGallery') {
+    const images = (block.images || [])
+      .map((item: any) => renderLeafletImage(item, 'Article image'))
+      .filter(Boolean)
+      .join('');
+    return images
+      ? `<div class="prose-image-gallery" role="group" aria-label="Image gallery" tabindex="0">${images}</div>`
+      : '';
+  }
+
+  if (blockType === 'pub.leaflet.blocks.iframe') {
+    return renderLeafletEmbed(block);
+  }
+
+  if (blockType === 'pub.leaflet.blocks.html') {
+    return renderLeafletEmbed(block, true);
+  }
+
+  if (blockType === 'pub.leaflet.blocks.horizontalRule') {
+    return '<hr class="prose-rule">';
+  }
+
+  if (blockType === 'pub.leaflet.blocks.button') {
+    const href = safeLinkUrl(block.url);
+    const label = text || block.text || href;
+    if (!href || !label) return '';
+    return `<p class="prose-button-row"><a class="prose-button" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(String(label))}</a></p>`;
+  }
+
+  if (blockType === 'pub.leaflet.blocks.bskyPost') {
+    const uri = typeof block.postRef?.uri === 'string' ? block.postRef.uri : '';
+    const match = uri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/);
+    if (!match) return '';
+    const href = `https://bsky.app/profile/${encodeURIComponent(match[1])}/post/${encodeURIComponent(match[2])}`;
+    return `<p class="prose-paragraph"><a href="${href}" target="_blank" rel="noopener noreferrer">View post on Bluesky</a></p>`;
+  }
+
+  // Fallback for text-bearing blocks (math, captions, unknown text blocks).
+  if (text) {
+    return `<p class="prose-paragraph">${renderLeafletText(text, block.facets, footnotes)}</p>`;
+  }
+
+  return '';
+}
+
+/**
+ * Renders Leaflet document format (pub.leaflet.content) into prose HTML and
+ * collects footnotes (pub.leaflet.richtext.facet#footnote) in reading order.
+ */
+export function renderLeafletDocument(content: string | object): { html: string; footnotes: LeafletFootnote[] } {
+  const footnotes: LeafletFootnote[] = [];
+  try {
+    const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+    if (parsed.$type !== 'pub.leaflet.content' || !Array.isArray(parsed.pages)) {
+      return { html: '', footnotes };
+    }
+    const headingIds = new Set<string>();
+    const html = parsed.pages
+      .map((page: any) => (Array.isArray(page?.blocks) ? page.blocks : [])
+        .map((blockWrapper: any) => renderLeafletBlock(blockWrapper?.block || blockWrapper, footnotes, headingIds))
+        .filter(Boolean)
+        .join(''))
+      .join('');
+    return { html, footnotes };
+  } catch (error) {
+    console.error('Leaflet rendering error:', error);
+    return { html: '', footnotes };
+  }
+}
+
 /**
  * Renders Leaflet document format (pub.leaflet.content)
  */
 export function renderLeaflet(content: string): string {
-  try {
-    const parsed = typeof content === 'string' ? JSON.parse(content) : content;
-
-    // Handle Leaflet content format
-    if (parsed.$type === 'pub.leaflet.content' && parsed.pages && Array.isArray(parsed.pages)) {
-      return parsed.pages
-        .map((page: any) => {
-          if (!page.blocks || !Array.isArray(page.blocks)) return '';
-
-          return page.blocks
-            .map((blockWrapper: any) => {
-              const block = blockWrapper.block || blockWrapper;
-              const blockType = block.$type || '';
-
-              // Handle Leaflet text blocks
-              if (blockType === 'pub.leaflet.blocks.text') {
-                const text = block.plaintext || block.text || '';
-                return `<p class="prose-paragraph">${renderLeafletText(text, block.facets)}</p>`;
-              }
-
-              // Handle Leaflet blockquote blocks
-              if (blockType === 'pub.leaflet.blocks.blockquote') {
-                const text = block.plaintext || block.text || '';
-                return `<blockquote>${escapeHtml(text).replace(/\n/g, '<br>')}</blockquote>`;
-              }
-
-              // Handle Leaflet image blocks
-              if (blockType === 'pub.leaflet.blocks.image') {
-                const imageRef = block.image?.ref?.$link;
-                if (!imageRef) return '';
-
-                const aspectRatio = block.aspectRatio;
-                const imageDid = block.image?.ref?.did || block.image?.did;
-                const safeImageUrl = imageDid
-                  ? proxyBlobUrl({ did: imageDid, cid: imageRef })
-                  : `/api/blob/${encodeURIComponent(imageRef)}`;
-
-                return `
-                  <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
-                    <img
-                      src="${escapeHtml(safeImageUrl)}"
-                      alt="${escapeHtml(block.alt || block.title || 'Article image')}"
-                      class="prose-image"
-                      loading="lazy"
-                    />
-                  </figure>
-                `;
-              }
-
-              if (blockType === 'pub.leaflet.blocks.imageGallery') {
-                const images = (block.images || [])
-                  .map((item: any) => {
-                    const imageRef = item.image?.ref?.$link;
-                    if (!imageRef) return '';
-
-                    const aspectRatio = item.aspectRatio;
-                    const imageDid = item.image?.ref?.did || item.image?.did;
-                    const safeImageUrl = imageDid
-                      ? proxyBlobUrl({ did: imageDid, cid: imageRef })
-                      : `/api/blob/${encodeURIComponent(imageRef)}`;
-                    return `
-                      <figure class="prose-image-figure" style="aspect-ratio: ${aspectRatio?.width || 16}/${aspectRatio?.height || 9}">
-                        <img
-                          src="${escapeHtml(safeImageUrl)}"
-                          alt="${escapeHtml(item.alt || 'Article image')}"
-                          class="prose-image"
-                          loading="lazy"
-                        />
-                      </figure>
-                    `;
-                  })
-                  .filter(Boolean)
-                  .join('');
-
-                return images
-                  ? `<div class="prose-image-gallery" role="group" aria-label="Image gallery" tabindex="0">${images}</div>`
-                  : '';
-              }
-
-              if (blockType === 'pub.leaflet.blocks.iframe') {
-                return renderLeafletEmbed(block);
-              }
-
-              if (blockType === 'pub.leaflet.blocks.html') {
-                return renderLeafletEmbed(block, true);
-              }
-
-              return '';
-            })
-            .filter(Boolean)
-            .join('');
-        })
-        .join('');
-    }
-
-    return '';
-  } catch (error) {
-    console.error('Leaflet rendering error:', error);
-    return '';
-  }
+  const { html, footnotes } = renderLeafletDocument(content);
+  const notes = footnotes.length
+    ? `<ol class="prose-footnotes">${footnotes.map((note) => `<li id="fn-${note.number}">${note.html} <a class="prose-footnote-back" href="#fnref-${note.number}" aria-label="Back to reference ${note.number}">↩</a></li>`).join('')}</ol>`
+    : '';
+  return html + notes;
 }
 
 /**

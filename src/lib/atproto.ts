@@ -340,6 +340,98 @@ async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{
   };
 }
 
+export type PublicationInfo = {
+  uri: string;
+  name: string;
+  description?: string;
+  url?: string;
+  icon?: string;
+};
+
+/**
+ * Reads a site.standard.publication record for display details.
+ */
+export async function fetchPublicationInfo(publicationUri: string, fallbackPds: string): Promise<PublicationInfo | undefined> {
+  return getEdgeCachedValue('publication', publicationUri, 300, async () => {
+    const match = publicationUri.match(/^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/site\.standard\.publication\/([a-zA-Z0-9._~:-]+)$/);
+    if (!match) return undefined;
+    const [, did, rkey] = match;
+    const pdsUrl = await getPdsEndpoint(did, fallbackPds);
+    const record = await fetchRecord(pdsUrl, did, 'site.standard.publication', rkey);
+    const value = record?.value;
+    if (!isRecord(value)) return undefined;
+    const iconCid = isRecord(value.icon) && isRecord(value.icon.ref) && typeof value.icon.ref.$link === 'string'
+      ? value.icon.ref.$link
+      : undefined;
+    return {
+      uri: publicationUri,
+      name: typeof value.name === 'string' && value.name ? value.name : 'Publication',
+      description: typeof value.description === 'string' ? value.description : undefined,
+      url: typeof value.url === 'string' && /^https?:\/\//.test(value.url) ? value.url : undefined,
+      icon: iconCid ? `${pdsUrl}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(iconCid)}` : undefined,
+    };
+  });
+}
+
+/**
+ * Lists site.standard.document records belonging to one publication,
+ * without requiring it to be in the site's configured publications list.
+ * Documents get local paths under /docs/<rkey>.
+ */
+export async function fetchPublicationDocuments(publicationUri: string, fallbackPds: string): Promise<StandardDocument[]> {
+  return getEdgeCachedValue('pubdocs', publicationUri, 120, () =>
+    fetchPublicationDocumentsUncached(publicationUri, fallbackPds));
+}
+
+async function fetchPublicationDocumentsUncached(publicationUri: string, fallbackPds: string): Promise<StandardDocument[]> {
+  const match = publicationUri.match(/^at:\/\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)\/site\.standard\.publication\/([a-zA-Z0-9._~:-]+)$/);
+  if (!match) return [];
+  const [, did] = match;
+  const pdsUrl = await getPdsEndpoint(did, fallbackPds);
+  const documents: StandardDocument[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page += 1) {
+    let response: Response;
+    try {
+      response = await fetchWithRetry(recordsUrl(pdsUrl, did, 'site.standard.document', 100, cursor).toString());
+    } catch (error) {
+      console.error('Error listing publication documents:', error);
+      break;
+    }
+    if (!response.ok) break;
+    const data: any = await response.json();
+    const records = Array.isArray(data.records) ? data.records : [];
+    for (const rec of records) {
+      if (!rec?.value || rec.value.site !== publicationUri) continue;
+      const rkey = rec.uri ? String(rec.uri).split('/').pop() || '' : '';
+      if (!rkey) continue;
+      const { content, format, mimeType } = extractDocumentContent(rec.value);
+      documents.push({
+        uri: rec.uri || '',
+        cid: rec.cid || '',
+        rkey,
+        title: typeof rec.value.title === 'string' && rec.value.title ? rec.value.title : 'Untitled',
+        content,
+        publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+        tags: documentTags(rec.value.tags),
+        path: `/docs/${encodeURIComponent(rkey)}`,
+        description: rec.value.description || rec.value.summary || '',
+        cover: documentCoverUrl(rec.value, content, did, pdsUrl),
+        format,
+        mimeType,
+        record: rec.value,
+        repoDid: did,
+        pdsUrl,
+        publicationUri,
+      });
+    }
+    cursor = typeof data.cursor === 'string' && data.cursor && records.length >= 100 ? data.cursor : undefined;
+    if (!cursor) break;
+  }
+  documents.sort((a, b) => a.title.localeCompare(b.title));
+  return documents;
+}
+
 export async function fetchArticles(
   fallbackPds: string,
   fallbackDid: string,

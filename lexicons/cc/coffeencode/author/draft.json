@@ -1,0 +1,33 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.author.draft",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "createdAt",
+          "updatedAt",
+          "document"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "document": {
+            "type": "unknown",
+            "description": "A pub.leaflet.document-shaped draft. Its pages use pub.leaflet.pages.linearDocument and pub.leaflet.blocks.* blocks so the draft can be published as a Leaflet document."
+          }
+        }
+      },
+      "description": "A working draft of a post, stored as a Leaflet document."
+    }
+  }
+}
