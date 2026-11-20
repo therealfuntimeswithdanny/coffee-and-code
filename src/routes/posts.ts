@@ -122,7 +122,7 @@ async function renderPost(
   };
 
   const articleDescription = getDescription();
-  const articleSubtitle = articleDescription?.trim() || '';
+  const articleSubtitle = typeof post.description === 'string' ? post.description.trim() : '';
   const tagLinks = (post.tags || []).map((tag) => `
     <a class="article-tag" href="/tags?tag=${encodeURIComponent(tag)}">${escapeHtml(tag)}</a>`).join('');
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
