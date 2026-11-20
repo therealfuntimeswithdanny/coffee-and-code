@@ -667,24 +667,41 @@ pages.get('/account/author', (c) => {
 
 const draftEditorStyles = `
   <style>
-    .draft-editor-page { max-width: 1400px; }
+    .draft-editor-page { --doc-canvas: #1c110c; --doc-page: var(--paper); --doc-width: 860px; max-width: 1400px; }
     .draft-editor-page__bar { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
     .draft-editor-page__bar .read-link { font-size: 14px; }
     .draft-editor-page__status { color: var(--muted); font-size: 13px; margin-left: auto; }
     .draft-editor-page__actions { display: flex; gap: 8px; }
-    .draft-editor__grid { display: grid; gap: 26px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-    @media (max-width: 900px) { .draft-editor__grid { grid-template-columns: 1fr; } }
-    .draft-editor__edit { min-width: 0; }
-    .draft-editor__meta { background: var(--paper); border: 1px solid var(--line); margin-bottom: 16px; }
-    .draft-editor__meta summary { color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .08em; padding: 9px 18px; text-transform: uppercase; }
-    .draft-editor__meta summary:hover { color: var(--ink); }
-    .draft-editor__meta[open] summary { border-bottom: 1px solid var(--line); }
-    .draft-editor__meta-doc { display: grid; gap: 14px; padding: 18px; }
-    .draft-editor__meta-title { background: transparent; border: 0; border-bottom: 1px solid transparent; font-family: Lora, serif; font-size: 27px; font-weight: 700; line-height: 1.2; padding: 2px 0 6px; width: 100%; }
-    .draft-editor__meta-title:focus { border-bottom-color: var(--line-strong); outline: none; }
-    .draft-editor__meta-title::placeholder, .draft-editor__meta-description::placeholder { color: var(--muted); opacity: .6; }
-    .draft-editor__meta-description { background: transparent; border: 0; border-bottom: 1px solid transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1.5; padding: 0 0 6px; resize: vertical; width: 100%; }
-    .draft-editor__meta-description:focus { border-bottom-color: var(--line-strong); color: var(--ink); outline: none; }
+    .draft-preview-toggle { position: absolute; opacity: 0; pointer-events: none; }
+    .draft-preview-toggle__btn { align-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--accent); cursor: pointer; display: inline-flex; font-size: 12px; font-weight: 700; gap: 7px; letter-spacing: .08em; min-height: 34px; padding: 6px 14px; text-transform: uppercase; }
+    .draft-preview-toggle__btn:hover { color: var(--ink); }
+    .draft-preview-toggle:checked ~ .draft-editor-page__bar .draft-preview-toggle__btn { background: var(--accent); color: var(--paper); }
+    .draft-editor__grid { background: var(--doc-canvas); border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); padding: 14px clamp(8px, 3vw, 28px) 48px; }
+    .draft-preview { display: none; }
+    .draft-preview-toggle:checked ~ .draft-editor__grid { gap: 28px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .draft-preview-toggle:checked ~ .draft-editor__grid .draft-preview { display: block; }
+    @media (max-width: 900px) { .draft-preview-toggle:checked ~ .draft-editor__grid { grid-template-columns: 1fr; } }
+    .draft-toolbar { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); display: flex; flex-wrap: wrap; gap: 2px; grid-column: 1 / -1; justify-content: center; margin: 4px auto 18px; padding: 6px 10px; position: sticky; top: 88px; width: fit-content; max-width: 100%; z-index: 50; }
+    @media (max-width: 760px) { .draft-toolbar { top: 70px; } }
+    .draft-toolbar button { background: transparent; border: 0; border-radius: 6px; color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; min-height: 32px; min-width: 32px; padding: 4px 8px; }
+    .draft-toolbar button:hover { background: var(--paper); }
+    .draft-toolbar button[aria-pressed="true"] { background: var(--paper); color: var(--accent); }
+    .draft-toolbar__sep { border-left: 1px solid var(--line); height: 22px; margin: 0 4px; }
+    .draft-editor__meta { min-width: 0; }
+    .draft-editor__doc-settings { margin: 0 auto 22px; max-width: var(--doc-width); }
+    .draft-editor__doc-settings summary { border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .08em; list-style: none; padding: 10px 16px; text-align: center; text-transform: uppercase; }
+    .draft-editor__doc-settings summary::-webkit-details-marker { display: none; }
+    .draft-editor__doc-settings summary::before { content: '⚙ '; }
+    .draft-editor__doc-settings summary:hover { border-color: var(--line-strong); color: var(--ink); }
+    .draft-editor__doc-settings[open] summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-style: solid; }
+    .draft-editor__doc-body { border: 1px solid var(--line); border-top: 0; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; display: grid; gap: 14px; padding: 18px; }
+    .draft-editor__meta-doc { display: contents; }
+    .draft-editor__sheet { background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); margin: 0 auto; max-width: var(--doc-width); min-height: 70vh; padding: clamp(24px, 6vw, 68px) clamp(20px, 8vw, 88px); }
+    .draft-editor__meta-title { background: transparent; border: 0; color: var(--ink); font-family: Lora, serif; font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; padding: 0 0 10px; width: 100%; }
+    .draft-editor__meta-title:focus { outline: none; }
+    .draft-editor__meta-title::placeholder, .draft-editor__meta-description::placeholder { color: var(--muted); opacity: .55; }
+    .draft-editor__meta-description { background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--muted); font: inherit; font-size: 16px; line-height: 1.5; margin-bottom: 22px; padding: 0 0 14px; resize: none; width: 100%; }
+    .draft-editor__meta-description:focus { color: var(--ink); outline: none; }
     .draft-editor__meta-grid { column-gap: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); row-gap: 12px; }
     .draft-editor__meta-grid label, .draft-editor__meta-sources label { color: var(--muted); display: grid; font-size: 11px; font-weight: 700; gap: 4px; letter-spacing: .06em; text-transform: uppercase; }
     .draft-editor__meta-grid input, .draft-editor__meta-grid select, .draft-editor__meta-sources input, .draft-editor__meta-sources textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font: inherit; font-size: 14px; letter-spacing: normal; padding: 7px 10px; text-transform: none; }
@@ -695,15 +712,10 @@ const draftEditorStyles = `
     .draft-editor__meta-sources h2 { font-size: 15px; margin: 0; }
     .draft-editor__meta-hint { color: var(--muted); font-size: 13px; margin: 0; }
     .draft-editor__meta-sources textarea { resize: vertical; }
-    .draft-toolbar { align-items: center; border: 1px solid var(--line); border-bottom: 0; display: flex; flex-wrap: wrap; gap: 2px; padding: 6px; position: sticky; top: 0; background: var(--paper); z-index: 2; }
-    .draft-toolbar button { background: transparent; border: 0; color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; min-height: 32px; min-width: 32px; padding: 4px 8px; }
-    .draft-toolbar button:hover { background: var(--paper-deep); }
-    .draft-toolbar button[aria-pressed="true"] { background: var(--paper-deep); color: var(--accent); }
-    .draft-toolbar__sep { border-left: 1px solid var(--line); height: 22px; margin: 0 4px; }
-    .draft-blocks { border: 1px solid var(--line); min-height: 300px; padding: 10px 12px; }
+    .draft-blocks { min-height: 40vh; }
     .draft-block { border-radius: 4px; margin: 2px 0; padding: 4px 6px; position: relative; }
     .draft-block:hover { background: var(--paper-deep); }
-    .draft-block__editable { min-height: 1.4em; outline: none; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .draft-block__editable { min-height: 1.4em; outline: none; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.7; }
     .draft-block__editable:empty::before { color: var(--muted); content: attr(data-placeholder); pointer-events: none; }
     .draft-block[data-type="header"] .draft-block__editable { font-family: Lora, serif; font-weight: 700; line-height: 1.2; }
     .draft-block[data-level="1"] .draft-block__editable { font-size: 30px; }
@@ -724,7 +736,7 @@ const draftEditorStyles = `
     .draft-block__hr { border: 0; border-top: 1px solid var(--line-strong); margin: 12px 0; }
     .draft-block__image img { display: block; max-width: 100%; }
     .draft-editor__add { margin-top: 10px; }
-    .draft-preview { background: var(--paper); border: 1px solid var(--line); min-width: 0; padding: 26px; }
+    .draft-preview { align-self: start; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); margin-top: 52px; min-width: 0; padding: 30px; position: sticky; top: 150px; }
     .draft-preview h1.draft-preview__title { font-family: Lora, serif; font-size: 34px; line-height: 1.15; margin: 0 0 8px; overflow-wrap: anywhere; }
     .draft-preview__description { color: var(--muted); margin: 0 0 18px; }
     .draft-preview__cover { display: block; margin-bottom: 18px; max-width: 100%; }
@@ -779,8 +791,10 @@ pages.get('/account/author/draft/:rkey', (c) => {
   }
   const inner = `
     <section class="draft-editor-page" data-draft-editor data-draft-rkey="${escapeHtml(rkey)}" aria-labelledby="draft-editor-title">
+      <input type="checkbox" id="draft-preview-toggle" class="draft-preview-toggle" aria-hidden="true" tabindex="-1">
       <div class="draft-editor-page__bar">
         <a class="read-link" href="/account/author/draft"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All drafts</a>
+        <label class="draft-preview-toggle__btn" for="draft-preview-toggle"><i class="fa-solid fa-eye" aria-hidden="true"></i> Preview</label>
         <span class="draft-editor-page__status" data-draft-status role="status" aria-live="polite">Loading draft…</span>
         <a class="read-link" data-draft-published-link hidden target="_blank" rel="noopener">Published <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
         <div class="draft-editor-page__actions">
@@ -791,27 +805,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
       </div>
       <h1 id="draft-editor-title" class="visually-hidden">Edit draft</h1>
       <div class="draft-editor__grid" data-draft-workspace hidden>
-        <div class="draft-editor__edit">
-          <details class="draft-editor__meta" open>
-            <summary>Story details</summary>
-            <div class="draft-editor__meta-doc">
-              <input class="draft-editor__meta-title" name="draft-title" type="text" maxlength="5000" placeholder="Untitled story" aria-label="Title" data-draft-field="title">
-              <textarea class="draft-editor__meta-description" name="draft-description" rows="2" maxlength="30000" placeholder="Add a short description…" aria-label="Description" data-draft-field="description"></textarea>
-              <div class="draft-editor__meta-grid">
-                <label>Tags<input name="draft-tags" placeholder="coffee, code, …" data-draft-field="tags"></label>
-                <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
-                <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
-                <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
-              </div>
-              <section class="draft-editor__meta-sources" aria-labelledby="draft-sources-heading">
-                <h2 id="draft-sources-heading"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Sources</h2>
-                <p class="draft-editor__meta-hint">These become the sources card shown alongside your published story.</p>
-                <label>Source links — one URL per line<textarea name="draft-sources" rows="3" placeholder="https://example.com/article" data-draft-field="sources"></textarea></label>
-                <label>Source document — URL or at:// URI (optional)<input name="draft-backlink" type="text" placeholder="https://docs.google.com/… or at://did:plc:…" data-draft-field="backlink"></label>
-              </section>
-            </div>
-          </details>
-          <div class="draft-toolbar" role="toolbar" aria-label="Formatting" data-draft-toolbar>
+        <div class="draft-toolbar" role="toolbar" aria-label="Formatting" data-draft-toolbar>
             <button type="button" data-cmd="bold" title="Bold" aria-label="Bold"><i class="fa-solid fa-bold" aria-hidden="true"></i></button>
             <button type="button" data-cmd="italic" title="Italic" aria-label="Italic"><i class="fa-solid fa-italic" aria-hidden="true"></i></button>
             <button type="button" data-cmd="underline" title="Underline" aria-label="Underline"><i class="fa-solid fa-underline" aria-hidden="true"></i></button>
@@ -840,7 +834,29 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <button type="button" data-align="#textAlignRight" title="Align right" aria-label="Align right"><i class="fa-solid fa-align-right" aria-hidden="true"></i></button>
             <button type="button" data-align="#textAlignJustify" title="Justify" aria-label="Justify"><i class="fa-solid fa-align-justify" aria-hidden="true"></i></button>
           </div>
-          <div class="draft-blocks" data-draft-blocks></div>
+        <div class="draft-editor__meta">
+          <details class="draft-editor__doc-settings">
+            <summary>Document settings — tags, cover &amp; sources</summary>
+            <div class="draft-editor__doc-body">
+              <div class="draft-editor__meta-grid">
+                <label>Tags<input name="draft-tags" placeholder="coffee, code, …" data-draft-field="tags"></label>
+                <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
+                <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
+                <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
+              </div>
+              <section class="draft-editor__meta-sources" aria-labelledby="draft-sources-heading">
+                <h2 id="draft-sources-heading"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Sources</h2>
+                <p class="draft-editor__meta-hint">These become the sources card shown alongside your published story.</p>
+                <label>Source links — one URL per line<textarea name="draft-sources" rows="3" placeholder="https://example.com/article" data-draft-field="sources"></textarea></label>
+                <label>Source document — URL or at:// URI (optional)<input name="draft-backlink" type="text" placeholder="https://docs.google.com/… or at://did:plc:…" data-draft-field="backlink"></label>
+              </section>
+            </div>
+          </details>
+          <div class="draft-editor__sheet">
+            <input class="draft-editor__meta-title" name="draft-title" type="text" maxlength="5000" placeholder="Untitled story" aria-label="Title" data-draft-field="title">
+            <textarea class="draft-editor__meta-description" name="draft-description" rows="2" maxlength="30000" placeholder="Add a short description…" aria-label="Description" data-draft-field="description"></textarea>
+            <div class="draft-blocks" data-draft-blocks></div>
+          </div>
         </div>
         <article class="draft-preview" data-draft-preview aria-label="Draft preview"></article>
       </div>

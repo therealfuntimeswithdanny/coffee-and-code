@@ -5969,10 +5969,13 @@ async function loadDraftEditor(did: string) {
           author: did,
           content: { $type: 'pub.leaflet.content', pages: draftDocument.pages },
         };
-        if (typeof draftDocument.description === 'string') standardRecord.description = draftDocument.description;
+        const textContent = draftPlainText(draftDocument.pages);
+        const description = typeof draftDocument.description === 'string' && draftDocument.description.trim()
+          ? draftDocument.description.trim()
+          : textContent.slice(0, 300).trim();
+        if (description) standardRecord.description = description;
         if (Array.isArray(draftDocument.tags)) standardRecord.tags = draftDocument.tags;
         if (draftDocument.coverImage) standardRecord.coverImage = draftDocument.coverImage;
-        const textContent = draftPlainText(draftDocument.pages);
         if (textContent) standardRecord.textContent = textContent;
         const standardResponse = await repoRequest('com.atproto.repo.createRecord', {
           repo: did,
