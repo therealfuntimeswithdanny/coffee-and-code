@@ -93,7 +93,7 @@ home.get('/', async (c) => {
   const pinnedHtml = pinnedForHome.length ? `<section class="home-pinned" aria-labelledby="home-pinned-title">
     <div class="section-heading"><span id="home-pinned-title">Pinned stories</span></div>
     <div class="home-pinned__grid">${pinnedForHome.map((post) => {
-      const pinnedDek = post.cover ? '' : excerpt(post, 140);
+      const pinnedDek = post.cover ? '' : excerpt(post, 100);
       return `
       <article class="home-pinned__card${post.cover ? '' : ' home-pinned__card--no-cover'}">
         ${post.cover ? `<a class="home-pinned__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
@@ -108,7 +108,7 @@ home.get('/', async (c) => {
     ? sidePosts
         .map(
           (post) => {
-            const sideDek = post.cover ? '' : excerpt(post, 110);
+            const sideDek = post.cover ? '' : excerpt(post, 100);
             return `
             <article class="side-story${post.cover ? '' : ' side-story--no-cover'}">
               ${post.cover ? `<a class="side-story__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
@@ -136,7 +136,7 @@ home.get('/', async (c) => {
           <div>
             <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
             ${authorByline(post)}
-            ${excerpt(post, 130) ? `<p>${excerpt(post, 130)}</p>` : ''}
+            ${excerpt(post, 100) ? `<p>${excerpt(post, 100)}</p>` : ''}
           </div>
           <div class="archive-story__footer">${articleMeta(post)} <a href="${escapeHtml(post.path)}" class="read-link">Read <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </article>`
