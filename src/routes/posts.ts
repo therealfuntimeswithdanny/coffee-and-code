@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, fetchArticleByPath, fetchPostMetadata, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
-import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, descriptionText, readingTimeMinutes } from '../lib/contentRenderer';
+import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, readingTimeMinutes } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
 
 const posts = new Hono<{ Bindings: Env }>();
@@ -116,12 +116,6 @@ async function renderPost(
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-  // Auto-generate description from content if missing
-  const getDescription = () => {
-    return descriptionText(post.description, post.content);
-  };
-
-  const articleDescription = getDescription();
   const articleSubtitle = typeof post.description === 'string' ? post.description.trim() : '';
   const tagLinks = (post.tags || []).map((tag) => `
     <a class="article-tag" href="/tags?tag=${encodeURIComponent(tag)}">${escapeHtml(tag)}</a>`).join('');
@@ -130,7 +124,7 @@ async function renderPost(
   const authorAvatar = post.author?.avatar ? escapeHtml(proxyAvatarUrl(post.author.avatar)) : '';
   const readingTime = readingTimeMinutes(post.content || '', post.mimeType);
   const safeTitle = escapeHtml(post.title);
-  const safeDescription = escapeHtml(articleDescription);
+  const safeDescription = escapeHtml(articleSubtitle);
   const pageOrigin = new URL(pageUrl).origin;
   const ogImage = post.cover
     ? proxyImageUrl(post.cover, pageOrigin)
@@ -140,7 +134,7 @@ async function renderPost(
     ? `${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_small'))} 640w, ${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_medium'))} 1280w`
     : undefined;
   const recommendationHtml = recommendations.map((item) => {
-    const dek = descriptionText(item.description, item.content);
+    const dek = typeof item.description === 'string' ? item.description.trim() : '';
     const dekExcerpt = dek.length > 125 ? `${dek.slice(0, 122).trimEnd()}…` : dek;
     return `
     <article class="recommendation-card${item.cover ? '' : ' recommendation-card--no-cover'}">
@@ -168,7 +162,7 @@ async function renderPost(
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
     headline: post.title,
-    description: articleDescription || undefined,
+    description: articleSubtitle || undefined,
     datePublished: post.publishedAt,
     mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl },
     image: [ogImage],
