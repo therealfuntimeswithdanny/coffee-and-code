@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { renderSearchBar } from '../templates/searchBar';
 import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
-import { renderLayout, browserRenderOgImage } from '../templates/layout';
+import { renderLayout, browserRenderOgImage, browserRunScreenshotUrl } from '../templates/layout';
 import { toPlainText, descriptionText, renderMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 import { listDocs, getDoc, renderDocIcons, type DocEntry } from '../lib/docs';
 import { routeExternalLinks } from '../lib/externalLinks';
@@ -1707,7 +1707,10 @@ pages.get('/docs', async (c) => {
     <meta property="og:description" content="Developer documentation for Coffee & Code.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="${escapeHtml(browserRunScreenshotUrl(new URL(pageUrl).pathname))}">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="${escapeHtml(browserRunScreenshotUrl(new URL(pageUrl).pathname))}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
   return c.html(renderLayout(c, title, body, metaTags, `${title} | Coffee & Code`));
@@ -1785,7 +1788,10 @@ pages.get('/docs/:slug', async (c) => {
     <meta property="og:description" content="${escapeHtml(doc.description || 'Developer documentation for Coffee & Code.')}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="${escapeHtml(browserRunScreenshotUrl(new URL(pageUrl).pathname))}">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="${escapeHtml(browserRunScreenshotUrl(new URL(pageUrl).pathname))}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
   `;
   return c.html(renderLayout(c, doc.title, body, metaTags, `${doc.title} | Coffee & Code Docs`));
