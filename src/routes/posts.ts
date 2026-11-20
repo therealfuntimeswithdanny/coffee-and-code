@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { Env } from '../types';
 import { getPdsEndpoint, fetchArticles, fetchArticleByPath, fetchPostMetadata, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
-import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, toPlainText, readingTimeMinutes } from '../lib/contentRenderer';
+import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, descriptionText, readingTimeMinutes } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
 
 const posts = new Hono<{ Bindings: Env }>();
@@ -118,7 +118,7 @@ async function renderPost(
 
   // Auto-generate description from content if missing
   const getDescription = () => {
-    return post.description?.trim() || '';
+    return descriptionText(post.description, post.content);
   };
 
   const articleDescription = getDescription();
@@ -140,7 +140,7 @@ async function renderPost(
     ? `${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_small'))} 640w, ${escapeHtml(proxyImageUrl(post.cover, pds, 'wide_medium'))} 1280w`
     : undefined;
   const recommendationHtml = recommendations.map((item) => {
-    const dek = item.description?.trim() || toPlainText(item.content || '');
+    const dek = descriptionText(item.description, item.content);
     const dekExcerpt = dek.length > 125 ? `${dek.slice(0, 122).trimEnd()}…` : dek;
     return `
     <article class="recommendation-card${item.cover ? '' : ' recommendation-card--no-cover'}">

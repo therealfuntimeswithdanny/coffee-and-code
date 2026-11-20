@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { getPdsEndpoint, fetchArticles, isPdsAvailable, proxyImageUrl, proxyAvatarUrl, getEdgeCachedValue } from '../lib/atproto';
 import { countBacklinks } from './reactions';
-import { toPlainText } from '../lib/contentRenderer';
+import { descriptionText } from '../lib/contentRenderer';
 import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
 
 const home = new Hono<{ Bindings: Env }>();
@@ -17,7 +17,7 @@ function formatDate(date?: string) {
 }
 
 function excerpt(post: StandardDocument, length = 180) {
-  const text = post.description?.trim() || toPlainText(post.content || '');
+  const text = descriptionText(post.description, post.content);
   if (!text) return '';
   return text.length > length ? `${text.substring(0, length).trimEnd()}…` : text;
 }

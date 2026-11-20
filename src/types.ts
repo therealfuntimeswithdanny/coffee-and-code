@@ -4,6 +4,8 @@ export type Env = {
   OWNER_DID: string;
   OWNER_PDS: string;
   PUSH_TOKENS: KVNamespace;
+  // Optional upstream override for the handle typeahead API.
+  TYPEAHEAD_UPSTREAM?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;

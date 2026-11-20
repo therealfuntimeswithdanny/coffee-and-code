@@ -18,6 +18,7 @@ function sanitizeContentHtml(html: string): string {
       mark: ['class'],
       del: ['class'],
       span: ['class'],
+      i: ['class', 'aria-hidden'],
       h2: ['class', 'id'],
       h3: ['class', 'id'],
       h4: ['class', 'id'],
@@ -100,6 +101,7 @@ export function detectFormat(content: string, mimeType?: string): ContentFormat 
     const parsed = JSON.parse(content);
     if (
       (Array.isArray(parsed) && parsed.some(item => typeof item === 'object' && 'text' in item)) ||
+      (typeof parsed === 'object' && parsed !== null && parsed.$type === 'pub.leaflet.content') ||
       (typeof parsed === 'object' && ('content' in parsed || 'blocks' in parsed))
     ) {
       return ContentFormat.RICHTEXT;
@@ -127,6 +129,42 @@ export function escapeHtml(text: string): string {
 }
 
 /**
+ * Extracts plain text from a parsed pub.leaflet.content document for excerpts.
+ */
+function leafletPlainText(doc: any): string {
+  const texts: string[] = [];
+  const visit = (block: any) => {
+    if (!block || typeof block !== 'object') return;
+    const text = typeof block.plaintext === 'string' ? block.plaintext
+      : typeof block.text === 'string' ? block.text : '';
+    if (text.trim()) texts.push(text);
+    const children = Array.isArray(block.children) ? block.children : [];
+    for (const child of children) {
+      visit(child?.content || child);
+      if (Array.isArray(child?.children)) child.children.forEach(visit);
+    }
+  };
+  for (const page of doc.pages || []) {
+    const blocks = Array.isArray(page?.blocks) ? page.blocks : [];
+    for (const wrapper of blocks) visit(wrapper?.block || wrapper);
+  }
+  return texts.join(' ');
+}
+
+/**
+ * Returns a usable plain-text description/dek. Some records store the
+ * serialized content record (JSON) in `description`; in that case the JSON is
+ * converted to plain text instead of being shown verbatim.
+ */
+export function descriptionText(description: string | undefined | null, content?: string): string {
+  const raw = (description || '').trim();
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    return toPlainText(raw) || toPlainText(content || '');
+  }
+  return raw || toPlainText(content || '');
+}
+
+/**
  * Converts document content to plain text for excerpts and deks.
  * Handles HTML, Markdown, and richtext/leaflet JSON payloads.
  */
@@ -140,6 +178,9 @@ export function toPlainText(content: string, mimeType?: string): string {
   if (format === ContentFormat.RICHTEXT) {
     try {
       const parsed = JSON.parse(source);
+      if (parsed?.$type === 'pub.leaflet.content' && Array.isArray(parsed.pages)) {
+        text = leafletPlainText(parsed);
+      } else {
       const items = Array.isArray(parsed)
         ? parsed
         : parsed?.content?.items ?? parsed?.blocks ?? parsed?.items ?? [];
@@ -148,6 +189,7 @@ export function toPlainText(content: string, mimeType?: string): string {
           : typeof item?.plaintext === 'string' ? item.plaintext : ''))
         .filter(Boolean)
         .join(' ');
+      }
     } catch {
       text = '';
     }

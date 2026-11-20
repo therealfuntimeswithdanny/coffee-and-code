@@ -84,6 +84,8 @@ export function renderLayout(
     [data-login-link][hidden] { display: none !important; }
     .login-button:hover { background: transparent; color: var(--accent); }
     .hamburger-button { display: none; background: none; border: none; cursor: pointer; color: var(--accent); font-size: 24px; padding: 8px; align-items: center; }
+    .header-back { align-items: center; background: none; border: 1px solid transparent; border-radius: 50%; color: var(--accent); cursor: pointer; display: none; font-size: 15px; height: 34px; justify-content: center; padding: 0; width: 34px; }
+    .header-back:hover { border-color: var(--line-strong); color: var(--ink); }
     .search-button-icon { background: none; border: none; cursor: pointer; color: inherit; font-family: inherit; font-size: 14px; padding: 8px 12px; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
     .search-button-icon:hover { color: var(--accent); }
     .header-icon-actions { align-items: center; display: inline-flex; gap: 4px; }
@@ -651,7 +653,7 @@ export function renderLayout(
     .footer-legal { display: flex; font-size: 13px; gap: 14px; margin-top: 14px; }
     .footer-legal a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
     .footer-social a { background: rgba(178,172,136,.1); border: 1px solid var(--line); border-radius: 50%; display: inline-grid; height: 38px; place-items: center; width: 38px; }
-    @media (max-width: 760px) { .header-inner { grid-template-columns: auto minmax(0,1fr) auto; min-height: 76px; }.hamburger-button { grid-column: 1; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 2; grid-row: 1; justify-self: center; }.header-links { grid-column: 3; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; }.auth-options { grid-template-columns: 1fr; }.auth-option { padding: 20px; }.privacy-page h2 { font-size: 21px; }.account-author-form__workspace { grid-template-columns: 1fr; }.account-author-preview { position: static; }.account-author-form__fields { grid-template-columns: 1fr; }.account-author-form__wide, .account-author-form__sync-note { grid-column: 1; } }
+    @media (max-width: 760px) { .header-inner { grid-template-columns: auto auto minmax(0,1fr) auto; min-height: 76px; }.header-back { display: inline-flex; grid-column: 1; grid-row: 1; }.hamburger-button { grid-column: 2; grid-row: 1; }.site-brand { font-size: 1.5rem; grid-column: 3; grid-row: 1; justify-self: center; }.header-links { grid-column: 4; grid-row: 1; }.header-links .rss-link, .header-links .pds-link { display: none; }.page-content { padding-top: 30px; }.writers-callout { margin-top: 46px; padding: 24px; }.archive-story h3 { padding-left: 14px; padding-right: 14px; }.archive-story .eyebrow, .archive-story p:not(.eyebrow), .archive-story__footer { padding-left: 14px; padding-right: 14px; }.auth-options { grid-template-columns: 1fr; }.auth-option { padding: 20px; }.privacy-page h2 { font-size: 21px; }.account-author-form__workspace { grid-template-columns: 1fr; }.account-author-preview { position: static; }.account-author-form__fields { grid-template-columns: 1fr; }.account-author-form__wide, .account-author-form__sync-note { grid-column: 1; } }
     .section-heading { border-top-color: var(--line); }
     .recent-stories { border-top-color: var(--line); }
     @media (max-width: 760px) {
@@ -1042,7 +1044,7 @@ export function renderLayout(
   </script>
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><nav class="site-nav" aria-label="Main navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><div class="header-icon-actions"><a href="/search" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></a><a href="/notifications" class="search-button-icon header-notifications-icon" data-notifications-link aria-label="Notifications" title="Notifications" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i><span class="notification-badge" data-notifications-badge hidden></span></a><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a></div><a href="/auth" class="login-button" data-login-link>Log in</a><div class="header-account-menu" data-account-link hidden><button type="button" class="header-account" data-account-menu-button aria-label="Your account" title="Your account" aria-haspopup="true" aria-expanded="false"><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></button><nav class="header-account-menu__nav" data-account-menu aria-label="Account menu" hidden><a href="/account">Account</a><a href="/account/saves">Reading list</a><a href="/account/reads">Recently viewed</a><a href="/account/feed">Your feed</a><a href="/account/author">Author profile</a><div class="header-account-menu__switcher" data-account-switcher hidden></div></nav></div></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" data-feed-client-picker>Feed</a><a href="/search" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/notifications" data-notifications-link hidden>Notifications <span class="notification-badge" data-notifications-badge hidden></span></a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
+  <header class="site-header"><div class="header-inner"><button type="button" class="header-back" data-header-back aria-label="Go back" title="Go back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button><nav class="site-nav" aria-label="Main navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/feed" data-feed-client-picker>Feed</a></nav><a href="/" class="site-brand">${escapeHtml(pubName)}</a><div class="header-links"><div class="header-icon-actions"><a href="/search" class="search-button-icon" id="open-search" data-open-search aria-label="Search articles" title="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></a><a href="/notifications" class="search-button-icon header-notifications-icon" data-notifications-link aria-label="Notifications" title="Notifications" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i><span class="notification-badge" data-notifications-badge hidden></span></a><a class="pds-link" href="${externalLinkUrl(`https://bsky.app/profile/${did}`)}" target="_blank" rel="noopener" aria-label="Coffee and Code on Bluesky" title="Coffee and Code on Bluesky"><i class="fab fa-bluesky" aria-hidden="true"></i></a></div><a href="/auth" class="login-button" data-login-link>Log in</a><div class="header-account-menu" data-account-link hidden><button type="button" class="header-account" data-account-menu-button aria-label="Your account" title="Your account" aria-haspopup="true" aria-expanded="false"><span class="header-account__placeholder" data-account-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span><img data-account-avatar alt="" hidden></button><nav class="header-account-menu__nav" data-account-menu aria-label="Account menu" hidden><a href="/account">Account</a><a href="/account/saves">Reading list</a><a href="/account/reads">Recently viewed</a><a href="/account/feed">Your feed</a><a href="/account/author">Author profile</a><div class="header-account-menu__switcher" data-account-switcher hidden></div></nav></div></div><button type="button" class="hamburger-button" id="hamburgerBtn" aria-label="Open navigation" aria-controls="mobileNav" aria-expanded="false">☰</button></div><nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation"><a href="/archive">Archive</a><a href="/tags">Tags</a><a href="/forum">Forum</a><a href="/authors">Authors</a><a href="/feed" data-feed-client-picker>Feed</a><a href="/search" class="search-button-icon" id="open-search-mobile" data-open-search aria-label="Search articles"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Search</a><a href="/auth" class="login-button" data-login-link>Log in</a><a href="/notifications" data-notifications-link hidden>Notifications <span class="notification-badge" data-notifications-badge hidden></span></a><a href="/account" data-mobile-account-link hidden>Account</a></nav></header>
   <main class="page-content">${content}</main>
   <dialog class="block-dialog" data-block-dialog aria-labelledby="block-dialog-title" aria-describedby="block-dialog-description">
     <h2 id="block-dialog-title" data-block-dialog-title>Block this account?</h2>
@@ -1058,7 +1060,7 @@ export function renderLayout(
       <a href="https://bsky.app/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Bluesky (bsky.app)</a>
       <a href="https://mu.social/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Mu<i>.social</i></a>
       <a href="https://anisota.net/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Anisota</a>
-      <a href="https://app.coffeencode.cc/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Coffee &amp; Code</a>
+      <a href="/feed">Coffee &amp; Code</a>
       <a href="https://witchsky.app/profile/coffeencode.cc/feed/following" target="_blank" rel="noopener">Witchsky</a>
     </div>
   </dialog>
@@ -1227,6 +1229,49 @@ export function renderLayout(
           })
           .catch((error) => console.error('Could not load author verification badges:', error));
     }
+
+    // Header back button: return to the previous page, falling back to home.
+    const headerBack = document.querySelector('[data-header-back]');
+    if (headerBack) {
+      const cameFromSite = document.referrer && new URL(document.referrer, location.href).origin === location.origin;
+      if (history.length > 1 || cameFromSite) {
+        headerBack.addEventListener('click', () => { history.back(); });
+      } else {
+        headerBack.addEventListener('click', () => { location.assign('/'); });
+      }
+      // On the home page with nowhere to go back to, hide the button.
+      if ((location.pathname === '/' || location.pathname === '') && !cameFromSite) {
+        headerBack.style.display = 'none';
+      }
+    }
+
+    // Remember scroll position per page so swiping back or pressing back
+    // restores the reader's place even when the browser drops the history entry.
+    try {
+      if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
+      const scrollMemoryKey = 'cc.scrollPositions';
+      const readScrollMemory = () => {
+        try { return JSON.parse(sessionStorage.getItem(scrollMemoryKey) || '{}') || {}; }
+        catch (error) { return {}; }
+      };
+      const pageKey = location.pathname + location.search;
+      const savedPositions = readScrollMemory();
+      const savedY = savedPositions[pageKey];
+      if (typeof savedY === 'number' && savedY > 0) {
+        window.addEventListener('load', () => { window.scrollTo(0, savedY); }, { once: true });
+      }
+      let scrollSaveTimer;
+      const saveScrollPosition = () => {
+        const positions = readScrollMemory();
+        positions[pageKey] = Math.round(window.scrollY);
+        try { sessionStorage.setItem(scrollMemoryKey, JSON.stringify(positions)); } catch (error) {}
+      };
+      window.addEventListener('scroll', () => {
+        clearTimeout(scrollSaveTimer);
+        scrollSaveTimer = setTimeout(saveScrollPosition, 120);
+      }, { passive: true });
+      window.addEventListener('pagehide', saveScrollPosition);
+    } catch (error) {}
 
     // Back to top button
     const siteHeader = document.querySelector('.site-header');

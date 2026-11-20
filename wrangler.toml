@@ -4,8 +4,9 @@ compatibility_date = "2024-04-01"
 compatibility_flags = ["nodejs_compat"]
 
 # HTML email templates under cloudflare/email/templates are imported as text.
+# Markdown docs under docs/ are imported as text for the /docs pages.
 rules = [
-  { type = "Text", globs = ["**/*.html"], fallthrough = false },
+  { type = "Text", globs = ["**/*.html", "**/*.md"], fallthrough = false },
 ]
 
 [assets]

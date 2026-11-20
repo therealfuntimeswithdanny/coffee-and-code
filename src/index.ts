@@ -15,6 +15,7 @@ import forumApiRouter from './routes/forumApi';
 import apiRouter from './routes/api';
 import pushRouter from './routes/push';
 import emailRouter from './routes/email';
+import { typeaheadApi, typeaheadPages } from './routes/typeahead';
 import { dispatchPushNotifications } from './lib/push';
 import { dispatchEmailNotifications } from './lib/emailSubscriptions';
 import { renderLayout } from './templates/layout';
@@ -22,6 +23,8 @@ import { renderLayout } from './templates/layout';
 const app = new Hono<{ Bindings: Env }>();
 
 // Mount routes
+app.route('/tools/typeahead', typeaheadPages);
+app.route('/api/typeahead', typeaheadApi);
 app.route('/', homeRouter);
 app.route('/', pagesRouter);
 app.route('/', metaRouter);

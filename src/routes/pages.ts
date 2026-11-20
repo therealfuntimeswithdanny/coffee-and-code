@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { renderSearchBar } from '../templates/searchBar';
-import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, fetchPublicationInfo, fetchPublicationDocuments, type ArticlePagination } from '../lib/atproto';
+import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage } from '../templates/layout';
-import { toPlainText, renderLeafletDocument, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
+import { toPlainText, descriptionText, renderMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
+import { listDocs, getDoc, renderDocIcons, type DocEntry } from '../lib/docs';
 import { routeExternalLinks } from '../lib/externalLinks';
 import { externalLinkUrl } from '../lib/externalLinks';
 import { renderLegalDocument } from '../lib/legal';
@@ -65,57 +66,6 @@ pages.get('/notifications', (c) => {
     <link rel="canonical" href="${new URL(c.req.url).origin}/notifications">
   `;
   return c.html(renderLayout(c, 'Notifications', body, metaTags));
-});
-
-pages.get('/feed', (c) => {
-  const feedUri = 'at://did:plc:z7hzwpuv5ytin56wecfxa4mx/app.bsky.feed.generator/following';
-  const blueskyFeedUrl = 'https://bsky.app/profile/did:plc:z7hzwpuv5ytin56wecfxa4mx/feed/following';
-  const feedUrl = 'https://feed.coffeencode.cc';
-  const pageUrl = new URL(c.req.url).toString();
-  const body = `
-    <section class="feed-page" aria-labelledby="feed-title">
-      <h1 id="feed-title">A feed shaped by the authors you choose.</h1>
-      <p class="feed-page__intro">Keep up with Coffee &amp; Code writers on Bluesky. Follow authors here, then see their latest posts together in one dedicated feed.</p>
-      <div class="feed-page__actions">
-        <a class="login-button" href="${blueskyFeedUrl}" target="_blank" rel="noopener noreferrer">Open the feed in Bluesky <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
-        <a class="feed-page__manage" href="${feedUrl}" target="_blank" rel="noopener noreferrer">Sign in or manage follows <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-      </div>
-      <section class="feed-page__details" aria-label="How the feed works">
-        <article><span class="feed-page__number">01</span><div><h2>Choose your authors</h2><p>Sign in with your Bluesky handle on the feed service and follow Coffee &amp; Code authors. These follows are independent of your regular Bluesky follows.</p></div></article>
-        <article><span class="feed-page__number">02</span><div><h2>Make it yours</h2><p>Set preferences for each author, filter posts by topic, and decide whether you want all posts or only posts linking to Coffee &amp; Code.</p></div></article>
-        <article><span class="feed-page__number">03</span><div><h2>Read in Bluesky</h2><p>Open the feed in Bluesky to see recent posts from the authors you selected. You can also manage your follows by messaging <strong>@coffeencode.cc</strong> on Bluesky.</p></div></article>
-      </section>
-      <p class="feed-page__note">The feed is public on Bluesky. Your author follows and preferences are saved in your own AT Protocol account.</p>
-      <a class="feed-page__uri" href="${blueskyFeedUrl}" aria-label="Coffee and Code following feed identifier">Feed identifier <code>${feedUri}</code></a>
-    </section>
-    <style>
-      .feed-page { margin: 0 auto; max-width: 940px; }
-      .feed-page h1 { font-family: Lora, serif; font-size: clamp(2.8rem, 7vw, 5.5rem); letter-spacing: -.04em; line-height: 1.03; margin: 0; max-width: 850px; }
-      .feed-page__intro { color: var(--muted); font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.65; margin: 22px 0 25px; max-width: 700px; }
-      .feed-page__actions { align-items: center; display: flex; flex-wrap: wrap; gap: 22px; }
-      .feed-page__actions .login-button { gap: 12px; min-height: 48px; padding: 12px 18px; }
-      .feed-page__manage { color: var(--accent); font-size: 15px; font-weight: 700; }
-      .feed-page__manage i { margin-left: 6px; }
-      .feed-page__details { border-top: 2px solid var(--ink); margin-top: 66px; }
-      .feed-page__details article { align-items: start; border-bottom: 1px solid var(--line); display: grid; gap: 24px; grid-template-columns: 56px minmax(0, 1fr); padding: 25px 0; }
-      .feed-page__number { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .12em; padding-top: 6px; }
-      .feed-page__details h2 { font-family: Lora, serif; font-size: clamp(1.35rem, 3vw, 1.8rem); line-height: 1.2; margin: 0 0 8px; }
-      .feed-page__details p { color: var(--muted); margin: 0; max-width: 700px; }
-      .feed-page__details strong { color: var(--ink); }
-      .feed-page__note { color: var(--muted); font-size: 14px; margin: 22px 0 0; }
-      .feed-page__uri { color: var(--accent); display: inline-flex; flex-wrap: wrap; font-size: 12px; gap: 8px; margin-top: 26px; }
-      .feed-page__uri code { color: var(--muted); overflow-wrap: anywhere; }
-      @media (max-width: 600px) { .feed-page h1 { font-size: clamp(2.55rem, 12vw, 4rem); }.feed-page__details { margin-top: 46px; }.feed-page__details article { gap: 12px; grid-template-columns: 34px minmax(0, 1fr); padding: 20px 0; }.feed-page__actions { align-items: flex-start; flex-direction: column; gap: 16px; } }
-    </style>`;
-  const metaTags = `
-    <meta name="description" content="Follow Coffee &amp; Code authors on Bluesky with a feed you can shape around the writers and topics you care about.">
-    <meta property="og:title" content="Coffee &amp; Code Feed">
-    <meta property="og:description" content="A Bluesky feed shaped by the Coffee &amp; Code authors you choose.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="${escapeHtml(pageUrl)}">
-    <link rel="canonical" href="${escapeHtml(pageUrl)}">
-  `;
-  return c.html(renderLayout(c, 'The Coffee & Code Feed', body, metaTags));
 });
 
 function escapeHtml(value: string) {
@@ -943,8 +893,10 @@ function formatDate(date?: string) {
 }
 
 function excerpt(post: Pick<StandardDocument, 'description'> & { content?: string }) {
-  const text = (typeof post.description === 'string' ? post.description.trim() : '')
-    || toPlainText(typeof post.content === 'string' ? post.content : '');
+  const text = descriptionText(
+    typeof post.description === 'string' ? post.description : '',
+    typeof post.content === 'string' ? post.content : '',
+  );
   if (!text) return '';
   return text.length > 150 ? `${text.substring(0, 150).trimEnd()}…` : text;
 }
@@ -1574,109 +1526,147 @@ pages.get('/download', (c) => {
   return c.html(renderLayout(c, 'Coffee & Code for Android', body, metaTags));
 });
 
-const DOCS_PUBLICATION_URI = 'at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b';
+type DocsSection = { key: string; label: string; icon: string; docs: DocEntry[] };
 
-type DocsSection = { key: string; label: string; docs: StandardDocument[] };
-
-/** Groups publication documents by their tags; untagged docs land in "Guides". */
-function groupDocsByTag(docs: StandardDocument[]): DocsSection[] {
+/** Groups docs by their frontmatter `section` (defaulting to the parent folder). */
+function groupDocsBySection(docs: DocEntry[]): DocsSection[] {
   const sections = new Map<string, DocsSection>();
-  const general: DocsSection = { key: '', label: 'Guides', docs: [] };
   for (const doc of docs) {
-    const tags = doc.tags?.length ? doc.tags : [''];
-    for (const tag of tags) {
-      if (!tag) continue;
-      const key = tag.toLocaleLowerCase();
-      const section = sections.get(key) || { key, label: tag, docs: [] };
-      section.docs.push(doc);
-      sections.set(key, section);
-    }
-    if (!doc.tags?.length) general.docs.push(doc);
+    const key = doc.section.toLocaleLowerCase();
+    const section = sections.get(key) || { key, label: doc.section, icon: '', docs: [] };
+    section.docs.push(doc);
+    if (!section.icon && doc.sectionIcon) section.icon = doc.sectionIcon;
+    sections.set(key, section);
   }
-  return [...sections.values()]
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .concat(general.docs.length ? [general] : []);
+  for (const section of sections.values()) {
+    if (!section.icon) section.icon = docsSectionIcon(section.label);
+  }
+  return [...sections.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function renderDocsSidebar(sections: DocsSection[], activeRkey?: string): string {
-  const groups = sections.map((section) => `
-    <div class="docs-nav__group">
-      <h2>${escapeHtml(section.label)}</h2>
+/** Picks a sidebar icon for a docs section, atproto.com-style. */
+function docsSectionIcon(label: string): string {
+  const key = label.toLocaleLowerCase();
+  if (key.includes('service') || key.includes('api')) return 'fa-solid fa-server';
+  if (key.includes('guide') || key.includes('start')) return 'fa-solid fa-rocket';
+  if (key.includes('deploy') || key.includes('host')) return 'fa-solid fa-cloud-arrow-up';
+  if (key.includes('reference')) return 'fa-solid fa-book';
+  if (key.includes('sdk')) return 'fa-solid fa-code';
+  return 'fa-solid fa-folder-open';
+}
+
+function renderDocsSidebar(sections: DocsSection[], activeSlug?: string): string {
+  const groups = sections.map((section) => {
+    const hasActive = section.docs.some((doc) => doc.slug === activeSlug);
+    return `
+    <details class="docs-nav__section"${hasActive || !activeSlug ? ' open' : ''}>
+      <summary><i class="${escapeHtml(section.icon)} docs-nav__icon" aria-hidden="true"></i><span>${escapeHtml(section.label)}</span><i class="fa-solid fa-chevron-right docs-nav__chevron" aria-hidden="true"></i></summary>
       <ul>${section.docs.map((doc) => `
-        <li><a href="/docs/${encodeURIComponent(doc.rkey)}"${doc.rkey === activeRkey ? ' class="is-active" aria-current="page"' : ''}>${escapeHtml(doc.title)}</a></li>`).join('')}
+        <li><a href="/docs/${encodeURIComponent(doc.slug)}"${doc.slug === activeSlug ? ' class="is-active" aria-current="page"' : ''}>${doc.icon ? `<i class="${escapeHtml(doc.icon)} docs-nav__item-icon" aria-hidden="true"></i>` : ''}${escapeHtml(doc.title)}</a></li>`).join('')}
       </ul>
-    </div>`).join('');
+    </details>`;
+  }).join('');
   return `
     <nav class="docs-nav" aria-label="Documentation sections">
-      <a class="docs-nav__home" href="/docs"${!activeRkey ? ' aria-current="page"' : ''}><i class="fa-solid fa-book-open" aria-hidden="true"></i> Docs home</a>
+      <a class="docs-nav__home" href="/docs"${!activeSlug ? ' class="is-active" aria-current="page"' : ''}><i class="fa-solid fa-book-open" aria-hidden="true"></i> Docs home</a>
       ${groups}
     </nav>`;
 }
 
 const docsPageStyles = `
   <style>
-    .docs-layout { display: grid; gap: clamp(30px, 5vw, 70px); grid-template-columns: minmax(170px, 230px) minmax(0, 720px) minmax(160px, 220px); justify-content: center; margin: 0 auto; max-width: 1240px; }
-    .docs-layout--landing { grid-template-columns: minmax(170px, 230px) minmax(0, 820px); }
-    .docs-nav { align-self: start; position: sticky; top: 105px; }
-    .docs-nav__home { align-items: center; color: var(--ink); display: flex; font-weight: 700; gap: 9px; letter-spacing: .06em; padding-bottom: 14px; text-transform: uppercase; }
+    .page-content:has(.docs-layout) { width: calc(100% - 48px); max-width: none; }
+    .docs-layout { display: grid; gap: clamp(28px, 4vw, 64px); grid-template-columns: 260px minmax(0, 1fr) 220px; width: 100%; }
+    .docs-layout--landing { grid-template-columns: 260px minmax(0, 1fr); }
+
+    /* Sidebar — collapsible sections, atproto.com-style */
+    .docs-nav { align-self: start; font-size: 14px; position: sticky; top: 96px; }
+    .docs-nav__home { align-items: center; border-radius: 8px; color: var(--ink); display: flex; font-weight: 700; gap: 10px; margin-bottom: 14px; padding: 8px 10px; text-decoration: none; }
+    .docs-nav__home:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+    .docs-nav__home.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
     .docs-nav__home i { color: var(--accent); }
-    .docs-nav__group { border-top: 1px solid var(--line); padding: 14px 0; }
-    .docs-nav__group h2 { color: var(--muted); font-size: 12px; letter-spacing: .14em; margin: 0 0 8px; text-transform: uppercase; }
-    .docs-nav__group ul { list-style: none; margin: 0; padding: 0; }
-    .docs-nav__group a { border-left: 2px solid transparent; color: var(--muted); display: block; font-family: Lora, serif; font-size: 15px; font-weight: 600; line-height: 1.35; padding: 6px 0 6px 12px; text-decoration: none; }
-    .docs-nav__group a:hover { color: var(--ink); }
-    .docs-nav__group a.is-active { border-left-color: var(--accent); color: var(--accent); }
-    .docs-article__back { color: var(--accent); display: inline-block; font-size: 14px; font-weight: 700; letter-spacing: .04em; margin-bottom: 34px; text-transform: uppercase; }
-    .docs-article__header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 24px; }
-    .docs-article__header .eyebrow { color: var(--accent); margin: 0 0 10px; }
-    .docs-article__header h1 { font-family: Lora, serif; font-size: clamp(2.3rem, 5vw, 3.6rem); letter-spacing: -.045em; line-height: 1.08; margin: 0; }
-    .docs-article__dek { color: var(--muted); font-family: Lora, serif; font-size: 20px; line-height: 1.4; margin: 14px 0 0; }
-    .docs-article__date { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
-    .docs-article__footer { border-top: 1px solid var(--line); display: flex; font-size: 14px; justify-content: flex-end; margin-top: 48px; padding-top: 22px; }
+    .docs-nav__section { border-top: 1px solid var(--line); padding: 8px 0; }
+    .docs-nav__section summary { align-items: center; border-radius: 8px; color: var(--ink); cursor: pointer; display: flex; font-weight: 700; gap: 10px; list-style: none; padding: 8px 10px; user-select: none; }
+    .docs-nav__section summary::-webkit-details-marker { display: none; }
+    .docs-nav__section summary:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+    .docs-nav__icon { color: var(--muted); font-size: 13px; width: 16px; }
+    .docs-nav__chevron { color: var(--muted); font-size: 11px; margin-left: auto; transition: transform .15s ease; }
+    .docs-nav__section[open] .docs-nav__chevron { transform: rotate(90deg); }
+    .docs-nav__section ul { list-style: none; margin: 4px 0 6px; padding: 0 0 0 12px; }
+    .docs-nav__section li { margin: 1px 0; }
+    .docs-nav__section ul a { border-radius: 6px; color: var(--muted); display: block; font-size: 14px; line-height: 1.35; padding: 6px 10px; text-decoration: none; }
+    .docs-nav__item-icon { font-size: 12px; margin-right: 7px; opacity: .75; }
+    .docs-nav__section ul a:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+    .docs-nav__section ul a.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+
+    /* Article column */
+    .docs-article { min-width: 0; }
+    .docs-article .prose, .docs-article .prose p, .docs-article .prose li,
+    .docs-article .prose figure, .docs-article .prose-image-figure,
+    .docs-article .prose pre, .docs-article .prose table { max-width: none; }
+    .docs-article .prose img, .docs-article .prose-image, .docs-article .prose-image-figure img { max-width: 100% !important; }
+    .docs-article__back { color: var(--accent); display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: .05em; margin-bottom: 26px; text-transform: uppercase; }
+    .docs-article__header { border-bottom: 1px solid var(--line); margin-bottom: 30px; padding-bottom: 22px; }
+    .docs-article__header .eyebrow { color: var(--accent); font-size: 13px; letter-spacing: .1em; margin: 0 0 8px; }
+    .docs-article__header h1 { font-family: Lora, serif; font-size: clamp(2rem, 4vw, 2.9rem); letter-spacing: -.035em; line-height: 1.1; margin: 0; }
+    .docs-article__dek { color: var(--muted); font-size: 17px; line-height: 1.5; margin: 12px 0 0; }
+    .docs-article__date { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+    .docs-article .prose h2, .docs-article .prose h3 { scroll-margin-top: 96px; }
+    .docs-article__footer { border-top: 1px solid var(--line); font-size: 14px; margin-top: 44px; padding-top: 18px; text-align: right; }
     .docs-article__footer a { color: var(--accent); }
-    .docs-notes { align-self: start; border-top: 3px solid var(--ink); padding-top: 12px; position: sticky; top: 105px; }
-    .docs-notes h2 { color: var(--muted); font-size: 12px; letter-spacing: .14em; margin: 0 0 10px; text-transform: uppercase; }
-    .docs-notes ol { font-size: 14px; margin: 0; padding-left: 20px; }
-    .docs-notes li { color: var(--muted); line-height: 1.55; margin: 0 0 12px; }
-    .docs-notes li::marker { color: var(--accent); font-weight: 700; }
-    .docs-notes a { color: var(--accent); }
-    .docs-landing__hero { border-bottom: 2px solid var(--ink); margin-bottom: 8px; padding-bottom: 26px; }
-    .docs-landing__hero h1 { font-family: Lora, serif; font-size: clamp(2.6rem, 6vw, 4.4rem); letter-spacing: -.05em; line-height: 1.05; margin: 0; }
-    .docs-landing__intro { color: var(--muted); font-size: clamp(1.1rem, 2vw, 1.3rem); line-height: 1.6; margin: 18px 0 0; max-width: 660px; }
+    .docs-pagenav { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; margin-top: 40px; }
+    .docs-pagenav a { border: 1px solid var(--line); border-radius: 10px; color: var(--ink); display: block; padding: 14px 16px; text-decoration: none; }
+    .docs-pagenav a:hover { border-color: var(--accent); }
+    .docs-pagenav span { color: var(--muted); display: block; font-size: 12px; letter-spacing: .1em; margin-bottom: 4px; text-transform: uppercase; }
+    .docs-pagenav strong { font-size: 15px; }
+    .docs-pagenav .docs-pagenav__next { text-align: right; }
+    .docs-pagenav .docs-pagenav__next:hover strong, .docs-pagenav .docs-pagenav__prev:hover strong { color: var(--accent); }
+
+    /* Right column — on this page */
+    .docs-notes { align-self: start; font-size: 13px; position: sticky; top: 96px; }
+    .docs-notes h2 { border-left: 2px solid var(--line); color: var(--muted); font-size: 12px; letter-spacing: .12em; margin: 0 0 4px; padding-left: 12px; text-transform: uppercase; }
+    .docs-notes ol { border-left: 2px solid var(--line); list-style: none; margin: 0; padding: 0; }
+    .docs-notes li { line-height: 1.4; margin: 0; }
+    .docs-notes a { color: var(--muted); display: block; padding: 5px 0 5px 12px; text-decoration: none; }
+    .docs-notes a:hover { color: var(--ink); }
+
+    /* Landing */
+    .docs-landing__hero { border-bottom: 2px solid var(--ink); margin-bottom: 8px; padding-bottom: 24px; }
+    .docs-landing__hero h1 { font-family: Lora, serif; font-size: clamp(2.4rem, 5vw, 3.6rem); letter-spacing: -.045em; line-height: 1.05; margin: 0; }
+    .docs-landing__intro { color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.25rem); line-height: 1.6; margin: 16px 0 0; max-width: 660px; }
     .docs-section { border-bottom: 1px solid var(--line); padding: 26px 0; }
-    .docs-section > h2 { font-family: Lora, serif; font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.03em; margin: 0 0 6px; }
+    .docs-section > h2 { align-items: center; display: flex; font-family: Lora, serif; font-size: clamp(1.3rem, 3vw, 1.7rem); gap: 10px; letter-spacing: -.02em; margin: 0 0 6px; }
+    .docs-section > h2 i { color: var(--accent); font-size: 18px; }
     .docs-section ul { list-style: none; margin: 0; padding: 0; }
-    .docs-section li { border-top: 1px solid var(--line); padding: 18px 0; }
-    .docs-section li:first-child { border-top: 0; }
+    .docs-section li { border-top: 1px solid var(--line); padding: 16px 0; }
+    .docs-section li:first-of-type { border-top: 0; }
     .docs-section__link { align-items: baseline; display: flex; gap: 14px; justify-content: space-between; }
-    .docs-section__link > a { color: var(--ink); font-family: Lora, serif; font-size: 20px; font-weight: 700; line-height: 1.3; text-decoration: none; }
+    .docs-section__link > a { color: var(--ink); font-size: 18px; font-weight: 700; line-height: 1.3; text-decoration: none; }
     .docs-section__link > a:hover { color: var(--accent); }
     .docs-section__link time { color: var(--muted); flex: 0 0 auto; font-size: 13px; }
-    .docs-section__link > a i { color: var(--accent); font-size: 13px; margin-left: 8px; }
-    .docs-section p { color: var(--muted); line-height: 1.6; margin: 8px 0 0; max-width: 640px; }
+    .docs-section__link > a i { color: var(--accent); font-size: 12px; margin-left: 8px; }
+    .docs-section p { color: var(--muted); line-height: 1.6; margin: 6px 0 0; max-width: 640px; }
+
     @media (max-width: 1080px) {
       .docs-layout, .docs-layout--landing { grid-template-columns: 1fr; }
-      .docs-nav { border-bottom: 1px solid var(--line); padding-bottom: 16px; position: static; }
-      .docs-nav__group ul { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-      .docs-nav__group a { border-left: 0; border-bottom: 2px solid transparent; padding: 4px 0; }
-      .docs-nav__group a.is-active { border-bottom-color: var(--accent); }
-      .docs-notes { border-top: 1px solid var(--line); position: static; }
+      .docs-nav { border: 1px solid var(--line); border-radius: 12px; padding: 10px; position: static; }
+      .docs-nav__home { margin-bottom: 4px; }
+      .docs-notes { display: none; }
+      .docs-pagenav { grid-template-columns: 1fr; }
+      .docs-pagenav .docs-pagenav__next { text-align: left; }
     }
   </style>`;
 
 pages.get('/docs', async (c) => {
-  const [info, docs] = await Promise.all([
-    fetchPublicationInfo(DOCS_PUBLICATION_URI, c.env.OWNER_PDS),
-    fetchPublicationDocuments(DOCS_PUBLICATION_URI, c.env.OWNER_PDS),
-  ]);
-  const title = info?.name || 'Developer Docs';
-  const sections = groupDocsByTag(docs);
+  const docs = listDocs();
+  const title = 'Developer Docs';
+  const sections = groupDocsBySection(docs);
   const sectionHtml = sections.map((section) => `
     <section class="docs-section" aria-labelledby="docs-section-${escapeHtml(section.key || 'guides')}">
-      <h2 id="docs-section-${escapeHtml(section.key || 'guides')}">${escapeHtml(section.label)}</h2>
+      <h2 id="docs-section-${escapeHtml(section.key || 'guides')}"><i class="${escapeHtml(section.icon)}" aria-hidden="true"></i>${escapeHtml(section.label)}</h2>
       <ul>${section.docs.map((doc) => `
         <li>
-          <div class="docs-section__link"><a href="/docs/${encodeURIComponent(doc.rkey)}">${escapeHtml(doc.title)} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a><time datetime="${escapeHtml(doc.publishedAt)}">${escapeHtml(formatDate(doc.publishedAt))}</time></div>
+          <div class="docs-section__link"><a href="/docs/${encodeURIComponent(doc.slug)}">${doc.icon ? `<i class="${escapeHtml(doc.icon)}" aria-hidden="true"></i> ` : ''}${escapeHtml(doc.title)} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>${doc.updated ? `<time datetime="${escapeHtml(doc.updated)}">${escapeHtml(formatDate(doc.updated))}</time>` : ''}</div>
           ${doc.description ? `<p>${escapeHtml(doc.description)}</p>` : ''}
         </li>`).join('')}
       </ul>
@@ -1687,7 +1677,7 @@ pages.get('/docs', async (c) => {
       <div class="docs-landing">
         <header class="docs-landing__hero">
           <h1>${escapeHtml(title)}</h1>
-          ${info?.description ? `<p class="docs-landing__intro">${escapeHtml(info.description)}</p>` : '<p class="docs-landing__intro">Guides and references for building on and with Coffee &amp; Code.</p>'}
+          <p class="docs-landing__intro">Guides and references for building on and with Coffee &amp; Code.</p>
         </header>
         ${sectionHtml || '<p class="empty-state">Documentation is on the way — check back soon.</p>'}
       </div>
@@ -1696,9 +1686,9 @@ pages.get('/docs', async (c) => {
   `;
   const pageUrl = new URL(c.req.url).toString();
   const metaTags = `
-    <meta name="description" content="${escapeHtml(info?.description || 'Developer documentation for Coffee & Code.')}">
+    <meta name="description" content="Developer documentation for Coffee & Code.">
     <meta property="og:title" content="${escapeHtml(title)} | Coffee and Code">
-    <meta property="og:description" content="${escapeHtml(info?.description || 'Developer documentation for Coffee & Code.')}">
+    <meta property="og:description" content="Developer documentation for Coffee & Code.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     <meta name="twitter:card" content="summary">
@@ -1707,10 +1697,9 @@ pages.get('/docs', async (c) => {
   return c.html(renderLayout(c, title, body, metaTags, `${title} | Coffee & Code`));
 });
 
-pages.get('/docs/:rkey', async (c) => {
-  const rkey = c.req.param('rkey');
-  const docs = await fetchPublicationDocuments(DOCS_PUBLICATION_URI, c.env.OWNER_PDS);
-  const doc = docs.find((item) => item.rkey === rkey);
+pages.get('/docs/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  const doc = getDoc(slug);
   if (!doc) {
     return c.html(renderLayout(c, 'Doc Not Found', `
       <section class="not-found">
@@ -1723,46 +1712,58 @@ pages.get('/docs/:rkey', async (c) => {
     `), 404);
   }
 
-  const { html, footnotes } = renderLeafletDocument(doc.content || '');
-  const requestOrigin = new URL(c.req.url).origin;
-  const processed = processImages(html, (source) => {
-    if (source.startsWith('/api/blob/')) {
-      const cid = source.replace(/^\/api\/blob\//, '');
-      const blobUrl = `${doc.pdsUrl || c.env.OWNER_PDS}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(doc.repoDid || c.env.OWNER_DID)}&cid=${encodeURIComponent(cid)}`;
-      return proxyImageUrl(blobUrl, requestOrigin);
-    }
-    return proxyImageUrl(source, requestOrigin);
+  const rawHtml = await renderMarkdown(renderDocIcons(doc.markdown));
+  // Build an "On this page" TOC from ## / ### headings and tag the rendered
+  // headings with matching ids (marked emits them in source order).
+  const tocItems = [...doc.markdown.matchAll(/^(#{2,3})\s+(.+?)\s*#*$/gm)].map((m) => {
+    const clean = m[2].replace(/:fa-[a-z0-9:-]+:/gi, '').replace(/[`*]/g, '').trim();
+    return {
+      level: m[1].length,
+      text: clean,
+      id: clean.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+    };
   });
+  let headingIndex = 0;
+  const html = rawHtml.replace(/<h([23])>/g, (match, level) => {
+    const item = tocItems[headingIndex++];
+    return item && item.level === Number(level) ? `<h${level} id="${item.id}">` : match;
+  });
+  const requestOrigin = new URL(c.req.url).origin;
+  const processed = processImages(html, (source) => proxyImageUrl(source, requestOrigin));
   const content = routeExternalLinks(enhanceHtmlStructure(processed));
-  const notesHtml = footnotes.length ? `
-    <aside class="docs-notes" aria-label="Footnotes">
-      <h2>Notes</h2>
-      <ol>${footnotes.map((note) => `<li id="fn-${note.number}">${note.html} <a class="prose-footnote-back" href="#fnref-${note.number}" aria-label="Back to reference ${note.number}">↩</a></li>`).join('')}</ol>
+  const tocHtml = tocItems.length ? `
+    <aside class="docs-notes" aria-label="On this page">
+      <h2>On this page</h2>
+      <ol>${tocItems.map((item) => `<li${item.level === 3 ? ' style="padding-left:14px"' : ''}><a href="#${escapeHtml(item.id)}">${escapeHtml(item.text)}</a></li>`).join('')}</ol>
     </aside>` : '';
+  const allDocs = listDocs();
+  const docIndex = allDocs.findIndex((item) => item.slug === doc.slug);
+  const prevDoc = docIndex > 0 ? allDocs[docIndex - 1] : undefined;
+  const nextDoc = docIndex >= 0 && docIndex < allDocs.length - 1 ? allDocs[docIndex + 1] : undefined;
+  const pageNavHtml = (prevDoc || nextDoc) ? `
+    <nav class="docs-pagenav" aria-label="More docs">
+      ${prevDoc ? `<a class="docs-pagenav__prev" href="/docs/${encodeURIComponent(prevDoc.slug)}"><span>← Previous</span><strong>${escapeHtml(prevDoc.title)}</strong></a>` : '<span></span>'}
+      ${nextDoc ? `<a class="docs-pagenav__next" href="/docs/${encodeURIComponent(nextDoc.slug)}"><span>Next →</span><strong>${escapeHtml(nextDoc.title)}</strong></a>` : '<span></span>'}
+    </nav>` : '';
   const pageUrl = new URL(c.req.url).toString();
   const body = `
     <div class="docs-layout">
-      ${renderDocsSidebar(groupDocsByTag(docs), doc.rkey)}
+      ${renderDocsSidebar(groupDocsBySection(listDocs()), doc.slug)}
       <article class="docs-article">
         <a class="docs-article__back" href="/docs"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All docs</a>
         <header class="docs-article__header">
-          <p class="eyebrow">Developer docs</p>
           <h1>${escapeHtml(doc.title)}</h1>
           ${doc.description ? `<p class="docs-article__dek">${escapeHtml(doc.description)}</p>` : ''}
-          ${formatDate(doc.publishedAt) ? `<p class="docs-article__date">Updated ${escapeHtml(formatDate(doc.publishedAt))}</p>` : ''}
+          ${formatDate(doc.updated) ? `<p class="docs-article__date">Updated ${escapeHtml(formatDate(doc.updated))}</p>` : ''}
         </header>
         <div class="prose">${content}</div>
-        <footer class="docs-article__footer">
-          <a href="${escapeHtml(externalLinkUrl(`https://pdsls.dev/${doc.uri}`))}" target="_blank" rel="noopener">View record on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
-        </footer>
+        ${pageNavHtml}
       </article>
-      ${notesHtml}
+      ${tocHtml}
     </div>
     ${docsPageStyles}
   `;
   const metaTags = `
-    <link rel="site.standard.document" href="${escapeHtml(doc.uri)}">
-    <meta name="atproto:uri" content="${escapeHtml(doc.uri)}">
     <meta name="description" content="${escapeHtml(doc.description || doc.title)}">
     <meta property="og:title" content="${escapeHtml(doc.title)} | Coffee and Code Docs">
     <meta property="og:description" content="${escapeHtml(doc.description || 'Developer documentation for Coffee & Code.')}">
