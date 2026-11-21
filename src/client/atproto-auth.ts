@@ -376,12 +376,20 @@ function backfillSwitcherProfiles(accounts: KnownAccount[]) {
     });
 }
 
+// Set when the /auth?state=completed welcome panel takes over the card — the
+// switcher (and anything else re-rendering later) must not un-hide itself.
+let authWelcomeShown = false;
+
 function renderAccountSwitchers() {
   const accounts = loadKnownAccounts();
   backfillSwitcherProfiles(accounts);
   const activeDid = session?.did;
   const returnTo = safeReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
   document.querySelectorAll<HTMLElement>('[data-account-switcher]').forEach((container) => {
+    if (authWelcomeShown && container.closest('[data-auth-options]')) {
+      container.hidden = true;
+      return;
+    }
     container.replaceChildren();
     const entries = session ? accounts.filter((account) => account.did !== activeDid) : accounts;
     if (!entries.length && !session) {
@@ -641,10 +649,10 @@ function renderAccount() {
   }
 
   // /auth?add=1 keeps the sign-in form visible so another account can be added;
-  // /auth?state=done keeps the card visible to show the welcome panel instead.
+  // /auth?state=completed keeps the card visible to show the welcome panel instead.
   const authParams = new URLSearchParams(window.location.search);
   const addingAccount = window.location.pathname === '/auth' && authParams.get('add') === '1';
-  const welcomeActive = window.location.pathname === '/auth' && authParams.get('state') === 'done';
+  const welcomeActive = window.location.pathname === '/auth' && authParams.get('state') === 'completed';
   if (session && !addingAccount) {
     if (authOptions) authOptions.hidden = !welcomeActive;
     if (authAccount) authAccount.hidden = welcomeActive ? true : false;
@@ -2728,7 +2736,7 @@ const oauthReady = (async () => {
     // Land on a welcome state first — it confirms who signed in before
     // continuing on to wherever they were headed.
     const doneUrl = new URL('/auth', window.location.origin);
-    doneUrl.searchParams.set('state', 'done');
+    doneUrl.searchParams.set('state', 'completed');
     const known = session ? loadKnownAccounts().find((a) => a.did === session.did) : undefined;
     doneUrl.searchParams.set('handle', known?.handle || session?.did || '');
     doneUrl.searchParams.set('returnTo', safeReturnPath(callbackState));
@@ -2736,13 +2744,14 @@ const oauthReady = (async () => {
   }
 })();
 
-// After OAuth completes we land on /auth?state=done — swap the sign-in card's
+// After OAuth completes we land on /auth?state=completed — swap the sign-in card's
 // contents for a welcome panel with the account's profile.
 async function showAuthWelcome() {
   const params = new URLSearchParams(window.location.search);
-  if (window.location.pathname !== '/auth' || params.get('state') !== 'done'
+  if (window.location.pathname !== '/auth' || params.get('state') !== 'completed'
     || !session || !welcomeBlock || !authOptions) return;
 
+  authWelcomeShown = true;
   authOptions.hidden = false;
   authOptions.querySelectorAll<HTMLElement>(':scope > :not([data-auth-welcome])').forEach((el) => { el.hidden = true; });
   welcomeBlock.hidden = false;

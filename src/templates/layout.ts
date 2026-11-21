@@ -505,10 +505,13 @@ export function renderLayout(
     .account-switcher__add { color: var(--accent); display: block; font-size: 13px; font-weight: 700; letter-spacing: .06em; padding: 10px 16px 6px; text-transform: uppercase; }
     .account-switcher__add i { margin-right: 6px; }
     .account-switcher__add:hover, .account-switcher__add:focus-visible { color: var(--ink); }
-    .account-card .account-switcher__title { margin: 0 0 10px; }
-    .account-card .account-switcher__row { border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; }
-    .account-card .account-switcher__row:hover, .account-card .account-switcher__row:focus-visible { border-color: var(--accent); }
-    .account-card .account-switcher__add { padding: 12px 0 0; }
+    .account-card .account-switcher__title, .auth-card .account-switcher__title { margin: 0 0 10px; }
+    .account-card .account-switcher__row, .auth-card .account-switcher__row { align-items: center; border: 1px solid var(--line); border-radius: 3px; display: flex; gap: 10px; padding: 8px 10px; text-align: left; width: 100%; }
+    .account-card .account-switcher__row:hover, .account-card .account-switcher__row:focus-visible, .auth-card .account-switcher__row:hover, .auth-card .account-switcher__row:focus-visible { border-color: var(--accent); }
+    .account-card .account-switcher__add, .auth-card .account-switcher__add { padding: 12px 0 0; }
+    .auth-card .account-switcher { margin-bottom: 14px; }
+    .auth-card .account-switcher__list { display: grid; gap: 6px; }
+    .auth-card .account-switcher__avatar { flex: 0 0 34px; height: 34px; width: 34px; }
     .header-account[hidden] { display: none; }
     .header-account:not([hidden]) { display: inline-flex; }
     .header-account img { border-radius: 50%; height: 100%; object-fit: cover; width: 100%; }
