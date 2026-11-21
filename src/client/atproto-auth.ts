@@ -2748,7 +2748,7 @@ const oauthReady = (async () => {
     const doneUrl = new URL('/auth', window.location.origin);
     doneUrl.searchParams.set('state', 'completed');
     const known = session ? loadKnownAccounts().find((a) => a.did === session.did) : undefined;
-    doneUrl.searchParams.set('handle', known?.handle || session?.did || '');
+    if (known?.handle) doneUrl.searchParams.set('handle', known.handle);
     doneUrl.searchParams.set('returnTo', safeReturnPath(callbackState));
     window.location.replace(`${doneUrl.pathname}${doneUrl.search}`);
   }

@@ -80,7 +80,7 @@ export function renderLayout(
     a { color: inherit; text-decoration: none; } a:hover { color: var(--accent); } .site-header { border-bottom: 1px solid var(--line-strong); background: var(--paper); position: sticky; top: 0; z-index: 100; } .header-inner, .page-content, .footer-inner { width: min(var(--page-width), calc(100% - 48px)); margin: 0 auto; }
       .header-inner { min-height: 100px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; transition: min-height 180ms ease; } .site-nav, .header-links { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; } .header-links { justify-content: flex-end; }.site-brand { font-family: Lora, serif; font-size: clamp(1.55rem, 3vw, 2.3rem); font-weight: 700; letter-spacing: -.06em; white-space: nowrap; transition: font-size 180ms ease; }.site-header.is-compact { box-shadow: 0 3px 16px rgba(0, 0, 0, .2); }.site-header.is-compact .header-inner { min-height: 68px; }.site-header.is-compact .site-brand { font-size: clamp(1.35rem, 2.5vw, 1.9rem); }
     .subscribe-button { background: var(--accent); color: var(--paper); padding: 8px 13px; }.subscribe-button:hover { background: var(--ink); color: var(--paper); }
-    .login-button { align-items: center; background: var(--accent); border: 1px solid var(--accent); color: var(--paper); display: inline-flex; font-size: 12px; font-weight: 700; justify-content: center; letter-spacing: .08em; min-height: 38px; padding: 8px 15px; text-transform: uppercase; transition: background 160ms, color 160ms; }
+    .login-button { align-items: center; background: var(--accent); border: 1px solid var(--accent); color: var(--paper); display: inline-flex; font-size: 12px; font-weight: 700; justify-content: center; letter-spacing: .08em; min-height: 38px; padding: 8px 15px; text-transform: uppercase; transition: background 160ms, color 160ms; white-space: nowrap; }
     [data-login-link][hidden] { display: none !important; }
     .login-button:hover { background: transparent; color: var(--accent); }
     .hamburger-button { display: none; background: none; border: none; cursor: pointer; color: var(--accent); font-size: 24px; padding: 8px; align-items: center; }
@@ -211,6 +211,8 @@ export function renderLayout(
     .home-pinned__content .eyebrow { font-size: 10px; margin: 0 0 5px; }
     .home-pinned__content h3 { font-size: 18px; line-height: 1.25; margin: 0; }
     @media (min-width: 761px) and (max-width: 900px) { .home-pinned__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 900px) { .front-page__grid { grid-template-columns: 1fr; gap: 32px; } }
+    @media (max-width: 520px) { .lead-story h2 { font-size: clamp(1.7rem, 8.5vw, 2.4rem); } .lead-story__summary { font-size: 17px; } }
     .writers-callout { background: var(--paper-deep); border: 0; border-left: 4px solid var(--accent); margin-top: 58px; padding: 28px 32px; }
     .home-authors { contain-intrinsic-size: auto 420px; content-visibility: auto; margin: 58px auto 0; max-width: 1180px; }
     .home-authors .section-heading a { color: var(--accent); font-size: 11px; }
@@ -440,7 +442,7 @@ export function renderLayout(
     .auth-row summary { align-items: center; color: var(--ink); cursor: pointer; display: flex; font-size: 15px; font-weight: 600; gap: 10px; list-style: none; min-height: 48px; padding: 10px 14px; }
     .auth-row summary::-webkit-details-marker { display: none; }
     .auth-row summary i { color: var(--accent); width: 20px; }
-    .auth-row summary::after { color: var(--muted); content: "\f078"; font-family: "Font Awesome 6 Free"; font-size: 11px; font-weight: 900; margin-left: auto; transition: transform 160ms; }
+    .auth-row summary::after { color: var(--muted); content: "\\f078"; font-family: "Font Awesome 6 Free"; font-size: 11px; font-weight: 900; margin-left: auto; transition: transform 160ms; }
     .auth-row[open] summary::after { transform: rotate(180deg); }
     .auth-row .auth-form { margin-top: 0; padding: 0 14px 14px; }
     .auth-row .auth-page__resolution { margin: 0 !important; padding: 0 14px 14px; }
