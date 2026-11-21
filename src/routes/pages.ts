@@ -338,6 +338,12 @@ pages.get('/auth', (c) => {
             <p class="auth-welcome__handle">@<span data-welcome-handle></span><span data-welcome-pronouns hidden> · <span data-welcome-pronouns-value></span></span></p>
             <a class="login-button auth-option__button" data-welcome-continue href="/">Continue to Coffee &amp; Code</a>
           </div>
+          <div class="auth-welcome" data-auth-signedout hidden>
+            <span class="auth-welcome__avatar auth-welcome__avatar--placeholder"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></span>
+            <h2 class="auth-welcome__title">You've signed out</h2>
+            <p class="auth-welcome__handle">Your identity and data stay on your own server — nothing is held here.</p>
+            <a class="login-button auth-option__button" data-signedout-continue href="/auth">Sign back in</a>
+          </div>
           <div class="account-switcher" data-account-switcher hidden></div>
           <p class="auth-card__heading">Continue with your AT Protocol account</p>
           <div class="auth-providers" data-auth-providers>

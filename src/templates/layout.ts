@@ -412,6 +412,7 @@ export function renderLayout(
     .auth-benefits span { color: var(--muted); display: block; font-size: 14px; line-height: 1.45; margin-top: 2px; }
     .auth-card { background: var(--paper-deep); border: 1px solid var(--accent); display: flex; flex-direction: column; justify-content: center; padding: 24px; }
     .auth-card[hidden] { display: none; }
+    .auth-card [hidden] { display: none !important; }
     .auth-card__heading { color: var(--ink); font-family: 'Lora', Georgia, serif; font-size: 20px; margin: 0 0 14px; }
     .auth-welcome { align-items: center; display: flex; flex-direction: column; padding: 12px 0; text-align: center; }
     .auth-welcome[hidden] { display: none; }
@@ -514,7 +515,8 @@ export function renderLayout(
     .auth-card .account-switcher__avatar { flex: 0 0 34px; height: 34px; width: 34px; }
     .header-account[hidden] { display: none; }
     .header-account:not([hidden]) { display: inline-flex; }
-    .header-account img { border-radius: 50%; height: 100%; object-fit: cover; width: 100%; }
+    .header-account img { border: 0; border-radius: 50%; display: block; flex: 0 0 auto; height: 100%; object-fit: cover; width: 100%; }
+    .header-account img[hidden] { display: none; }
     .header-account__placeholder { align-items: center; background: var(--paper-deep); border: 1px solid var(--line-strong); border-radius: 50%; color: var(--accent); display: inline-flex; font-size: 17px; height: 40px; justify-content: center; width: 40px; }
     .header-account__placeholder[hidden], .account-page__profile img[hidden], .account-page__profile > span[hidden] { display: none; }
     .account-page__profile { align-items: center; display: flex; gap: 18px; margin-bottom: 24px; min-width: 0; }

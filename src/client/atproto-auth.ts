@@ -435,7 +435,7 @@ function renderAccountSwitchers() {
     if (session) {
       const add = document.createElement('a');
       add.className = 'account-switcher__add';
-      add.href = `/auth?returnTo=${encodeURIComponent(returnTo)}&add=1`;
+      add.href = `/auth?state=add&returnTo=${encodeURIComponent(returnTo)}`;
       add.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i> Add account';
       container.append(add);
     }
@@ -458,6 +458,8 @@ const welcomeHandle = document.querySelector<HTMLElement>('[data-welcome-handle]
 const welcomePronouns = document.querySelector<HTMLElement>('[data-welcome-pronouns]');
 const welcomePronounsValue = document.querySelector<HTMLElement>('[data-welcome-pronouns-value]');
 const welcomeContinue = document.querySelector<HTMLAnchorElement>('[data-welcome-continue]');
+const signedOutBlock = document.querySelector<HTMLElement>('[data-auth-signedout]');
+const signedOutContinue = document.querySelector<HTMLAnchorElement>('[data-signedout-continue]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
@@ -648,11 +650,13 @@ function renderAccount() {
     applyBlockedUserFilter(new Set());
   }
 
-  // /auth?add=1 keeps the sign-in form visible so another account can be added;
-  // /auth?state=completed keeps the card visible to show the welcome panel instead.
+  // /auth?state=add (or legacy ?add=1) keeps the sign-in form visible so another
+  // account can be added; ?state=completed / ?state=signed-out keep the card
+  // visible to show their panels instead.
   const authParams = new URLSearchParams(window.location.search);
-  const addingAccount = window.location.pathname === '/auth' && authParams.get('add') === '1';
-  const welcomeActive = window.location.pathname === '/auth' && authParams.get('state') === 'completed';
+  const authState = window.location.pathname === '/auth' ? authParams.get('state') : null;
+  const addingAccount = authState === 'add' || authParams.get('add') === '1';
+  const welcomeActive = authState === 'completed' || authState === 'signed-out';
   if (session && !addingAccount) {
     if (authOptions) authOptions.hidden = !welcomeActive;
     if (authAccount) authAccount.hidden = welcomeActive ? true : false;
@@ -2744,17 +2748,33 @@ const oauthReady = (async () => {
   }
 })();
 
-// After OAuth completes we land on /auth?state=completed — swap the sign-in card's
-// contents for a welcome panel with the account's profile.
+// /auth carries a few "panel" states: ?state=completed shows a welcome panel
+// after OAuth, ?state=signed-out confirms sign-out. Either way the card swaps
+// its whole contents for that panel.
 async function showAuthWelcome() {
   const params = new URLSearchParams(window.location.search);
-  if (window.location.pathname !== '/auth' || params.get('state') !== 'completed'
-    || !session || !welcomeBlock || !authOptions) return;
+  if (window.location.pathname !== '/auth' || !authOptions) return;
+  const state = params.get('state');
 
-  authWelcomeShown = true;
-  authOptions.hidden = false;
-  authOptions.querySelectorAll<HTMLElement>(':scope > :not([data-auth-welcome])').forEach((el) => { el.hidden = true; });
-  welcomeBlock.hidden = false;
+  const takeOverCard = (panel: HTMLElement) => {
+    authWelcomeShown = true;
+    authOptions.hidden = false;
+    authOptions.querySelectorAll<HTMLElement>(':scope > *').forEach((el) => { el.hidden = el !== panel; });
+    panel.hidden = false;
+  };
+
+  if (state === 'signed-out') {
+    if (!signedOutBlock) return;
+    takeOverCard(signedOutBlock);
+    if (signedOutContinue) {
+      signedOutContinue.href = `/auth?returnTo=${encodeURIComponent(safeReturnPath(params.get('returnTo')))}`;
+    }
+    return;
+  }
+
+  if (state !== 'completed' || !session || !welcomeBlock) return;
+
+  takeOverCard(welcomeBlock);
   if (welcomeContinue) welcomeContinue.href = safeReturnPath(params.get('returnTo'));
 
   const did = session.did;
@@ -3565,8 +3585,12 @@ providerButtons.forEach((button) => {
   });
 });
 
-// "Add account" links land on /auth?add=1 — reveal the free-form handle form.
-if (window.location.pathname === '/auth' && new URLSearchParams(window.location.search).has('add')) {
+// "Add account" links land on /auth?state=add — retitle the card and reveal
+// the free-form handle form (providers still work for adding accounts too).
+const authPageParams = new URLSearchParams(window.location.search);
+if (window.location.pathname === '/auth' && (authPageParams.get('state') === 'add' || authPageParams.has('add'))) {
+  const heading = authOptions?.querySelector<HTMLElement>('.auth-card__heading');
+  if (heading) heading.textContent = 'Add an account';
   providerButtons.find((b) => !b.dataset.provider)?.click();
 }
 
@@ -3648,7 +3672,8 @@ signoutButton?.addEventListener('click', async () => {
     await session.signOut();
     forgetAccount(signedOutDid);
     setLastAuthMethod(undefined);
-    window.location.reload();
+    const returnTo = safeReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    window.location.assign(`/auth?state=signed-out&returnTo=${encodeURIComponent(returnTo)}`);
   } catch (error) {
     showAuthError(`Could not sign out: ${errorMessage(error)}`);
     signoutButton.disabled = false;
