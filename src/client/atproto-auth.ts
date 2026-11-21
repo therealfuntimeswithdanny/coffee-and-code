@@ -436,12 +436,25 @@ function renderAccountSwitchers() {
 }
 
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
+const providerButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-provider]'));
+const handleInput = document.querySelector<HTMLInputElement>('#auth-handle');
+const handleLabel = document.querySelector<HTMLElement>('[data-handle-label]');
+const handleHint = document.querySelector<HTMLElement>('[data-handle-hint]');
 const appPasswordForm = document.querySelector<HTMLFormElement>('[data-app-password-form]');
 const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
+const welcomeBlock = document.querySelector<HTMLElement>('[data-auth-welcome]');
+const welcomeAvatar = document.querySelector<HTMLImageElement>('[data-welcome-avatar]');
+const welcomePlaceholder = document.querySelector<HTMLElement>('[data-welcome-placeholder]');
+const welcomeName = document.querySelector<HTMLElement>('[data-welcome-name]');
+const welcomeHandle = document.querySelector<HTMLElement>('[data-welcome-handle]');
+const welcomePronouns = document.querySelector<HTMLElement>('[data-welcome-pronouns]');
+const welcomePronounsValue = document.querySelector<HTMLElement>('[data-welcome-pronouns-value]');
+const welcomeContinue = document.querySelector<HTMLAnchorElement>('[data-welcome-continue]');
 const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const createCoffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-create-coffee-account]');
+const createCoffeeAccountLabel = createCoffeeAccountButton?.querySelector<HTMLElement>('strong') || createCoffeeAccountButton;
 const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
 const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
 const inviteCodeElement = document.querySelector<HTMLElement>('[data-invite-code]');
@@ -627,12 +640,14 @@ function renderAccount() {
     applyBlockedUserFilter(new Set());
   }
 
-  // /auth?add=1 keeps the sign-in form visible so another account can be added.
-  const addingAccount = window.location.pathname === '/auth'
-    && new URLSearchParams(window.location.search).get('add') === '1';
+  // /auth?add=1 keeps the sign-in form visible so another account can be added;
+  // /auth?state=done keeps the card visible to show the welcome panel instead.
+  const authParams = new URLSearchParams(window.location.search);
+  const addingAccount = window.location.pathname === '/auth' && authParams.get('add') === '1';
+  const welcomeActive = window.location.pathname === '/auth' && authParams.get('state') === 'done';
   if (session && !addingAccount) {
-    if (authOptions) authOptions.hidden = true;
-    if (authAccount) authAccount.hidden = false;
+    if (authOptions) authOptions.hidden = !welcomeActive;
+    if (authAccount) authAccount.hidden = welcomeActive ? true : false;
     if (authName) authName.textContent = 'Your account';
   } else {
     if (authOptions) authOptions.hidden = false;
@@ -2708,10 +2723,65 @@ const oauthReady = (async () => {
 
   oauthInitialized = true;
   renderAccount();
+  void showAuthWelcome();
   if (callbackState !== undefined && window.location.pathname === '/auth') {
-    window.location.replace(safeReturnPath(callbackState));
+    // Land on a welcome state first — it confirms who signed in before
+    // continuing on to wherever they were headed.
+    const doneUrl = new URL('/auth', window.location.origin);
+    doneUrl.searchParams.set('state', 'done');
+    const known = session ? loadKnownAccounts().find((a) => a.did === session.did) : undefined;
+    doneUrl.searchParams.set('handle', known?.handle || session?.did || '');
+    doneUrl.searchParams.set('returnTo', safeReturnPath(callbackState));
+    window.location.replace(`${doneUrl.pathname}${doneUrl.search}`);
   }
 })();
+
+// After OAuth completes we land on /auth?state=done — swap the sign-in card's
+// contents for a welcome panel with the account's profile.
+async function showAuthWelcome() {
+  const params = new URLSearchParams(window.location.search);
+  if (window.location.pathname !== '/auth' || params.get('state') !== 'done'
+    || !session || !welcomeBlock || !authOptions) return;
+
+  authOptions.hidden = false;
+  authOptions.querySelectorAll<HTMLElement>(':scope > :not([data-auth-welcome])').forEach((el) => { el.hidden = true; });
+  welcomeBlock.hidden = false;
+  if (welcomeContinue) welcomeContinue.href = safeReturnPath(params.get('returnTo'));
+
+  const did = session.did;
+  const fallback = params.get('handle') || did;
+  if (welcomeName) welcomeName.textContent = fallback;
+  if (welcomeHandle) welcomeHandle.textContent = fallback.startsWith('did:') ? did : fallback;
+
+  try {
+    const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+    if (!response.ok) throw new Error('Profile unavailable');
+    const profile = await response.json() as {
+      avatar?: string; banner?: string; displayName?: string; handle?: string; pronouns?: string;
+    };
+    if (session?.did !== did) return;
+    const name = profile.displayName || profile.handle || fallback;
+    if (welcomeName) welcomeName.textContent = name;
+    if (welcomeHandle) welcomeHandle.textContent = profile.handle || fallback;
+    if (profile.pronouns && welcomePronouns && welcomePronounsValue) {
+      welcomePronounsValue.textContent = profile.pronouns;
+      welcomePronouns.hidden = false;
+    }
+    if (profile.avatar && welcomeAvatar) {
+      welcomeAvatar.src = accountAvatarUrl(profile.avatar);
+      welcomeAvatar.alt = `${name} profile picture`;
+      welcomeAvatar.hidden = false;
+      if (welcomePlaceholder) welcomePlaceholder.hidden = true;
+    }
+    rememberAccount(did, {
+      ...(profile.handle ? { handle: profile.handle } : {}),
+      ...(profile.displayName ? { displayName: profile.displayName } : {}),
+      ...(profile.avatar ? { avatar: accountAvatarUrl(profile.avatar) } : {}),
+    });
+  } catch {
+    // Profile lookup failed — the fallback handle/did is already shown.
+  }
+}
 
 createCoffeeAccountButton?.addEventListener('click', async () => {
   clearAuthError();
@@ -2722,7 +2792,7 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
 
   if (!signupInviteCode) {
     createCoffeeAccountButton.disabled = true;
-    createCoffeeAccountButton.textContent = 'Getting an invite code…';
+    createCoffeeAccountLabel.textContent = 'Getting an invite code…';
     try {
       const response = await fetch('/api/invite-code', { cache: 'no-store' });
       if (!response.ok) throw new Error('Could not get a signup invite code. Please try again shortly.');
@@ -2732,19 +2802,19 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
       if (inviteCodeElement) inviteCodeElement.textContent = signupInviteCode;
       if (invitePanel) invitePanel.hidden = false;
       if (inviteStatus) inviteStatus.textContent = 'Copy this invite code. The Coffee & Code account page will ask you to paste it during sign-up.';
-      createCoffeeAccountButton.textContent = 'Continue to account creation';
+      createCoffeeAccountLabel.textContent = 'Continue to account creation';
       createCoffeeAccountButton.disabled = false;
       return;
     } catch (error) {
       showAuthError(errorMessage(error));
-      createCoffeeAccountButton.textContent = 'Create a Coffee & Code account';
+      createCoffeeAccountLabel.textContent = 'Create a Coffee & Code account';
       createCoffeeAccountButton.disabled = false;
       return;
     }
   }
 
   createCoffeeAccountButton.disabled = true;
-  createCoffeeAccountButton.textContent = 'Connecting…';
+  createCoffeeAccountLabel.textContent = 'Connecting…';
   try {
     const scope = await requestedScope('account.coffeencode.cc');
     const activeClient = client;
@@ -2754,7 +2824,7 @@ createCoffeeAccountButton?.addEventListener('click', async () => {
   } catch (error) {
     showAuthError(errorMessage(error));
     createCoffeeAccountButton.disabled = false;
-    createCoffeeAccountButton.textContent = 'Continue to account creation';
+    createCoffeeAccountLabel.textContent = 'Continue to account creation';
   }
 });
 
@@ -3448,6 +3518,66 @@ async function uploadForumImages(images: ForumImageInput[], activeSession: AuthS
   return uploaded;
 }
 
+// Named providers (Bluesky, Eurosky, Blacksky, Coffee & Code) skip the handle
+// step entirely — OAuth on the PDS asks for the account. Only the free-form
+// "Use a handle" row reveals the handle form.
+providerButtons.forEach((button) => {
+  button.addEventListener('click', async () => {
+    clearAuthError();
+    const provider = button.dataset.provider ?? '';
+    if (!provider) {
+      providerButtons.forEach((b) => b.setAttribute('aria-expanded', String(b === button)));
+      if (authForm) authForm.hidden = false;
+      if (handleLabel) handleLabel.textContent = 'Your handle';
+      if (handleInput) {
+        handleInput.placeholder = 'you.bsky.social';
+        handleInput.focus();
+      }
+      if (handleHint) {
+        handleHint.hidden = false;
+        handleHint.textContent = 'Enter the full handle for any AT Protocol account. You’ll finish signing in on your provider’s site.';
+      }
+      return;
+    }
+
+    providerButtons.forEach((b) => {
+      b.setAttribute('aria-expanded', 'false');
+      b.disabled = true;
+    });
+    button.setAttribute('aria-expanded', 'true');
+    if (!client) {
+      showAuthError(`Sign-in could not initialize: ${errorMessage(initializationError)}`);
+      providerButtons.forEach((b) => { b.disabled = false; });
+      return;
+    }
+    await startOAuthSignIn(`https://${provider}`, button, true);
+    providerButtons.forEach((b) => { b.disabled = false; });
+    button.setAttribute('aria-expanded', 'false');
+  });
+});
+
+// "Add account" links land on /auth?add=1 — reveal the free-form handle form.
+if (window.location.pathname === '/auth' && new URLSearchParams(window.location.search).has('add')) {
+  providerButtons.find((b) => !b.dataset.provider)?.click();
+}
+
+async function startOAuthSignIn(target: string, submit?: HTMLElement | null, isService = false) {
+  if (submit) {
+    submit.setAttribute('aria-busy', 'true');
+  }
+  try {
+    // A bare service URL has no handle to check author status against.
+    const scope = isService ? memberScope : await requestedScope(target);
+    const activeClient = client;
+    if (!activeClient) throw initializationError || new Error('OAuth client is unavailable.');
+    const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
+    await activeClient.signInRedirect(target, { state: returnPath, scope });
+  } catch (error) {
+    showAuthError(errorMessage(error));
+    if (submit) submit.removeAttribute('aria-busy');
+  }
+}
+
 if (authForm) {
   authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -3459,25 +3589,15 @@ if (authForm) {
 
     const handle = new FormData(authForm).get('handle')?.toString().trim();
     if (!handle) return;
-
     const submit = authForm.querySelector<HTMLButtonElement>('button[type="submit"]');
     if (submit) {
       submit.disabled = true;
       submit.textContent = 'Connecting…';
     }
-
-    try {
-      const scope = await requestedScope(handle);
-      const activeClient = client;
-      if (!activeClient) throw initializationError || new Error('OAuth client is unavailable.');
-      const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-      await activeClient.signInRedirect(handle, { state: returnPath, scope });
-    } catch (error) {
-      showAuthError(errorMessage(error));
-      if (submit) {
-        submit.disabled = false;
-        submit.textContent = 'Continue';
-      }
+    await startOAuthSignIn(handle);
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Continue';
     }
   });
 }
@@ -5739,6 +5859,18 @@ async function loadDraftEditor(did: string) {
     return document;
   }
 
+  const draftAuthorHandle = async (): Promise<string> => {
+    const known = loadKnownAccounts().find((account) => account.did === did)?.handle;
+    if (known) return known;
+    try {
+      const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+      if (response.ok) {
+        const profile = await response.json() as { handle?: unknown };
+        if (typeof profile.handle === 'string' && profile.handle) return profile.handle;
+      }
+    } catch { /* Fall through to the publication path hint. */ }
+    return did;
+  };
   const draftSources = () => [...new Set(sourcesInput.value.split('\n').map((line) => line.trim()).filter(Boolean))];
   const draftBacklink = () => backlinkInput.value.trim();
   const draftSourceLabel = (value: string) => {
@@ -5789,6 +5921,7 @@ async function loadDraftEditor(did: string) {
     lastWrittenMetadata = key;
   };
 
+  const publicationUrls = new Map<string, string>();
   const loadDraftPublications = async () => {
     const publications: Array<{ uri: string; label: string }> = [];
     for (const collection of ['site.standard.publication', 'pub.leaflet.publication'] as const) {
@@ -5801,6 +5934,7 @@ async function loadDraftEditor(did: string) {
         for (const record of payload.records || []) {
           if (typeof record.uri !== 'string') continue;
           const value = record.value || {};
+          if (typeof value.url === 'string' && value.url) publicationUrls.set(record.uri, value.url);
           const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim()
             : typeof value.title === 'string' && value.title.trim() ? value.title.trim()
             : record.uri.split('/').pop() || record.uri;
@@ -5961,9 +6095,30 @@ async function loadDraftEditor(did: string) {
 
       let postRef: { uri: string; cid: string } | undefined;
       if (site) {
+        // site.standard.document.path joins with the publication's url to form
+        // the document's canonical web URL — standard.site readers and
+        // verification rely on it resolving to this site's rendered page.
+        const docRkey = createTid();
+        let basePath = '';
+        try {
+          basePath = new URL(publicationUrls.get(site) || '').pathname.replace(/\/+$/, '');
+        } catch { /* Publications without a resolvable url keep the full path. */ }
+        let authorHandle = await draftAuthorHandle();
+        if (authorHandle === did) {
+          // Last resort: publications mounted at /author/{handle} already carry
+          // the handle in their url, so reuse it rather than writing a DID path
+          // that won't match the site's canonical /author/{handle}/{rkey} URL.
+          const hinted = basePath.match(/^\/author\/([^/]+)/)?.[1];
+          if (hinted) authorHandle = decodeURIComponent(hinted);
+        }
+        const pagePath = `/author/${encodeURIComponent(authorHandle)}/${encodeURIComponent(docRkey)}`;
+        const documentPath = basePath && pagePath.startsWith(`${basePath}/`)
+          ? pagePath.slice(basePath.length)
+          : pagePath;
         const standardRecord: Record<string, unknown> = {
           $type: 'site.standard.document',
           site,
+          path: documentPath,
           title: draftDocument.title,
           publishedAt: now,
           author: did,
@@ -5977,9 +6132,10 @@ async function loadDraftEditor(did: string) {
         if (Array.isArray(draftDocument.tags)) standardRecord.tags = draftDocument.tags;
         if (draftDocument.coverImage) standardRecord.coverImage = draftDocument.coverImage;
         if (textContent) standardRecord.textContent = textContent;
-        const standardResponse = await repoRequest('com.atproto.repo.createRecord', {
+        const standardResponse = await repoRequest('com.atproto.repo.putRecord', {
           repo: did,
           collection: 'site.standard.document',
+          rkey: docRkey,
           record: standardRecord,
         });
         const standardResult = await standardResponse.json() as { uri?: unknown; cid?: unknown };

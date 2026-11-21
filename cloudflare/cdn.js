@@ -81,6 +81,7 @@ const LANDING_PAGE = `<!DOCTYPE html>
     <title>atCDN</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script async src="https://cloud.umami.is/script.js" data-website-id="ce9dca73-97c8-4831-8951-90b7fe8525b6"></script>
 </head>
 <body>
     <h1>atCDN</h1>

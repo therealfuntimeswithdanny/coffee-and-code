@@ -2116,7 +2116,7 @@ export default function App() {
     <View style={styles.header}>
       {selected ? <Pressable accessibilityRole="button" accessibilityLabel="Back to stories" onPress={closeStory} style={styles.headerSide}><SymbolView name="chevron.left" size={20} tintColor={C.muted} /><Text style={styles.action}>BACK</Text></Pressable> : <View style={styles.headerSide} />}
       <Text style={styles.brand}>Coffee & Code</Text>
-      <View style={styles.headerSide} />
+      {selected ? <Pressable accessibilityRole="button" accessibilityLabel="Share this story" onPress={() => Share.share({ message: `${selected.title} ${storyWebUrl(selected)}`, url: storyWebUrl(selected) }).catch(() => {})} style={[styles.headerSide, styles.headerTrailing]}><SymbolView name="square.and.arrow.up" size={18} tintColor={C.muted} /></Pressable> : <View style={styles.headerSide} />}
     </View>
     {loading ? <View style={styles.launchLoading}>
         <Image source={require('./assets/SplashScreen.png')} accessibilityLabel="Coffee & Code splash screen" style={styles.launchMark} resizeMode="contain" />
@@ -2148,14 +2148,6 @@ export default function App() {
           <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.liked) }} accessibilityLabel={`Like, ${engagement?.likes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('like')} style={[styles.reactionButton, engagement?.liked && styles.reactionSelected]}><SymbolView name="hand.thumbsup" size={14} tintColor={engagement?.liked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.liked && styles.reactionSelectedText]}>{engagement?.liked ? 'LIKED' : 'LIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.liked && styles.reactionSelectedText]}>{engagement?.likes ?? 0}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: saved.some((item) => item.uri === selected.uri) }} accessibilityLabel={`Save, ${engagement?.saves ?? 0}`} disabled={accountBusy} onPress={() => toggleSaved(selected)} style={[styles.reactionButton, saved.some((item) => item.uri === selected.uri) && styles.reactionSelected]}><SymbolView name="bookmark" size={14} tintColor={saved.some((item) => item.uri === selected.uri) ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{saved.some((item) => item.uri === selected.uri) ? 'SAVED' : 'SAVE'}</Text><Text style={[styles.reactionButtonCount, saved.some((item) => item.uri === selected.uri) && styles.reactionSelectedText]}>{engagement?.saves ?? 0}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(engagement?.disliked) }} accessibilityLabel={`Dislike, ${engagement?.dislikes ?? 0}`} disabled={accountBusy} onPress={() => toggleReaction('dislike')} style={[styles.reactionButton, engagement?.disliked && styles.reactionSelected]}><SymbolView name="hand.thumbsdown" size={14} tintColor={engagement?.disliked ? C.bg : C.muted} /><Text style={[styles.reactionButtonLabel, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.disliked ? 'DISLIKED' : 'DISLIKE'}</Text><Text style={[styles.reactionButtonCount, engagement?.disliked && styles.reactionSelectedText]}>{engagement?.dislikes ?? 0}</Text></Pressable>
-        </View>
-        <View style={styles.shareRow}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Share this story on Bluesky" onPress={() => Linking.openURL(`https://app.coffeencode.cc/intent?text=${encodeURIComponent(selected.title)}%20${encodeURIComponent(storyWebUrl(selected))}`)} style={styles.reactionButton}>
-            <SymbolView name="paperplane" size={14} tintColor={C.muted} /><Text style={styles.reactionButtonLabel}>BLUESKY</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Share this story" onPress={() => Share.share({ message: `${selected.title} ${storyWebUrl(selected)}`, url: storyWebUrl(selected) }).catch(() => {})} style={styles.reactionButton}>
-            <SymbolView name="square.and.arrow.up" size={14} tintColor={C.muted} /><Text style={styles.reactionButtonLabel}>SHARE</Text>
-          </Pressable>
         </View>
         <View style={styles.rule} />
         {articleLoading ? <ActivityIndicator color={C.muted} style={{ marginTop: 28 }} /> : error ? <Text style={styles.error}>{error}</Text> : <ArticleBody record={articleRecord} uri={selected.uri} bodyStyle={readerBodyStyle} />}

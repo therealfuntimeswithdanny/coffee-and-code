@@ -33,7 +33,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     gap: 5,
   },
-  headerTrailing: { alignItems: "flex-end" },
+  headerTrailing: { justifyContent: "flex-end" },
   headerBell: { alignItems: "center", paddingRight: 4 },
   brand: {
     color: C.ink,
@@ -1113,7 +1113,6 @@ export const styles = StyleSheet.create({
   },
 
   // Sharing, appearance, and email settings
-  shareRow: { flexDirection: "row", gap: 8, marginTop: 12 },
   prefChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 8 },
   prefSizeRow: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 8 },
   prefPreview: { marginTop: 16, padding: 14, backgroundColor: C.panel, borderRadius: 8 },

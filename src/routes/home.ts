@@ -16,10 +16,23 @@ function formatDate(date?: string) {
   });
 }
 
+function hasRealDescription(post: StandardDocument) {
+  const raw = (post.description || '').trim();
+  return !!raw && !raw.startsWith('{') && !raw.startsWith('[');
+}
+
 function excerpt(post: StandardDocument, length = 180) {
   const text = descriptionText(post.description, post.content);
   if (!text) return '';
+  // Posts without a description aren't char-truncated — the dek--clamped CSS
+  // clamps them to two lines and renders the ellipsis at the line's end.
+  if (!hasRealDescription(post)) return text;
   return text.length > length ? `${text.substring(0, length).trimEnd()}…` : text;
+}
+
+// Fallback excerpts are clamped to exactly two lines with an ellipsis.
+function dekClass(post: StandardDocument) {
+  return hasRealDescription(post) ? '' : ' dek--clamped';
 }
 
 function articleMeta(post: StandardDocument) {
@@ -83,7 +96,7 @@ home.get('/', async (c) => {
           </a>
           <div class="lead-story__content">
             <h2><a href="${escapeHtml(heroPost.path)}">${escapeHtml(heroPost.title || 'Untitled')}</a></h2>
-            ${excerpt(heroPost, 260) ? `<p class="lead-story__summary">${excerpt(heroPost, 260)}</p>` : ''}
+            ${excerpt(heroPost, 260) ? `<p class="lead-story__summary${dekClass(heroPost)}">${escapeHtml(excerpt(heroPost, 260))}</p>` : ''}
             <div class="story-footer">${heroArticleMeta(heroPost)} <a href="${escapeHtml(heroPost.path)}" class="read-link">Read story <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
           </div>
         </article>
@@ -99,7 +112,7 @@ home.get('/', async (c) => {
         ${post.cover ? `<a class="home-pinned__image" href="${escapeHtml(post.path)}" aria-label="Read ${escapeHtml(post.title || 'Untitled')}">
           <img src="${escapeHtml(proxiedCover(post.cover, 'feed_card') || '')}" alt="" class="story-image" width="600" height="340" loading="lazy" decoding="async">
         </a>` : ''}
-        <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${pinnedDek ? `<p class="story-dek">${escapeHtml(pinnedDek)}</p>` : ''}${authorByline(post)}</div>
+        <div class="home-pinned__content"><h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>${pinnedDek ? `<p class="story-dek${dekClass(post)}">${escapeHtml(pinnedDek)}</p>` : ''}${authorByline(post)}</div>
       </article>`;
     }).join('')}</div>
   </section>` : '';
@@ -116,7 +129,7 @@ home.get('/', async (c) => {
               </a>` : ''}
               <div>
                 <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
-                ${sideDek ? `<p class="story-dek">${escapeHtml(sideDek)}</p>` : ''}
+                ${sideDek ? `<p class="story-dek${dekClass(post)}">${escapeHtml(sideDek)}</p>` : ''}
                 ${authorByline(post)}
                 ${articleMeta(post)}
               </div>
@@ -136,7 +149,7 @@ home.get('/', async (c) => {
           <div>
             <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
             ${authorByline(post)}
-            ${excerpt(post, 100) ? `<p>${excerpt(post, 100)}</p>` : ''}
+            ${excerpt(post, 100) ? `<p class="archive-story__dek${dekClass(post)}">${escapeHtml(excerpt(post, 100))}</p>` : ''}
           </div>
           <div class="archive-story__footer">${articleMeta(post)} <a href="${escapeHtml(post.path)}" class="read-link">Read <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         </article>`

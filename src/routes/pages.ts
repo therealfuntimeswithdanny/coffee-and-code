@@ -318,19 +318,44 @@ pages.get('/api/forum/moderators/check', async (c) => {
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
-      <h1 id="auth-title">Log in to Coffee &amp; Code</h1>
-      <p class="auth-page__intro">Sign in with your AT Protocol handle.</p>
-      <div class="auth-options" data-auth-options>
-        <section class="auth-option auth-option--coffee" aria-labelledby="existing-account-title">
-          <h2 id="existing-account-title">Sign in</h2>
+      <div class="auth-hero">
+        <div class="auth-hero__intro">
+          <h1 id="auth-title">Log in to Coffee &amp; Code</h1>
+          <p class="auth-page__intro">Use the same identity you use for Bluesky, Blacksky, Eurosky, Pckt, Margin, Tangled. This app is built on the AT Protocol, an open social network. Where you're in full control of your data.</p>
+          <ul class="auth-benefits">
+            <li><i class="fa-solid fa-bookmark" aria-hidden="true"></i><div><strong>Build a reading list</strong><span>Save stories to your list and pick them back up on any device.</span></div></li>
+            <li><i class="fa-solid fa-heart" aria-hidden="true"></i><div><strong>Like the work you enjoy</strong><span>Likes, dislikes, and reading history travel with your account.</span></div></li>
+            <li><i class="fa-solid fa-comments" aria-hidden="true"></i><div><strong>Join the community</strong><span>Comment on stories, reply to other readers, and post in the forum.</span></div></li>
+            <li><i class="fa-solid fa-bell" aria-hidden="true"></i><div><strong>Stay in the loop</strong><span>Follow authors and tags, and get notified about new matching stories.</span></div></li>
+            <li><i class="fa-solid fa-feather" aria-hidden="true"></i><div><strong>Write with us</strong><span>Author accounts get a profile, drafts, and publishing tools.</span></div></li>
+          </ul>
+        </div>
+        <div class="auth-card" data-auth-options>
+          <div class="auth-welcome" data-auth-welcome hidden>
+            <img class="auth-welcome__avatar" data-welcome-avatar alt="" hidden>
+            <span class="auth-welcome__avatar auth-welcome__avatar--placeholder" data-welcome-placeholder><i class="fa-solid fa-user" aria-hidden="true"></i></span>
+            <h2 class="auth-welcome__title">Welcome, <span data-welcome-name></span></h2>
+            <p class="auth-welcome__handle">@<span data-welcome-handle></span><span data-welcome-pronouns hidden> · <span data-welcome-pronouns-value></span></span></p>
+            <a class="login-button auth-option__button" data-welcome-continue href="/">Continue to Coffee &amp; Code</a>
+          </div>
           <div class="account-switcher" data-account-switcher hidden></div>
-          <form class="auth-form" data-auth-form>
-            <label for="auth-handle">Handle</label>
+          <p class="auth-card__heading">Continue with your AT Protocol account</p>
+          <div class="auth-providers" data-auth-providers>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><img class="auth-provider__logo" src="/favicon.png" alt="" aria-hidden="true"><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider="bsky.social"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-bsky.app-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Bluesky</strong><small>bsky.social</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider="eurosky.social"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-eurosky.social-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Eurosky</strong><small>eurosky.social</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider="blacksky.app"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-blackskyweb.xyz-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Blacksky</strong><small>blacksky.app</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider=""><i class="fa-solid fa-at" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Use a handle</strong><small>any AT Protocol account</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+          </div>
+          <form class="auth-form auth-handle-form" data-auth-form hidden>
+            <label for="auth-handle" data-handle-label>Your handle</label>
             <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
-            <button type="submit" class="login-button auth-option__button">Continue</button>
+            <p class="auth-handle-form__hint" data-handle-hint hidden></p>
+            <button type="submit" class="login-button auth-option__button" data-handle-submit>Continue</button>
           </form>
-          <details class="auth-app-password">
-            <summary>Sign in with an app password instead</summary>
+          <div class="auth-card__divider"><span>Other ways to sign in</span></div>
+          <details class="auth-row">
+            <summary><i class="fa-solid fa-key" aria-hidden="true"></i> Use an app password</summary>
             <form class="auth-form" data-app-password-form>
               <label for="auth-app-identifier">Handle</label>
               <input id="auth-app-identifier" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
@@ -340,17 +365,15 @@ pages.get('/auth', (c) => {
             </form>
             <p class="auth-page__resolution">Create an app password in your account provider’s settings (on Bluesky: Settings → App passwords). Signing in this way skips the permissions screen, so only use it on a device you trust.</p>
           </details>
-          <p class="auth-page__resolution">AT Protocol is an open social networking protocol. Bluesky is built on it, so you can sign in here with your Bluesky handle. You can also use an account from another AT Protocol service. You’ll enter your password on your account provider’s site.</p>
-          <button type="button" class="auth-create-button" data-create-coffee-account>Create a Coffee &amp; Code account</button>
+          <button type="button" class="auth-provider auth-provider--create" data-create-coffee-account><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Create a Coffee &amp; Code account</strong><small>hosted on our own infrastructure, works with thousands of apps</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
           <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
           <div class="auth-invite" data-invite-panel hidden><code data-invite-code></code><button type="button" class="auth-signout" data-copy-invite>Copy invite code</button></div>
-        </section>
+        </div>
       </div>
       <div class="auth-account" data-auth-account hidden>
         <p class="auth-account__status">Signed in as <strong data-auth-name></strong></p>
         <button type="button" class="auth-signout" data-auth-signout>Log out</button>
       </div>
-      <p class="auth-page__permissions">Your account provider will show the permissions Coffee &amp; Code requests. Public likes, dislikes, views, saves, comments, and replies are saved to your AT Protocol account. Read our <a href="/terms">terms of service</a> and <a href="/privacy">privacy policy</a>.</p>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
   `;
