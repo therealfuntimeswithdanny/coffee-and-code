@@ -74,7 +74,7 @@ function errorMessage(error: unknown) {
 }
 
 // Accounts that have signed in on this device, for the account switcher.
-type KnownAccount = { did: string; handle?: string; displayName?: string; avatar?: string };
+type KnownAccount = { did: string; handle?: string; displayName?: string; avatar?: string; profileFetchedAt?: number };
 const KNOWN_ACCOUNTS_KEY = 'cc:known-accounts';
 
 function loadKnownAccounts(): KnownAccount[] {
@@ -355,10 +355,14 @@ async function switchToAccount(did: string, trigger?: HTMLButtonElement) {
 // DIDs whose public profiles we've already tried to fetch for the switcher,
 // so renderAccountSwitchers doesn't re-request them on every render.
 const switcherProfileLookups = new Set<string>();
+// Cached profiles refresh in the background after a day.
+const PROFILE_STALE_MS = 24 * 60 * 60 * 1000;
 
 function backfillSwitcherProfiles(accounts: KnownAccount[]) {
   accounts
-    .filter((account) => !account.handle || !account.avatar)
+    .filter((account) =>
+      !account.handle || !account.avatar
+      || !account.profileFetchedAt || Date.now() - account.profileFetchedAt > PROFILE_STALE_MS)
     .forEach((account) => {
       if (switcherProfileLookups.has(account.did)) return;
       switcherProfileLookups.add(account.did);
@@ -369,6 +373,7 @@ function backfillSwitcherProfiles(accounts: KnownAccount[]) {
             ...(profile.handle ? { handle: profile.handle } : {}),
             ...(profile.displayName ? { displayName: profile.displayName } : {}),
             ...(profile.avatar ? { avatar: accountAvatarUrl(profile.avatar) } : {}),
+            profileFetchedAt: Date.now(),
           });
           renderAccountSwitchers();
         })
@@ -703,6 +708,7 @@ function renderAccount() {
         ...(profile.handle ? { handle: profile.handle } : {}),
         ...(profile.displayName ? { displayName: profile.displayName } : {}),
         ...(avatar ? { avatar } : {}),
+        profileFetchedAt: Date.now(),
       });
       renderAccountSwitchers();
       if (headerAccountAvatar && avatar) {
@@ -2782,33 +2788,80 @@ async function showAuthWelcome() {
   if (welcomeName) welcomeName.textContent = fallback;
   if (welcomeHandle) welcomeHandle.textContent = fallback.startsWith('did:') ? did : fallback;
 
+  // Identity cascade: author profile first, then the Coffee & Code reader
+  // profile, then the public Bluesky profile. Each layer only fills fields the
+  // earlier ones didn't set.
+  let name: string | undefined;
+  let handle: string | undefined;
+  let pronouns: string | undefined;
+  let avatarUrl: string | undefined;
+
+  const blobAvatarUrl = async (blob: unknown) => {
+    const link = (blob as { ref?: { $link?: unknown } } | undefined)?.ref?.$link;
+    if (typeof link !== 'string' || !link) return undefined;
+    const activeSession = session;
+    if (!activeSession) return undefined;
+    const query = new URLSearchParams({ did, cid: link });
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.sync.getBlob?${query}`);
+    if (!response.ok) return undefined;
+    return URL.createObjectURL(await response.blob());
+  };
+
+  try {
+    const query = new URLSearchParams({ repo: did, collection: 'cc.coffeencode.author.profile', rkey: 'self' });
+    const activeSession = session;
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query}`);
+    if (response.ok) {
+      const result = await response.json() as { value?: Record<string, unknown> };
+      const value = result.value;
+      if (value && value.$type === 'cc.coffeencode.author.profile') {
+        if (typeof value.displayName === 'string' && value.displayName) name = value.displayName;
+        if (typeof value.pronouns === 'string' && value.pronouns) pronouns = value.pronouns;
+        avatarUrl = await blobAvatarUrl(value.avatar).catch(() => undefined);
+      }
+    }
+  } catch {}
+
+  try {
+    const readerProfile = await fetchUserProfileRecord(did);
+    if (readerProfile) {
+      if (!name && typeof readerProfile.displayName === 'string' && readerProfile.displayName) name = readerProfile.displayName;
+      if (!pronouns && typeof readerProfile.pronouns === 'string' && readerProfile.pronouns) pronouns = readerProfile.pronouns;
+    }
+  } catch {}
+
   try {
     const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
-    if (!response.ok) throw new Error('Profile unavailable');
-    const profile = await response.json() as {
-      avatar?: string; banner?: string; displayName?: string; handle?: string; pronouns?: string;
-    };
-    if (session?.did !== did) return;
-    const name = profile.displayName || profile.handle || fallback;
-    if (welcomeName) welcomeName.textContent = name;
-    if (welcomeHandle) welcomeHandle.textContent = profile.handle || fallback;
-    if (profile.pronouns && welcomePronouns && welcomePronounsValue) {
-      welcomePronounsValue.textContent = profile.pronouns;
-      welcomePronouns.hidden = false;
+    if (response.ok) {
+      const profile = await response.json() as {
+        avatar?: string; displayName?: string; handle?: string; pronouns?: string;
+      };
+      if (profile.handle) handle = profile.handle;
+      name = name || profile.displayName || profile.handle;
+      pronouns = pronouns || profile.pronouns;
+      if (!avatarUrl && profile.avatar) avatarUrl = accountAvatarUrl(profile.avatar);
+      rememberAccount(did, {
+        ...(profile.handle ? { handle: profile.handle } : {}),
+        ...(profile.displayName ? { displayName: profile.displayName } : {}),
+        ...(profile.avatar ? { avatar: accountAvatarUrl(profile.avatar) } : {}),
+        profileFetchedAt: Date.now(),
+      });
     }
-    if (profile.avatar && welcomeAvatar) {
-      welcomeAvatar.src = accountAvatarUrl(profile.avatar);
-      welcomeAvatar.alt = `${name} profile picture`;
-      welcomeAvatar.hidden = false;
-      if (welcomePlaceholder) welcomePlaceholder.hidden = true;
-    }
-    rememberAccount(did, {
-      ...(profile.handle ? { handle: profile.handle } : {}),
-      ...(profile.displayName ? { displayName: profile.displayName } : {}),
-      ...(profile.avatar ? { avatar: accountAvatarUrl(profile.avatar) } : {}),
-    });
-  } catch {
-    // Profile lookup failed — the fallback handle/did is already shown.
+  } catch {}
+
+  if (session?.did !== did) return;
+  const displayName = name || handle || fallback;
+  if (welcomeName) welcomeName.textContent = displayName;
+  if (welcomeHandle) welcomeHandle.textContent = handle || (fallback.startsWith('did:') ? did : fallback);
+  if (pronouns && welcomePronouns && welcomePronounsValue) {
+    welcomePronounsValue.textContent = pronouns;
+    welcomePronouns.hidden = false;
+  }
+  if (avatarUrl && welcomeAvatar) {
+    welcomeAvatar.src = avatarUrl;
+    welcomeAvatar.alt = `${displayName} profile picture`;
+    welcomeAvatar.hidden = false;
+    if (welcomePlaceholder) welcomePlaceholder.hidden = true;
   }
 }
 
