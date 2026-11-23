@@ -221,6 +221,93 @@ api.get('/notifications', async (c) => {
   }
 });
 
+const VIDEO_MIME_EXT: Record<string, string> = {
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+  'video/quicktime': '.mov',
+  'video/x-m4v': '.m4v',
+  'video/ogg': '.ogv',
+  'video/mpeg': '.mpg',
+  'video/3gpp': '.3gp',
+  'video/3gpp2': '.3g2',
+};
+const VIDEO_MAX_BYTES = 512 * 1024 * 1024; // 512 MB
+
+// Stores author videos in the public R2 bucket served at
+// storage.coffeencode.cc/video/. Two modes:
+//   - JSON {did, cid}: copies a blob the author already uploaded to their PDS;
+//     the blob's presence in their repository is the proof of ownership.
+//   - Raw body with a video/* Content-Type and a ?did= query param: direct
+//     upload, used when the PDS rejects the file (e.g. over its blob limit).
+api.post('/video', async (c) => {
+  if (!c.env.STORAGE) {
+    return c.json({ error: 'Video storage is not configured.' }, 503, { 'Cache-Control': 'no-store' });
+  }
+  const storageBase = (c.env.STORAGE_PUBLIC_URL || 'https://storage.coffeencode.cc').replace(/\/+$/, '');
+  const tooLarge = () => c.json({ error: 'Video exceeds the 512 MB limit.' }, 413, { 'Cache-Control': 'no-store' });
+  const store = async (key: string, body: ReadableStream | null, mimeType: string, declared: number) => {
+    if (Number.isFinite(declared) && declared > VIDEO_MAX_BYTES) {
+      body?.cancel();
+      return tooLarge();
+    }
+    const written = await c.env.STORAGE!.put(key, body, {
+      httpMetadata: { contentType: mimeType, cacheControl: 'public, max-age=31536000, immutable' },
+    });
+    if (written.size > VIDEO_MAX_BYTES) {
+      await c.env.STORAGE!.delete(key);
+      return tooLarge();
+    }
+    return c.json({ url: `${storageBase}/${key}`, mimeType, size: written.size }, 200, { 'Cache-Control': 'no-store' });
+  };
+
+  const contentType = (c.req.header('content-type') || '').split(';')[0].trim().toLowerCase();
+
+  // Raw upload: POST /api/video?did=... with the video file as the body.
+  const directExt = VIDEO_MIME_EXT[contentType];
+  if (directExt) {
+    const did = c.req.query('did') || '';
+    if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did)) {
+      return c.json({ error: 'A valid did query parameter is required.' }, 400, { 'Cache-Control': 'no-store' });
+    }
+    const key = `video/${did}/${crypto.randomUUID()}${directExt}`;
+    try {
+      return await store(key, c.req.raw.body, contentType, Number(c.req.header('content-length')));
+    } catch (error) {
+      console.error('Video storage failed:', error);
+      return c.json({ error: 'The video could not be stored. Try again in a moment.' }, 502, { 'Cache-Control': 'no-store' });
+    }
+  }
+
+  if (contentType !== 'application/json') {
+    return c.json({ error: 'Send the video file bytes or a JSON {did, cid} blob reference.' }, 415, { 'Cache-Control': 'no-store' });
+  }
+  const body = await c.req.json().catch(() => null) as { did?: unknown; cid?: unknown } | null;
+  const did = typeof body?.did === 'string' ? body.did : '';
+  const cid = typeof body?.cid === 'string' ? body.cid : '';
+  if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did) || !/^[A-Za-z0-9]{10,128}$/.test(cid)) {
+    return c.json({ error: 'A valid did and blob cid are required.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  try {
+    const pds = await getPdsEndpoint(did, c.env.OWNER_PDS);
+    const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
+    const res = await fetch(blobUrl, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) {
+      res.body?.cancel();
+      return c.json({ error: `Could not fetch the video from the account provider (${res.status}).` }, 502, { 'Cache-Control': 'no-store' });
+    }
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const ext = VIDEO_MIME_EXT[type];
+    if (!ext) {
+      res.body?.cancel();
+      return c.json({ error: `The blob is not a supported video (${type || 'unknown type'}).` }, 415, { 'Cache-Control': 'no-store' });
+    }
+    return await store(`video/${did}/${cid}${ext}`, res.body, type, Number(res.headers.get('content-length')));
+  } catch (error) {
+    console.error('Video storage failed:', error);
+    return c.json({ error: 'The video could not be stored. Try again in a moment.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+});
+
 api.get('/documents/:rkey', async (c) => {
   const loaded = await loadDocumentsSafely(c);
   if (!loaded) return c.json({ error: 'The publication is temporarily unavailable.' }, 503, { 'Cache-Control': 'no-store' });

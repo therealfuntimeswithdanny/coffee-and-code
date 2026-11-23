@@ -181,7 +181,7 @@ home.get('/', async (c) => {
           }
           return ranked.sort((a, b) => b.views - a.views || b.post.publishedAt.localeCompare(a.post.publishedAt));
         },
-      ).then((ranked) => ranked.filter((entry) => entry.views > 0).slice(0, 5));
+      ).then((ranked) => ranked.filter((entry) => entry.views > 0).slice(0, 6));
     } catch (error) {
       console.error('Could not load the most-read ranking:', error);
     }

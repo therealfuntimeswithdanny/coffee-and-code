@@ -4,8 +4,18 @@ export type Env = {
   OWNER_DID: string;
   OWNER_PDS: string;
   PUSH_TOKENS: KVNamespace;
+  // Web Push (VAPID) credentials. PUBLIC is a var; PRIVATE is a secret.
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
+  // R2 bucket holding author-uploaded videos under video/<did>/<cid>.<ext>.
+  STORAGE?: R2Bucket;
+  // Public origin serving the bucket (custom domain), no trailing slash.
+  STORAGE_PUBLIC_URL?: string;
   // Optional upstream override for the handle typeahead API.
   TYPEAHEAD_UPSTREAM?: string;
+  // Better Stack (Better Uptime) API token for /api/pds-status; secret, optional.
+  BETTERSTACK_TOKEN?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;

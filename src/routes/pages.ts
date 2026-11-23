@@ -315,6 +315,41 @@ pages.get('/api/forum/moderators/check', async (c) => {
   }
 });
 
+// Live status of the account providers offered on /auth, plus this site's own
+// PDS. Each host is probed at /xrpc/_health; results are CDN-cached so logins
+// don't stampede the providers.
+const PDS_STATUS_HOSTS = ['account.coffeencode.cc', 'bsky.social', 'eurosky.social', 'blacksky.app'];
+async function probePdsHost(host: string): Promise<'operational' | 'down'> {
+  try {
+    const res = await fetch(`https://${host}/xrpc/_health`, {
+      signal: AbortSignal.timeout(5000),
+      headers: { accept: 'application/json' },
+    });
+    return res.ok ? 'operational' : 'down';
+  } catch {
+    return 'down';
+  }
+}
+pages.get('/api/pds-status', async (c) => {
+  const cacheHeaders = { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' };
+  let ownerHost = 'account.coffeencode.cc';
+  try { ownerHost = new URL(c.env.OWNER_PDS).hostname || ownerHost; } catch { /* keep fallback */ }
+
+  // ?state=down|operational forces every host to that state for testing the
+  // /auth page UI (visit /auth?state=down). Never cached.
+  const forced = c.req.query('state');
+  const hosts = Array.from(new Set([ownerHost, ...PDS_STATUS_HOSTS]));
+  if (forced && ['operational', 'down'].includes(forced)) {
+    const states = Object.fromEntries(hosts.map((h) => [h, forced]));
+    return c.json({ host: ownerHost, states, forced: true }, 200, { 'Cache-Control': 'no-store' });
+  }
+
+  const probes = await Promise.all(hosts.map(async (h) => [h, await probePdsHost(h)] as const));
+  const states = Object.fromEntries(probes);
+  const ownerState = states[ownerHost] || 'unknown';
+  return c.json({ host: ownerHost, state: ownerState, states }, 200, cacheHeaders);
+});
+
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
@@ -382,23 +417,41 @@ pages.get('/auth', (c) => {
       </div>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
+    <script type="module">
+      (async () => {
+        try {
+          const forced = new URLSearchParams(location.search).get('state');
+          const res = await fetch('/api/pds-status' + (forced ? '?state=' + encodeURIComponent(forced) : ''), { headers: { accept: 'application/json' } });
+          if (!res.ok) return;
+          const data = await res.json();
+          const states = data.states || {};
+          const disable = (btn) => {
+            btn.disabled = true;
+            btn.setAttribute('aria-disabled', 'true');
+            btn.classList.add('auth-provider--down');
+            const sub = btn.querySelector('.auth-provider__copy small');
+            if (sub) sub.textContent = 'Account host is currently down';
+            btn.title = 'This account host is down — see status.coffeencode.cc';
+          };
+          for (const [host, state] of Object.entries(states)) {
+            if (state !== 'down') continue;
+            document.querySelectorAll('[data-provider="' + CSS.escape(host) + '"]').forEach(disable);
+          }
+          const createBtn = document.querySelector('[data-create-coffee-account]');
+          if (createBtn && data.host && states[data.host] === 'down') disable(createBtn);
+        } catch { /* leave buttons enabled if the status check itself fails */ }
+      })();
+    </script>
   `;
 
   return c.html(renderLayout(c, 'Log in', body));
 });
 
 pages.get('/account', (c) => {
-  const body = `
-    <section class="auth-page account-page" aria-labelledby="account-title" data-account-page>
-      <h1 id="account-title">Your account</h1>
-      <div class="auth-account" data-auth-account hidden>
-        <div class="account-layout">
-        ${accountProfileSidebar}
-        <div class="account-layout__column account-layout__main">
+  const main = `
           <section class="account-card account-page__viewed" aria-labelledby="saved-posts-title"><div class="account-card__header"><h2 id="saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</h2><span class="account-card__count" data-saved-count></span></div><p class="account-page__viewed-status" data-saved-status role="status" aria-live="polite">Loading your saved posts…</p><ul data-saved-posts></ul></section>
-          <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>
-        </div>
-        <div class="account-layout__column account-layout__secondary">
+          <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title"><div class="account-card__header"><h2 id="viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</h2></div><p class="account-page__viewed-status" data-viewed-status>Loading your viewed posts…</p><ul data-viewed-posts></ul></section>`;
+  const secondary = `
           <section class="account-card account-page__viewed" aria-labelledby="followed-tags-title">
             <h2 id="followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</h2>
             <p class="account-page__viewed-status" data-tag-follows-status role="status" aria-live="polite">Loading who you follow…</p>
@@ -454,20 +507,35 @@ pages.get('/account', (c) => {
               <p class="account-preferences__note">Saved to your AT Protocol account and synced anywhere you sign in.</p>
             </div>
           </section>
+          <section class="account-card account-page__viewed account-page__push" aria-labelledby="push-settings-title">
+            <h2 id="push-settings-title"><i class="fa-solid fa-bell" aria-hidden="true"></i> Browser notifications</h2>
+            <p class="account-page__viewed-status" data-push-status role="status" aria-live="polite">Checking this browser…</p>
+            <div data-push-settings hidden>
+              <label class="account-email__toggle"><input type="checkbox" data-push-enabled> Notify me in this browser</label>
+              <fieldset data-push-topics>
+                <legend>Notify me about</legend>
+                <div class="account-preferences__options">
+                  <label><input type="checkbox" data-push-topic="comments"> Comments on my stories</label>
+                  <label><input type="checkbox" data-push-topic="replies"> Replies to my comments</label>
+                  <label><input type="checkbox" data-push-topic="likes"> Likes</label>
+                  <label><input type="checkbox" data-push-topic="reads"> Reads of my stories</label>
+                  <label><input type="checkbox" data-push-topic="newPosts"> New stories from people and tags I follow</label>
+                </div>
+              </fieldset>
+              <p class="account-page__blocks-note">Notifications reach this browser even when the site is closed. Turn them on in each browser you use.</p>
+            </div>
+          </section>
           ${accountEmailCard}
           <section class="account-card account-page__viewed account-page__blocks" aria-labelledby="blocked-accounts-title">
             <h2 id="blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</h2>
             <p class="account-page__viewed-status" data-blocks-status role="status" aria-live="polite">Loading your blocked accounts…</p>
             <ul data-blocks-list></ul>
             <p class="account-page__blocks-note">Coffee &amp; Code blocks hide this account’s forum posts and replies for you. Stories and comments remain visible. Bluesky blocks are managed separately in Bluesky settings.</p>
-          </section>
-        </div>
-        </div>
-      </div>
-      <div data-account-signed-out hidden><p class="auth-page__intro">Sign in to view your account and manage your interactions.</p><a class="login-button" href="/auth" data-login-link>Log in</a></div>
-    </section>
-  `;
-
+          </section>`;
+  const body = accountPageShell('Your account', main, {
+    secondary,
+    signedOutMessage: 'Sign in to view your account and manage your interactions.',
+  });
   return c.html(renderLayout(c, 'Your account', body));
 });
 
@@ -498,29 +566,30 @@ const accountEmailCard = `
     </div>
   </section>`;
 
-function accountPageShell(title: string, inner: string, signedOutMessage = 'Sign in to view this page.') {
+function accountPageShell(
+  title: string,
+  main: string,
+  options: { secondary?: string; signedOutMessage?: string; mainClass?: string } = {},
+) {
+  const secondary = options.secondary
+    ? `<div class="account-layout__column account-layout__secondary">${options.secondary}</div>`
+    : '';
   return `
     <section class="auth-page account-page" aria-labelledby="account-title" data-account-page>
       <h1 id="account-title">${title}</h1>
       <div class="auth-account" data-auth-account hidden>
-        ${inner}
+        <div class="account-layout">
+        ${accountProfileSidebar}
+        <div class="account-layout__column account-layout__main${options.mainClass ? ` ${options.mainClass}` : ''}">
+        ${main}
+        </div>
+        ${secondary}
+        </div>
       </div>
-      <div data-account-signed-out hidden><p class="auth-page__intro">${signedOutMessage}</p><a class="login-button" href="/auth" data-login-link>Log in</a></div>
+      <div data-account-signed-out hidden><p class="auth-page__intro">${options.signedOutMessage || 'Sign in to view this page.'}</p><a class="login-button" href="/auth" data-login-link>Log in</a></div>
     </section>
   `;
 }
-
-const accountSubNav = `
-  <nav class="account-page__section-nav" aria-label="Account pages">
-    <a href="/account">Account</a>
-    <a href="/account/saves">Reading list</a>
-    <a href="/account/list">Lists</a>
-    <a href="/account/reads">Recently viewed</a>
-    <a href="/account/feed">Your feed</a>
-    <a href="/account/email">Email routing</a>
-    <a href="/account/author">Author profile</a>
-    <a href="/account/author/draft">Drafts</a>
-  </nav>`;
 
 const accountProfileSidebar = `
   <aside class="account-layout__column account-layout__sidebar" aria-label="Your profile">
@@ -539,56 +608,54 @@ const accountProfileSidebar = `
         <button type="button" class="auth-signout" data-auth-signout><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Log out</button>
       </div>
       <nav class="account-page__section-nav" aria-label="Account sections">
-        <a href="/account#saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</a>
-        <a href="/account#viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</a>
+        <a href="/account"><i class="fa-solid fa-house" aria-hidden="true"></i> Overview</a>
+        <a href="/account/saves"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</a>
+        <a href="/account/reads"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</a>
+        <a href="/account/list"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</a>
+        <a href="/account/feed"><i class="fa-solid fa-rss" aria-hidden="true"></i> Your feed</a>
         <a href="/account#followed-tags-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Following</a>
         <a href="/account#appearance-title"><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</a>
+        <a href="/account#push-settings-title"><i class="fa-solid fa-bell" aria-hidden="true"></i> Browser notifications</a>
         <a href="/account#email-settings-title"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email notifications</a>
         <a href="/account/email"><i class="fa-solid fa-route" aria-hidden="true"></i> Email routing</a>
         <a href="/account#blocked-accounts-title"><i class="fa-solid fa-ban" aria-hidden="true"></i> Blocked accounts</a>
-        <a href="/account/list"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</a>
         <a href="/account/author" data-author-settings-link hidden><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</a>
+        <a href="/account/author/draft" data-author-settings-link hidden><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Drafts</a>
       </nav>
     </section>
     <section class="account-card account-switcher-card" data-account-switcher hidden aria-label="Switch account"></section>
   </aside>`;
 
 pages.get('/account/saves', (c) => {
-  const inner = `
-    ${accountSubNav}
+  const main = `
     <section class="account-card account-page__viewed" aria-labelledby="saved-posts-title">
-      <div class="account-card__header"><h2 id="saved-posts-title">Reading list</h2><span class="account-card__count" data-saved-count></span></div>
+      <div class="account-card__header"><h2 id="saved-posts-title"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Reading list</h2><span class="account-card__count" data-saved-count></span></div>
       <p class="account-page__viewed-status" data-saved-status role="status" aria-live="polite">Loading your saved posts…</p>
       <ul data-saved-posts></ul>
     </section>`;
-  const body = accountPageShell('Reading list', inner, 'Sign in to see the stories you saved.');
+  const body = accountPageShell('Reading list', main, { signedOutMessage: 'Sign in to see the stories you saved.' });
   return c.html(renderLayout(c, 'Reading list', body));
 });
 
 pages.get('/account/reads', (c) => {
-  const inner = `
-    ${accountSubNav}
+  const main = `
     <section class="account-card account-page__viewed" aria-labelledby="viewed-posts-title">
-      <div class="account-card__header"><h2 id="viewed-posts-title">Recently viewed</h2></div>
+      <div class="account-card__header"><h2 id="viewed-posts-title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently viewed</h2></div>
       <p class="account-page__viewed-status" data-viewed-status role="status" aria-live="polite">Loading your viewed posts…</p>
       <ul data-viewed-posts></ul>
     </section>`;
-  const body = accountPageShell('Recently viewed', inner, 'Sign in to see the stories you read.');
+  const body = accountPageShell('Recently viewed', main, { signedOutMessage: 'Sign in to see the stories you read.' });
   return c.html(renderLayout(c, 'Recently viewed', body));
 });
 
 pages.get('/account/list', (c) => {
-  const inner = `
-    <div class="account-layout">
-    ${accountProfileSidebar}
-    <div class="account-layout__column account-layout__main">
+  const main = `
       <section class="account-card account-page__viewed" aria-labelledby="account-lists-title" data-account-lists>
         <div class="account-card__header"><h2 id="account-lists-title"><i class="fa-solid fa-list" aria-hidden="true"></i> Your lists</h2><span class="account-card__count" data-lists-count></span></div>
         <p class="account-page__viewed-status" data-lists-status role="status" aria-live="polite">Loading your lists…</p>
         <ul data-lists-list></ul>
-      </section>
-    </div>
-    <div class="account-layout__column account-layout__secondary">
+      </section>`;
+  const secondary = `
       <section class="account-card account-page__viewed" aria-labelledby="list-form-title">
         <h2 id="list-form-title" data-list-form-title><i class="fa-solid fa-plus" aria-hidden="true"></i> Create a list</h2>
         <form class="account-profile-form account-list-form" data-list-form aria-labelledby="list-form-title">
@@ -602,49 +669,36 @@ pages.get('/account/list', (c) => {
           <p class="account-profile-form__status" data-list-form-status role="status" aria-live="polite"></p>
         </form>
         <p class="account-page__blocks-note">Lists are saved to your AT Protocol account and are public. Add stories to a list from the story page, or share a list link with anyone.</p>
-      </section>
-    </div>
-    </div>`;
-  const body = accountPageShell('Your lists', inner, 'Sign in to create and manage your lists.');
+      </section>`;
+  const body = accountPageShell('Your lists', main, { secondary, signedOutMessage: 'Sign in to create and manage your lists.' });
   return c.html(renderLayout(c, 'Your lists', body));
 });
 
 pages.get('/account/email', (c) => {
-  const inner = `
-    ${accountSubNav}
-    <div class="account-layout">
-    ${accountProfileSidebar}
-    <div class="account-layout__column account-layout__main">
+  const main = `
       <section class="account-card account-page__viewed account-page__email-routing" aria-labelledby="email-routing-title">
         <h2 id="email-routing-title"><i class="fa-solid fa-route" aria-hidden="true"></i> Email routing</h2>
         <p class="account-page__blocks-note">Choose which of your addresses receives stories about each tag and author you follow. An address set to “All stories” gets everything; one set to “Only selected” gets just its checked sources.</p>
         <p class="account-page__viewed-status" data-email-routing-status role="status" aria-live="polite">Loading your email routing…</p>
         <div class="email-routing" data-email-routing hidden></div>
         <div class="account-profile-form__actions"><button class="auth-signout" data-email-routing-save hidden><i class="fa-solid fa-check" aria-hidden="true"></i> Save routing</button></div>
-      </section>
-    </div>
-    <div class="account-layout__column account-layout__secondary">
-      ${accountEmailCard}
-    </div>
-    </div>`;
-  const body = accountPageShell('Email routing', inner, 'Sign in to route story emails to your addresses.');
+      </section>`;
+  const body = accountPageShell('Email routing', main, { secondary: accountEmailCard, signedOutMessage: 'Sign in to route story emails to your addresses.' });
   return c.html(renderLayout(c, 'Email routing', body));
 });
 
 pages.get('/account/feed', (c) => {
-  const inner = `
-    ${accountSubNav}
+  const main = `
     <section class="account-card account-page__viewed" aria-labelledby="account-feed-title">
-      <div class="account-card__header"><h2 id="account-feed-title">Your feed</h2></div>
+      <div class="account-card__header"><h2 id="account-feed-title"><i class="fa-solid fa-rss" aria-hidden="true"></i> Your feed</h2></div>
       <p class="account-page__viewed-status">Your personal feed is coming soon.</p>
     </section>`;
-  const body = accountPageShell('Your feed', inner, 'Sign in to see your feed.');
+  const body = accountPageShell('Your feed', main, { signedOutMessage: 'Sign in to see your feed.' });
   return c.html(renderLayout(c, 'Your feed', body));
 });
 
 pages.get('/account/author', (c) => {
-  const inner = `
-    ${accountSubNav}
+  const main = `
     <section class="account-card account-author-settings account-page__wide" data-author-settings hidden aria-labelledby="author-settings-title">
       <h2 id="author-settings-title"><i class="fa-solid fa-feather" aria-hidden="true"></i> Author profile</h2>
       <p class="account-author-settings__intro">Manage the profile shown on your Coffee &amp; Code author page.</p>
@@ -690,7 +744,7 @@ pages.get('/account/author', (c) => {
       <h2 id="author-gate-title">Author profile</h2>
       <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
     </section>`;
-  const body = accountPageShell('Author profile', inner, 'Sign in to manage your author profile.');
+  const body = accountPageShell('Author profile', main, { signedOutMessage: 'Sign in to manage your author profile.' });
   return c.html(renderLayout(c, 'Author profile', body));
 });
 
@@ -764,6 +818,7 @@ const draftEditorStyles = `
     .draft-block__item-row .draft-block__editable { flex: 1; }
     .draft-block__hr { border: 0; border-top: 1px solid var(--line-strong); margin: 12px 0; }
     .draft-block__image img { display: block; max-width: 100%; }
+    .draft-block__video video { display: block; max-width: 100%; }
     .draft-editor__add { margin-top: 10px; }
     .draft-preview { align-self: start; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); margin-top: 52px; min-width: 0; padding: 30px; position: sticky; top: 150px; }
     .draft-preview h1.draft-preview__title { font-family: Lora, serif; font-size: 34px; line-height: 1.15; margin: 0 0 8px; overflow-wrap: anywhere; }
@@ -776,7 +831,7 @@ const draftEditorStyles = `
     .draft-preview code { font-family: ui-monospace, monospace; }
     .draft-preview ul, .draft-preview ol { margin: 0 0 14px; padding-left: 24px; }
     .draft-preview li { line-height: 1.6; margin: 4px 0; white-space: pre-wrap; }
-    .draft-preview img { max-width: 100%; }
+    .draft-preview img, .draft-preview video { max-width: 100%; }
     .draft-preview figure { margin: 0 0 14px; }
     .draft-preview figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
     .draft-preview__button { background: var(--accent); color: var(--paper); display: inline-block; font-weight: 700; margin-bottom: 14px; padding: 10px 18px; }
@@ -797,8 +852,7 @@ const draftEditorStyles = `
   </style>`;
 
 pages.get('/account/author/draft', (c) => {
-  const inner = `
-    ${accountSubNav}
+  const main = `
     <section class="account-card account-page__viewed" aria-labelledby="drafts-title" data-draft-list>
       <div class="account-card__header"><h2 id="drafts-title"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Drafts</h2><button type="button" class="auth-signout" data-draft-new><i class="fa-solid fa-plus" aria-hidden="true"></i> New draft</button></div>
       <p class="account-page__viewed-status" data-drafts-status role="status" aria-live="polite">Loading your drafts…</p>
@@ -809,7 +863,7 @@ pages.get('/account/author/draft', (c) => {
       <h2 id="draft-gate-title">Drafts</h2>
       <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
     </section>`;
-  const body = accountPageShell('Drafts', inner, 'Sign in to write and manage your drafts.');
+  const body = accountPageShell('Drafts', main, { signedOutMessage: 'Sign in to write and manage your drafts.' });
   return c.html(renderLayout(c, 'Drafts', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
 });
 
@@ -853,6 +907,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <span class="draft-toolbar__sep" aria-hidden="true"></span>
             <button type="button" data-block="horizontalRule" title="Divider" aria-label="Divider"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
             <button type="button" data-block="image" title="Image" aria-label="Image"><i class="fa-solid fa-image" aria-hidden="true"></i></button>
+            <button type="button" data-block="video" title="Video" aria-label="Video"><i class="fa-solid fa-film" aria-hidden="true"></i></button>
             <button type="button" data-block="button" title="Button" aria-label="Button"><i class="fa-solid fa-square-check" aria-hidden="true"></i></button>
             <button type="button" data-block="website" title="Link card" aria-label="Link card"><i class="fa-solid fa-globe" aria-hidden="true"></i></button>
             <button type="button" data-block="bskyPost" title="Bluesky post" aria-label="Bluesky post"><i class="fa-brands fa-bluesky" aria-hidden="true"></i></button>
@@ -894,7 +949,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
         <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
       </section>
     </section>`;
-  const body = accountPageShell('Edit draft', inner, 'Sign in to edit this draft.');
+  const body = accountPageShell('Edit draft', inner, { signedOutMessage: 'Sign in to edit this draft.' });
   return c.html(renderLayout(c, 'Edit draft', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
 });
 

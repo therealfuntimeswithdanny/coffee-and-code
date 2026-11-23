@@ -1,6 +1,8 @@
 /oauth-client-metadata.json
   Content-Type: application/json
   Cache-Control: public, max-age=0, must-revalidate
+/sw.js
+  Cache-Control: no-cache
 /oauth-client-metadata-author.json
   Content-Type: application/json
   Cache-Control: public, max-age=0, must-revalidate

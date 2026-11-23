@@ -1,7 +1,7 @@
 const VERSION = "5.3.0";
 const ADMIN_DID = "did:plc:l37td5yhxl2irrzrgvei4qay";
 const CONTACT_EMAIL = "atcdn@danielmorrisey.com";
-const SERVICE_NAME = "atCDN for Bluesky & the AT Protocol by the BlueAT Network";
+const SERVICE_NAME = "atCDN for Bluesky & the AT Protocol by Coffee & Code";
 const PLC_DIRECTORIES = ["https://plc.eurosky.network", "https://plc.directory"];
 const DID_TTL_MS = 86_400_000; // 24 hours
 const NEGATIVE_TTL_S = 60;     // remember missing blobs briefly
@@ -615,13 +615,13 @@ function buildOptions(env, request, q, base, lock) {
   if (dpr !== null) opts.push(`dpr:${dpr}`);
   if (zoom !== null) opts.push(`z:${zoom}`);
 
-  // Gravity (smart crop is the default for fill modes)
+  // Gravity (center crop is the default for fill modes; sm/others via ?gravity=)
   const gParam = (get("gravity") || "").toLowerCase();
   const fp = (get("fp") || "").split(",").map(Number);
   let gravity = null;
   if (fp.length === 2 && fp.every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) gravity = `fp:${fp[0]}:${fp[1]}`;
   else if (GRAVITIES.has(gParam)) gravity = gParam;
-  else if (hasSize && (rt === "fill" || rt === "fill-down")) gravity = "sm";
+  else if (hasSize && (rt === "fill" || rt === "fill-down")) gravity = "ce";
   if (gravity) opts.push(`g:${gravity}`);
 
   // Pre-crop, trim, padding, rotation, background

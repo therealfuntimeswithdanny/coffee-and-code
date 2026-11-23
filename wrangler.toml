@@ -24,6 +24,13 @@ PUB_NAME = "Coffee and Code"
 PUB_DESCRIPTION = "A small tech news publication built on the AT Protocol by Daniel Morrisey"
 OWNER_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
 OWNER_PDS = "https://account.coffeencode.cc"
+STORAGE_PUBLIC_URL = "https://storage.coffeencode.cc"
+# Browser push notifications (Web Push / VAPID). Generate a key pair, put the
+# public key here, and set the private key with:
+#   wrangler secret put VAPID_PRIVATE_KEY
+# VAPID_SUBJECT is a contact URI required by push services.
+VAPID_SUBJECT = "mailto:atcdn@danielmorrisey.com"
+VAPID_PUBLIC_KEY = "BFYP88Ohzh6ob5Qxpp8wsdvN94PTO8QsmOKRH1kgRkjSieEA0vX7nCQl177HIf7VN5mMglT8SXgcNP-b5yg4gUw"
 
 # Stores Expo push tokens (device:<token>) and per-account push state
 # (state:<did>). To isolate `wrangler dev` from production data, create a
@@ -32,6 +39,14 @@ OWNER_PDS = "https://account.coffeencode.cc"
 [[kv_namespaces]]
 binding = "PUSH_TOKENS"
 id = "69ad42d54b0f4304b4d0acf5a1e184d3"
+
+# Author-uploaded videos, served publicly at
+# https://storage.coffeencode.cc/video/<did>/<cid>.<ext> through the bucket's
+# custom domain. Create with: wrangler r2 bucket create coffeencode-storage
+# then attach the storage.coffeencode.cc custom domain in the dashboard.
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "coffeencode-storage"
 
 # Polls registered accounts' notification feeds, pushes new items, and emails
 # digests to opted-in subscribers.

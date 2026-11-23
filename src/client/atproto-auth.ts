@@ -217,10 +217,23 @@ async function resolveSignInPds(identifier: string) {
   return { did, pds: endpoint };
 }
 
+// Decode the access token's `exp` claim so the session can refresh itself
+// before it expires instead of waiting for a request to bounce off a 401.
+function accessTokenExpiryMs(jwt: string): number {
+  try {
+    const segment = jwt.split('.')[1] || '';
+    const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: unknown };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function createPasswordSession(stored: StoredPasswordSession): AuthSession {
   let accessJwt = stored.accessJwt;
   let refreshJwt = stored.refreshJwt;
   let refreshPromise: Promise<void> | undefined;
+  let refreshTimer: number | undefined;
 
   const refresh = () => {
     if (!refreshPromise) {
@@ -230,8 +243,13 @@ function createPasswordSession(stored: StoredPasswordSession): AuthSession {
           headers: { Authorization: `Bearer ${refreshJwt}` },
         });
         if (!response.ok) {
-          clearPasswordSession();
-          throw new Error('Your saved sign-in expired. Sign in again with your app password.');
+          // Only a real auth rejection ends the session; network and server
+          // errors keep it so a hiccup doesn't sign the user out mid-draft.
+          if (response.status === 400 || response.status === 401) {
+            clearPasswordSession();
+            throw new Error('Your saved sign-in expired. Sign in again with your app password.');
+          }
+          throw new Error(`Could not refresh your sign-in (${response.status}). Retrying shortly.`);
         }
         const data = await response.json() as { accessJwt?: unknown; refreshJwt?: unknown };
         if (typeof data.accessJwt !== 'string' || typeof data.refreshJwt !== 'string') {
@@ -246,6 +264,35 @@ function createPasswordSession(stored: StoredPasswordSession): AuthSession {
     }
     return refreshPromise;
   };
+
+  // Keep the access token fresh: renew a minute before its `exp`, and retry
+  // every minute after a failed attempt so the session survives being idle
+  // far longer than the access token's short lifetime.
+  const scheduleRefresh = (delayMs?: number) => {
+    if (refreshTimer) window.clearTimeout(refreshTimer);
+    let delay = delayMs;
+    if (delay === undefined) {
+      const exp = accessTokenExpiryMs(accessJwt);
+      if (!exp) return;
+      delay = Math.max(exp - Date.now() - 60_000, 5_000);
+    }
+    refreshTimer = window.setTimeout(() => {
+      void refresh()
+        .then(() => scheduleRefresh())
+        .catch(() => scheduleRefresh(60_000));
+    }, delay);
+  };
+  const refreshIfExpiringSoon = () => {
+    const exp = accessTokenExpiryMs(accessJwt);
+    if (exp && exp - Date.now() < 5 * 60_000) {
+      void refresh().then(() => scheduleRefresh()).catch(() => scheduleRefresh(60_000));
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshIfExpiringSoon();
+  });
+  window.addEventListener('focus', refreshIfExpiringSoon);
+  scheduleRefresh();
 
   const fetchHandler: AuthSession['fetchHandler'] = async (path, init = {}) => {
     const send = (token: string) => {
@@ -685,7 +732,9 @@ function renderAccount() {
       void renderTagFollows(did);
       void loadEmailSettings(did);
       void loadEmailRouting(did);
+      void loadPushSettings(did);
       void loadAuthorProfileEditor(did);
+      void loadAuthorNavLinks(did);
       void loadDraftListPage(did);
       void loadDraftEditor(did);
     }
@@ -1461,6 +1510,169 @@ async function loadEmailRouting(did: string) {
   };
 }
 
+// --- Browser push notifications (Web Push) -------------------------------------
+
+type PushTopics = {
+  comments: boolean;
+  replies: boolean;
+  likes: boolean;
+  reads: boolean;
+  newPosts: boolean;
+};
+
+const PUSH_TOPIC_KEYS: Array<keyof PushTopics> = ['comments', 'replies', 'likes', 'reads', 'newPosts'];
+
+function vapidKeyToBytes(value: string) {
+  const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function loadPushSettings(did: string) {
+  if (!accountPage) return;
+  const section = accountPage.querySelector<HTMLElement>('[data-push-settings]');
+  const status = accountPage.querySelector<HTMLElement>('[data-push-status]');
+  const toggle = accountPage.querySelector<HTMLInputElement>('[data-push-enabled]');
+  const topicInputs = [...accountPage.querySelectorAll<HTMLInputElement>('[data-push-topic]')];
+  if (!section || !status || !toggle) return;
+
+  const setStatus = (message: string) => { status.textContent = message; };
+
+  if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+    setStatus('This browser can’t receive push notifications.');
+    return;
+  }
+
+  const readTopics = (): PushTopics => {
+    const topics = { comments: true, replies: true, likes: true, reads: true, newPosts: true };
+    for (const input of topicInputs) {
+      const key = input.dataset.pushTopic as keyof PushTopics | undefined;
+      if (key && PUSH_TOPIC_KEYS.includes(key)) topics[key] = input.checked;
+    }
+    return topics;
+  };
+
+  const applyTopics = (topics?: Partial<PushTopics>) => {
+    for (const input of topicInputs) {
+      const key = input.dataset.pushTopic as keyof PushTopics | undefined;
+      if (key && PUSH_TOPIC_KEYS.includes(key)) input.checked = topics?.[key] !== false;
+    }
+  };
+
+  let registration: ServiceWorkerRegistration;
+  try {
+    registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  } catch {
+    setStatus('Notifications could not start in this browser.');
+    return;
+  }
+  if (session?.did !== did) return;
+  section.hidden = false;
+
+  const syncTopics = async (endpoint: string) => {
+    await fetch('/api/push/web/topics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, topics: readTopics() }),
+    });
+  };
+
+  const registerSubscription = async (subscription: PushSubscription) => {
+    const keys = subscription.toJSON().keys;
+    const response = await fetch('/api/push/web/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ did, endpoint: subscription.endpoint, keys, topics: readTopics() }),
+    });
+    if (!response.ok) throw new Error('Could not save this browser’s subscription.');
+  };
+
+  // Reflect the subscription this browser already holds, healing any drift
+  // (KV record lost, or a different account now signed in).
+  const existing = await registration.pushManager.getSubscription().catch(() => null);
+  toggle.checked = Boolean(existing) && Notification.permission === 'granted';
+  if (existing) {
+    try {
+      const infoResponse = await fetch(`/api/push/web/subscription?endpoint=${encodeURIComponent(existing.endpoint)}`, { cache: 'no-store' });
+      const info = infoResponse.ok ? await infoResponse.json() as { subscribed?: boolean; did?: string; topics?: Partial<PushTopics> } : null;
+      if (session?.did !== did) return;
+      if (info?.subscribed && info.did === did) applyTopics(info.topics);
+      else await registerSubscription(existing);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  } else if (Notification.permission === 'denied') {
+    setStatus('Notifications are blocked in this browser. Allow them in the browser’s site settings to turn them on.');
+  }
+
+  if (section.dataset.pushBound !== '1') {
+    section.dataset.pushBound = '1';
+    toggle.addEventListener('change', async () => {
+      const activeDid = session?.did;
+      if (!activeDid) { toggle.checked = false; return; }
+      toggle.disabled = true;
+      try {
+        if (toggle.checked) {
+          setStatus('Turning on notifications…');
+          const keyResponse = await fetch('/api/push/web/key', { cache: 'no-store' });
+          if (!keyResponse.ok) throw new Error('Browser notifications are not configured on this site.');
+          const { publicKey } = await keyResponse.json() as { publicKey?: string };
+          if (!publicKey) throw new Error('Browser notifications are not configured on this site.');
+          const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+          if (permission !== 'granted') {
+            throw new Error('Notifications were not allowed. Allow them in the browser’s site settings, then try again.');
+          }
+          let subscription = await registration.pushManager.getSubscription();
+          if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: vapidKeyToBytes(publicKey) as BufferSource,
+            });
+          }
+          await registerSubscription(subscription);
+          if (session?.did !== activeDid) return;
+          setStatus('Notifications are on for this browser.');
+        } else {
+          setStatus('Turning off notifications…');
+          const subscription = await registration.pushManager.getSubscription();
+          if (subscription) {
+            await fetch('/api/push/web/unregister', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: subscription.endpoint }),
+            }).catch(() => {});
+            await subscription.unsubscribe().catch(() => {});
+          }
+          setStatus('Notifications are off for this browser.');
+        }
+      } catch (error) {
+        toggle.checked = false;
+        if (session?.did === activeDid) setStatus(errorMessage(error));
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+    topicInputs.forEach((input) => {
+      input.addEventListener('change', async () => {
+        const subscription = await registration.pushManager.getSubscription().catch(() => null);
+        if (!subscription) return; // topics seed the form for when it is enabled
+        try {
+          await syncTopics(subscription.endpoint);
+          setStatus('Notification preferences saved.');
+        } catch (error) {
+          setStatus(errorMessage(error));
+        }
+      });
+    });
+  }
+  if (!status.textContent) {
+    setStatus(toggle.checked
+      ? 'Notifications are on for this browser.'
+      : 'Notifications are off for this browser.');
+  }
+}
+
 async function loadEmailSettings(did: string) {
   if (!accountPage) return;
   const section = accountPage.querySelector<HTMLElement>('[data-email-settings]');
@@ -1815,6 +2027,22 @@ async function loadAccountProfile(did: string) {
   };
 }
 
+async function loadAuthorNavLinks(did: string) {
+  if (!accountPage) return;
+  const links = accountPage.querySelectorAll<HTMLElement>('[data-author-settings-link]');
+  if (!links.length) return;
+  try {
+    const response = await fetch(`/api/authors/check?handle=${encodeURIComponent(did)}`, { cache: 'no-store' });
+    if (!response.ok || session?.did !== did) return;
+    const result = await response.json() as { isAuthor?: unknown };
+    if (result.isAuthor === true) {
+      links.forEach((link) => { link.hidden = false; });
+    }
+  } catch {
+    // Leave the author links hidden when the check is unavailable.
+  }
+}
+
 async function loadAuthorProfileEditor(did: string) {
   if (!accountPage) return;
   const section = accountPage.querySelector<HTMLElement>('[data-author-settings]');
@@ -1937,8 +2165,9 @@ async function loadAuthorProfileEditor(did: string) {
     section.hidden = false;
     if (authorGate) authorGate.hidden = true;
     void loadPostMetadataEditor(did);
-    const authorSettingsLink = accountPage.querySelector<HTMLElement>('[data-author-settings-link]');
-    if (authorSettingsLink) authorSettingsLink.hidden = false;
+    accountPage.querySelectorAll<HTMLElement>('[data-author-settings-link]').forEach((link) => {
+      link.hidden = false;
+    });
     editButton.hidden = false;
     editButton.onclick = () => {
       if (!accountAuthorRecord || accountAuthorDid !== session?.did) return;
@@ -2456,6 +2685,49 @@ async function uploadAuthorImage(file: File): Promise<unknown> {
     throw new Error('Your account has not granted image upload permission. Sign out and back in to approve the updated permissions.');
   }
   throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `Image upload failed (${response.status}).`);
+}
+
+// Videos upload to the author's PDS first (same uploadBlob permission as
+// images); the worker then copies the blob into the R2 bucket. When the PDS
+// rejects the file — usually its blob size limit — the bytes go straight to
+// the storage endpoint instead. Either path returns the public
+// storage.coffeencode.cc/video/ URL embedded in the draft.
+async function uploadAuthorVideo(file: File): Promise<{ url: string; mimeType: string }> {
+  const activeSession = requireSession();
+  try {
+    const response = await activeSession.fetchHandler('/xrpc/com.atproto.repo.uploadBlob', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    if (response.ok) {
+      const result = await response.json() as { blob?: { ref?: { $link?: unknown } } };
+      const cid = result.blob?.ref?.$link;
+      if (typeof cid === 'string') {
+        const copy = await fetch('/api/video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ did: activeSession.did, cid }),
+        });
+        const payload = await copy.json().catch(() => null) as { url?: unknown; error?: string } | null;
+        if (copy.ok && typeof payload?.url === 'string') {
+          return { url: payload.url, mimeType: file.type || 'video/mp4' };
+        }
+      }
+    }
+    // The PDS refused the blob (size/type) — fall through to the direct upload.
+  } catch { /* Network or session error — try the direct upload anyway. */ }
+
+  const copy = await fetch(`/api/video?did=${encodeURIComponent(activeSession.did)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  const payload = await copy.json().catch(() => null) as { url?: unknown; error?: string } | null;
+  if (!copy.ok || typeof payload?.url !== 'string') {
+    throw new Error(payload?.error || `Video upload failed (${copy.status}).`);
+  }
+  return { url: payload.url, mimeType: file.type || 'video/mp4' };
 }
 
 type AccountPostSummary = {
@@ -3608,8 +3880,11 @@ providerButtons.forEach((button) => {
     clearAuthError();
     const provider = button.dataset.provider ?? '';
     if (!provider) {
-      providerButtons.forEach((b) => b.setAttribute('aria-expanded', String(b === button)));
-      if (authForm) authForm.hidden = false;
+      const expanded = button.getAttribute('aria-expanded') === 'true';
+      const opening = !expanded;
+      providerButtons.forEach((b) => b.setAttribute('aria-expanded', String(b === button && opening)));
+      if (authForm) authForm.hidden = !opening;
+      if (!opening) return;
       if (handleLabel) handleLabel.textContent = 'Your handle';
       if (handleInput) {
         handleInput.placeholder = 'you.bsky.social';
@@ -5026,7 +5301,7 @@ const LEAFLET_FACET = 'pub.leaflet.richtext.facet';
 type DraftFacetFeature = Record<string, unknown> & { $type: string };
 type DraftFacet = { index: { byteStart: number; byteEnd: number }; features: DraftFacetFeature[] };
 type DraftBlockType = 'text' | 'header' | 'blockquote' | 'code' | 'unorderedList' | 'orderedList'
-  | 'horizontalRule' | 'image' | 'button' | 'website' | 'bskyPost' | 'math';
+  | 'horizontalRule' | 'image' | 'video' | 'button' | 'website' | 'bskyPost' | 'math';
 type DraftBlock = {
   id: string;
   type: DraftBlockType;
@@ -5035,6 +5310,9 @@ type DraftBlock = {
   language?: string;
   image?: unknown;
   imageObjectUrl?: string;
+  video?: string;
+  videoObjectUrl?: string;
+  mimeType?: string;
   alt?: string;
   aspectRatio?: { width: number; height: number };
   url?: string;
@@ -5154,11 +5432,23 @@ const draftBlockLabel: Record<DraftBlockType, string> = {
   orderedList: 'List item',
   horizontalRule: '',
   image: '',
+  video: '',
   button: '',
   website: '',
   bskyPost: '',
   math: '',
 };
+
+// Video blocks round-trip as pub.leaflet.blocks.iframe; on reload only those
+// pointing at a /video/ path or a video file extension map back to the editor's
+// video block — other iframes stay unsupported as before.
+function isVideoEmbedUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    return url.pathname.startsWith('/video/') || /\.(mp4|webm|mov|m4v|ogv|mpg|3gp|3g2)$/i.test(url.pathname);
+  } catch { return false; }
+}
 
 function draftBlockFromLeaflet(block: Record<string, unknown>, alignment?: string): DraftBlock | undefined {
   const type = typeof block.$type === 'string' ? block.$type.split('.').pop() || '' : '';
@@ -5178,6 +5468,21 @@ function draftBlockFromLeaflet(block: Record<string, unknown>, alignment?: strin
         base.aspectRatio = { width: ratio!.width as number, height: ratio!.height as number };
       }
       base.type = 'image';
+      return base;
+    }
+    // pub.leaflet.blocks.iframe — the editor only writes these for uploaded
+    // videos, so only hydrate ones whose URL is clearly a video file.
+    case 'iframe': {
+      const url = typeof block.url === 'string' ? block.url : '';
+      if (!isVideoEmbedUrl(url)) return undefined;
+      base.video = url;
+      base.videoObjectUrl = url;
+      base.alt = typeof block.title === 'string' && block.title !== 'Embedded video' ? block.title : '';
+      const ratio = block.aspectRatio as { width?: unknown; height?: unknown } | undefined;
+      if (Number.isInteger(ratio?.width) && Number.isInteger(ratio?.height) && (ratio!.width as number) > 0) {
+        base.aspectRatio = { width: ratio!.width as number, height: ratio!.height as number };
+      }
+      base.type = 'video';
       return base;
     }
     default: return undefined;
@@ -5276,6 +5581,7 @@ async function loadDraftListPage(did: string) {
         remove.disabled = true;
         try {
           await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: DRAFT_COLLECTION, rkey: draft.rkey });
+          try { localStorage.removeItem(`cc:draft-backup:${did}:${draft.rkey}`); } catch {}
           item.remove();
           if (!list.children.length) status.textContent = 'You have no drafts yet.';
         } catch (error) {
@@ -5338,7 +5644,49 @@ async function loadDraftEditor(did: string) {
     metadataExisted: false,
     metadataCreatedAt: undefined as string | undefined,
   };
-  const markDirty = () => { state.version += 1; };
+  // Local backup: unsynced changes are mirrored to localStorage so losing the
+  // session (expired app-password sign-in, closed tab, dead connection) never
+  // loses writing. A successful sync clears it; on the next load a backup
+  // newer than the PDS record is restored and synced once signed in again.
+  const backupKey = `cc:draft-backup:${did}:${rkey}`;
+  const writeBackup = () => {
+    try {
+      const draftDocument = serializeDraft();
+      const draftSourceList = draftSources();
+      const draftBacklinkValue = draftBacklink();
+      localStorage.setItem(backupKey, JSON.stringify({
+        savedAt: Date.now(),
+        record: {
+          $type: DRAFT_COLLECTION,
+          createdAt: state.createdAt,
+          updatedAt: new Date().toISOString(),
+          title: draftDocument.title,
+          ...(typeof draftDocument.description === 'string' ? { description: draftDocument.description } : {}),
+          ...(draftSourceList.length ? { sources: draftSourceList } : {}),
+          ...(draftBacklinkValue ? { backlink: draftBacklinkValue } : {}),
+          ...(state.publishedUri ? { publishedUri: state.publishedUri } : {}),
+          ...(state.postUri ? { postUri: state.postUri } : {}),
+          ...(state.publishedAt ? { publishedAt: state.publishedAt } : {}),
+          document: draftDocument,
+        },
+      }));
+    } catch { /* A draft that can't serialize yet isn't worth backing up. */ }
+  };
+  const loadBackup = (): { savedAt: number; record: Record<string, unknown> } | undefined => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(backupKey) || 'null') as { savedAt?: unknown; record?: unknown } | null;
+      if (!parsed || typeof parsed.savedAt !== 'number' || !parsed.record || typeof parsed.record !== 'object') return undefined;
+      return { savedAt: parsed.savedAt, record: parsed.record as Record<string, unknown> };
+    } catch { return undefined; }
+  };
+  const clearBackup = () => { try { localStorage.removeItem(backupKey); } catch {} };
+  let backupTimer: number | undefined;
+  const queueBackup = () => {
+    if (backupTimer) window.clearTimeout(backupTimer);
+    backupTimer = window.setTimeout(writeBackup, 1000);
+  };
+
+  const markDirty = () => { state.version += 1; queueBackup(); };
 
   const currentBlockElement = (): HTMLElement | undefined => {
     const node = window.getSelection()?.anchorNode;
@@ -5391,6 +5739,14 @@ async function loadDraftEditor(did: string) {
           aspectRatio: block.aspectRatio,
         };
         if (alt) out.alt = alt;
+        return out;
+      }
+      case 'video': {
+        if (!block.video) return undefined;
+        const alt = element.querySelector<HTMLInputElement>('[data-field="alt"]')?.value.trim();
+        const out: Record<string, unknown> = { $type: 'pub.leaflet.blocks.iframe', url: block.video };
+        if (block.aspectRatio) out.aspectRatio = block.aspectRatio;
+        out.title = alt || 'Embedded video';
         return out;
       }
       case 'button': {
@@ -5466,6 +5822,14 @@ async function loadDraftEditor(did: string) {
           if (!block.imageObjectUrl) break;
           const alt = element.querySelector<HTMLInputElement>('[data-field="alt"]')?.value.trim() || '';
           body += `<figure><img src="${block.imageObjectUrl}" alt="${draftEscapeHtml(alt)}">${alt ? `<figcaption>${draftEscapeHtml(alt)}</figcaption>` : ''}</figure>`;
+          break;
+        }
+        case 'video': {
+          const src = block.videoObjectUrl || block.video;
+          if (!src) break;
+          const alt = element.querySelector<HTMLInputElement>('[data-field="alt"]')?.value.trim() || '';
+          const ratio = block.aspectRatio ? ` style="aspect-ratio:${block.aspectRatio.width}/${block.aspectRatio.height}"` : '';
+          body += `<figure><video src="${draftEscapeHtml(src)}" controls preload="metadata" playsinline${ratio}></video>${alt ? `<figcaption>${draftEscapeHtml(alt)}</figcaption>` : ''}</figure>`;
           break;
         }
         case 'button': {
@@ -5734,6 +6098,54 @@ async function loadDraftEditor(did: string) {
       element.append(fields);
       return element;
     }
+    if (block.type === 'video') {
+      const preview = document.createElement('div');
+      preview.className = 'draft-block__video';
+      const show = (url?: string) => {
+        preview.replaceChildren();
+        if (url) {
+          const player = document.createElement('video');
+          player.src = url;
+          player.controls = true;
+          player.preload = 'metadata';
+          player.playsInline = true;
+          preview.append(player);
+        }
+      };
+      show(block.videoObjectUrl || block.video);
+      const file = document.createElement('input');
+      file.type = 'file';
+      file.accept = 'video/*';
+      file.setAttribute('aria-label', 'Block video');
+      file.addEventListener('change', async () => {
+        const picked = file.files?.[0];
+        if (!picked) return;
+        statusEl.textContent = 'Uploading video…';
+        try {
+          const uploaded = await uploadAuthorVideo(picked);
+          block.video = uploaded.url;
+          block.mimeType = uploaded.mimeType;
+          const url = URL.createObjectURL(picked);
+          block.videoObjectUrl = url;
+          block.aspectRatio = await new Promise<{ width: number; height: number }>((resolve) => {
+            const probe = document.createElement('video');
+            probe.preload = 'metadata';
+            probe.onloadedmetadata = () => resolve({ width: probe.videoWidth || 16, height: probe.videoHeight || 9 });
+            probe.onerror = () => resolve({ width: 16, height: 9 });
+            probe.src = url;
+          });
+          show(url);
+          statusEl.textContent = '';
+          changed();
+        } catch (error) {
+          statusEl.textContent = errorMessage(error);
+        }
+      });
+      const alt = createField('Video description', 'alt', block.alt || '', 'Describe this video');
+      fields.append(file, preview, alt);
+      element.append(fields);
+      return element;
+    }
     if (block.type === 'button') {
       fields.append(
         createField('Button text', 'label', block.label || '', 'Button text'),
@@ -5855,7 +6267,7 @@ async function loadDraftEditor(did: string) {
     const blockSpec = button.dataset.block;
     if (!blockSpec) return;
     const [type, level] = blockSpec.split(':') as [DraftBlockType, string?];
-    const structural: DraftBlockType[] = ['horizontalRule', 'image', 'button', 'website', 'bskyPost', 'math'];
+    const structural: DraftBlockType[] = ['horizontalRule', 'image', 'video', 'button', 'website', 'bskyPost', 'math'];
     if (DRAFT_TEXT_TYPES.includes(type) || type === 'unorderedList' || type === 'orderedList') {
       if (current) convertBlock(current, type, level ? Number(level) : undefined);
       else {
@@ -6137,8 +6549,12 @@ async function loadDraftEditor(did: string) {
       }
       state.exists = true;
       state.savedVersion = versionAtStart;
+      // If edits arrived mid-sync the backup holds them; only clear when clean.
+      if (state.version === state.savedVersion) clearBackup();
       statusEl.textContent = `Synced at ${new Date().toLocaleTimeString(undefined, { timeStyle: 'short' })}.`;
     } catch (error) {
+      // Preserve everything locally so a lost session never loses the draft.
+      writeBackup();
       statusEl.textContent = error instanceof Error ? error.message : 'The draft could not be synced.';
       if (manual) throw error;
     } finally {
@@ -6155,6 +6571,7 @@ async function loadDraftEditor(did: string) {
       if (state.exists) {
         await repoRequest('com.atproto.repo.deleteRecord', { repo: did, collection: DRAFT_COLLECTION, rkey });
       }
+      clearBackup();
       state.savedVersion = state.version;
       window.location.assign('/account/author/draft');
     } catch (error) {
@@ -6265,28 +6682,22 @@ async function loadDraftEditor(did: string) {
   const timer = window.setInterval(() => {
     if (state.version !== state.savedVersion) void sync();
   }, DRAFT_SYNC_INTERVAL_MS);
-  window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(timer);
+    // Last-chance flush: anything still unsynced lands in localStorage.
+    if (state.version !== state.savedVersion) writeBackup();
+  }, { once: true });
 
-  // Load the existing record (if any) and hydrate the editor.
+  // Load the existing record (if any) and hydrate the editor. A local backup
+  // newer than the stored record wins — it holds changes that never synced.
+  let restoredFromBackup = false;
   try {
     await loadDraftPublications();
     const query = new URLSearchParams({ repo: did, collection: DRAFT_COLLECTION, rkey });
     const activeSession = requireSession();
-    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
-    if (response.ok) {
-      const payload = await response.json() as { value?: Record<string, unknown> };
-      const value = payload.value;
-      if (session?.did !== did) return;
-      state.exists = true;
-      state.createdAt = typeof value?.createdAt === 'string' ? value.createdAt : undefined;
-      if (typeof value?.publishedUri === 'string' && /^at:\/\//.test(value.publishedUri)) {
-        state.publishedUri = value.publishedUri;
-        state.publishedAt = typeof value.publishedAt === 'string' ? value.publishedAt : undefined;
-      }
-      if (typeof value?.postUri === 'string' && /^at:\/\//.test(value.postUri)) {
-        state.postUri = value.postUri;
-      }
-      const doc = value?.document as Record<string, unknown> | undefined;
+    const hydrateDraft = async (value: Record<string, unknown>) => {
+      if (typeof value.createdAt === 'string' && !state.createdAt) state.createdAt = value.createdAt;
+      const doc = value.document as Record<string, unknown> | undefined;
       titleInput.value = typeof doc?.title === 'string' ? doc.title : '';
       descriptionInput.value = typeof doc?.description === 'string' ? doc.description : '';
       tagsInput.value = Array.isArray(doc?.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string').join(', ') : '';
@@ -6298,10 +6709,10 @@ async function loadDraftEditor(did: string) {
         publicationInput.append(option);
       }
       publicationInput.value = storedPublication;
-      if (Array.isArray(value?.sources)) {
+      if (Array.isArray(value.sources)) {
         sourcesInput.value = value.sources.filter((source): source is string => typeof source === 'string').join('\n');
       }
-      if (typeof value?.backlink === 'string') backlinkInput.value = value.backlink;
+      if (typeof value.backlink === 'string') backlinkInput.value = value.backlink;
       if (state.postUri) {
         // Older drafts may predate stored sources — hydrate from the published
         // story's metadata record so the fields match what readers see.
@@ -6370,6 +6781,30 @@ async function loadDraftEditor(did: string) {
         }
         insertBlock(model, undefined, inner);
       }
+    };
+
+    const response = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query.toString()}`);
+    if (response.ok) {
+      const payload = await response.json() as { value?: Record<string, unknown> };
+      const remoteValue = payload.value;
+      if (session?.did !== did) return;
+      state.exists = true;
+      state.createdAt = typeof remoteValue?.createdAt === 'string' ? remoteValue.createdAt : undefined;
+      if (typeof remoteValue?.publishedUri === 'string' && /^at:\/\//.test(remoteValue.publishedUri)) {
+        state.publishedUri = remoteValue.publishedUri;
+        state.publishedAt = typeof remoteValue.publishedAt === 'string' ? remoteValue.publishedAt : undefined;
+      }
+      if (typeof remoteValue?.postUri === 'string' && /^at:\/\//.test(remoteValue.postUri)) {
+        state.postUri = remoteValue.postUri;
+      }
+      const backup = loadBackup();
+      const remoteUpdatedAt = Date.parse(typeof remoteValue?.updatedAt === 'string' ? remoteValue.updatedAt : '') || 0;
+      if (backup && backup.savedAt > remoteUpdatedAt) {
+        restoredFromBackup = true;
+        await hydrateDraft(backup.record);
+      } else {
+        await hydrateDraft(remoteValue || {});
+      }
     } else {
       const payload = await response.json().catch(() => null) as { error?: string } | null;
       const missing = response.status === 404 || (response.status === 400 && payload?.error === 'RecordNotFound');
@@ -6381,6 +6816,12 @@ async function loadDraftEditor(did: string) {
         }
         throw new Error(payload?.error || `Could not load the draft (${response.status}).`);
       }
+      // Nothing on the PDS yet — a local backup may still hold the draft.
+      const backup = loadBackup();
+      if (backup) {
+        restoredFromBackup = true;
+        await hydrateDraft(backup.record);
+      }
     }
   } catch (error) {
     statusEl.textContent = error instanceof Error ? error.message : 'Could not load the draft.';
@@ -6388,9 +6829,18 @@ async function loadDraftEditor(did: string) {
   }
 
   if (!state.blocks.length) insertBlock({ id: crypto.randomUUID(), type: 'text' }, undefined);
-  state.savedVersion = state.version;
+  if (restoredFromBackup) {
+    // Leave the draft dirty so the autosync pushes the restored copy back up
+    // now that the user is signed in again.
+    markDirty();
+    void sync();
+  } else {
+    state.savedVersion = state.version;
+  }
   workspace.hidden = false;
   showPublishedLink();
-  statusEl.textContent = state.exists ? 'Draft loaded.' : 'New draft — it will sync automatically.';
+  statusEl.textContent = restoredFromBackup
+    ? 'Restored unsaved changes from this browser — syncing…'
+    : state.exists ? 'Draft loaded.' : 'New draft — it will sync automatically.';
   renderPreview();
 }
