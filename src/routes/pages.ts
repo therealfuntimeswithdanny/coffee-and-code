@@ -757,7 +757,9 @@ const draftEditorStyles = `
     .draft-preview-toggle:checked ~ .draft-editor__grid { gap: 28px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
     .draft-preview-toggle:checked ~ .draft-editor__grid .draft-preview { display: block; }
     @media (max-width: 900px) { .draft-preview-toggle:checked ~ .draft-editor__grid { grid-template-columns: 1fr; } }
-    .draft-toolbar { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); display: flex; flex-wrap: wrap; gap: 2px; grid-column: 1 / -1; justify-content: center; margin: 4px auto 18px; padding: 6px 10px; position: sticky; top: 88px; width: fit-content; max-width: 100%; z-index: 50; }
+    .draft-toolbar { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); display: flex; flex-wrap: nowrap; gap: 2px; grid-column: 1 / -1; justify-content: flex-start; margin: 4px auto 18px; max-width: calc(100vw - 24px); overflow-x: auto; padding: 6px 10px; position: sticky; scrollbar-width: thin; top: 88px; width: fit-content; z-index: 50; }
+    .draft-toolbar::-webkit-scrollbar { height: 4px; }
+    .draft-toolbar::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
     @media (max-width: 760px) { .draft-toolbar { top: 70px; } }
     .draft-toolbar button { background: transparent; border: 0; border-radius: 6px; color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; min-height: 32px; min-width: 32px; padding: 4px 8px; }
     .draft-toolbar button:hover { background: var(--paper); }
@@ -935,6 +937,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <button type="button" data-cmd="strikeThrough" title="Strikethrough" aria-label="Strikethrough"><i class="fa-solid fa-strikethrough" aria-hidden="true"></i></button>
             <button type="button" data-cmd="inlineCode" title="Inline code" aria-label="Inline code"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
             <button type="button" data-cmd="link" title="Link" aria-label="Link"><i class="fa-solid fa-link" aria-hidden="true"></i></button>
+            <button type="button" data-clear-format title="Clear formatting (⌘\\)" aria-label="Clear formatting"><i class="fa-solid fa-eraser" aria-hidden="true"></i></button>
             <span class="draft-toolbar__sep" aria-hidden="true"></span>
             <button type="button" data-block="text" title="Paragraph" aria-label="Paragraph"><i class="fa-solid fa-paragraph" aria-hidden="true"></i></button>
             <button type="button" data-block="header:1" title="Heading 1" aria-label="Heading 1">H1</button>
@@ -1016,6 +1019,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <div><dt>Underline</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>U</kbd></dd></div>
             <div><dt>Strikethrough</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⇧</kbd> <kbd>X</kbd></dd></div>
             <div><dt>Link</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>K</kbd></dd></div>
+            <div><dt>Clear formatting</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>\</kbd></dd></div>
             <div><dt>Paragraph</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⌥</kbd>/<kbd>Alt</kbd> <kbd>0</kbd></dd></div>
             <div><dt>Heading 1–3</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⌥</kbd>/<kbd>Alt</kbd> <kbd>1–3</kbd></dd></div>
             <div><dt>Bulleted list</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⇧</kbd> <kbd>8</kbd></dd></div>

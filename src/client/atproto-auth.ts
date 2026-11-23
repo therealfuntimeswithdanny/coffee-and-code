@@ -6508,6 +6508,10 @@ async function loadDraftEditor(did: string) {
         default: return false;
       }
     }
+    if (event.code === 'Backslash') {
+      clearFormattingForSelection();
+      return true;
+    }
     if (event.code === 'KeyK') {
       const url = window.prompt('Link URL (leave empty to remove a link):');
       if (url === null) return true;
@@ -6907,6 +6911,42 @@ async function loadDraftEditor(did: string) {
     [...root.childNodes].forEach(clean);
   };
 
+  // Strip pasted formatting (backgrounds, font sizes, foreign spans) back to
+  // the editor's inline vocabulary. Applies to the selection when there is
+  // one, otherwise the whole block.
+  const clearFormatting = (editable: HTMLElement) => {
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : undefined;
+    if (range && !range.collapsed
+      && editable.contains(range.startContainer) && editable.contains(range.endContainer)) {
+      const probe = document.createElement('div');
+      probe.append(range.extractContents());
+      sanitizeImportedHtml(probe);
+      const inserted = [...probe.childNodes];
+      const fragment = document.createDocumentFragment();
+      fragment.append(...inserted);
+      range.insertNode(fragment);
+      if (inserted.length) {
+        const reselect = document.createRange();
+        reselect.setStartBefore(inserted[0]);
+        reselect.setEndAfter(inserted[inserted.length - 1]);
+        selection?.removeAllRanges();
+        selection?.addRange(reselect);
+      }
+    } else {
+      sanitizeImportedHtml(editable);
+      editable.normalize();
+    }
+    changed();
+    scheduleLint(editable, 200);
+  };
+  const clearFormattingForSelection = () => {
+    const anchor = window.getSelection()?.anchorNode;
+    const host = anchor instanceof HTMLElement ? anchor : anchor?.parentElement;
+    const editable = host?.closest<HTMLElement>('.draft-block__editable');
+    if (editable && page.contains(editable)) clearFormatting(editable);
+  };
+
   type ImportedBlock = { model: DraftBlock; html?: string; rows?: string[] };
   const draftBlocksFromHtml = (html: string): ImportedBlock[] => {
     const container = document.createElement('div');
@@ -7040,6 +7080,7 @@ async function loadDraftEditor(did: string) {
   toolbar.addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!button) return;
+    if (button.hasAttribute('data-clear-format')) { clearFormattingForSelection(); return; }
     const command = button.dataset.cmd;
     if (command === 'inlineCode') { toggleInlineCode(); return; }
     if (command === 'link') {
