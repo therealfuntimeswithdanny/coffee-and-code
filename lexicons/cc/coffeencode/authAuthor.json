@@ -16,6 +16,7 @@
           ],
           "resource": "repo",
           "collection": [
+            "cc.coffeencode.author.dictionary",
             "cc.coffeencode.author.draft",
             "cc.coffeencode.author.profile",
             "cc.coffeencode.forum.moderation",

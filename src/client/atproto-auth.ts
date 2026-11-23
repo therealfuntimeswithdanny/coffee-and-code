@@ -5295,6 +5295,8 @@ document.querySelectorAll<HTMLElement>('.article-share').forEach((shareSection) 
 // ---------------------------------------------------------------------------
 
 const DRAFT_COLLECTION = 'cc.coffeencode.author.draft';
+const DICTIONARY_COLLECTION = 'cc.coffeencode.author.dictionary';
+const DICTIONARY_RKEY = 'self';
 const DRAFT_SYNC_INTERVAL_MS = 15000;
 const LEAFLET_FACET = 'pub.leaflet.richtext.facet';
 
@@ -6071,6 +6073,29 @@ async function loadDraftEditor(did: string) {
           const ignored = localStorage.getItem(SPELL_IGNORED_KEY);
           if (ignored) await linter.importIgnoredLints(ignored);
         } catch { /* Same for ignored-lint hashes. */ }
+        // The personal dictionary lives as a record on the author's repo so it
+        // follows them across browsers; localStorage is just the offline cache.
+        try {
+          const response = await repoRequest(`com.atproto.repo.getRecord?${new URLSearchParams({
+            repo: did,
+            collection: DICTIONARY_COLLECTION,
+            rkey: DICTIONARY_RKEY,
+          })}`);
+          if (response.ok) {
+            const payload = await response.json() as { value?: { words?: unknown; ignored?: unknown } };
+            const remoteWords = Array.isArray(payload.value?.words)
+              ? payload.value.words.filter((word): word is string => typeof word === 'string')
+              : [];
+            if (remoteWords.length) {
+              await linter.importWords(remoteWords);
+              const merged = [...new Set([...(await linter.exportWords()), ...remoteWords])];
+              try { localStorage.setItem(SPELL_WORDS_KEY, JSON.stringify(merged)); } catch { /* cache only */ }
+            }
+            if (typeof payload.value?.ignored === 'string' && payload.value.ignored) {
+              await linter.importIgnoredLints(payload.value.ignored);
+            }
+          }
+        } catch { /* Missing record or pre-permission session — local only. */ }
         return linter as HarperLinter;
       } catch {
         // Offline or the WASM failed to load — checking silently stays off.
@@ -6131,6 +6156,31 @@ async function loadDraftEditor(did: string) {
     }
     highlightRegistry.set('draft-spell', new Highlight(...spelling));
     highlightRegistry.set('draft-grammar', new Highlight(...grammar));
+  };
+
+  // Persist the dictionary locally and to the author's repo (debounced — the
+  // record is the source of truth across devices, localStorage the cache).
+  let dictionaryTimer: number | undefined;
+  const syncDictionary = () => {
+    if (dictionaryTimer) window.clearTimeout(dictionaryTimer);
+    dictionaryTimer = window.setTimeout(() => {
+      dictionaryTimer = undefined;
+      void (async () => {
+        const linter = await getLinter();
+        if (!linter) return;
+        const [words, ignored] = await Promise.all([linter.exportWords(), linter.exportIgnoredLints()]);
+        try {
+          localStorage.setItem(SPELL_WORDS_KEY, JSON.stringify(words));
+          localStorage.setItem(SPELL_IGNORED_KEY, ignored);
+        } catch { /* cache only */ }
+        await repoRequest('com.atproto.repo.putRecord', {
+          repo: did,
+          collection: DICTIONARY_COLLECTION,
+          rkey: DICTIONARY_RKEY,
+          record: { $type: DICTIONARY_COLLECTION, words, ignored, updatedAt: new Date().toISOString() },
+        }).catch(() => { /* Sessions before the dictionary scope stay local. */ });
+      })();
+    }, 1500);
   };
 
   const hidePopover = () => {
@@ -6231,7 +6281,7 @@ async function loadDraftEditor(did: string) {
         const linter = await getLinter();
         if (!linter || !word) return;
         await linter.importWords([word]);
-        try { localStorage.setItem(SPELL_WORDS_KEY, JSON.stringify(await linter.exportWords())); } catch { /* best effort */ }
+        syncDictionary();
         hidePopover();
         void runLint(editable);
       })());
@@ -6240,7 +6290,7 @@ async function loadDraftEditor(did: string) {
       const linter = await getLinter();
       if (!linter) return;
       await linter.ignoreLint(editable.textContent || '', lint.raw);
-      try { localStorage.setItem(SPELL_IGNORED_KEY, await linter.exportIgnoredLints()); } catch { /* best effort */ }
+      syncDictionary();
       hidePopover();
       void runLint(editable);
     })());
