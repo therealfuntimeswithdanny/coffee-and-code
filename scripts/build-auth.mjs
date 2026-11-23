@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
@@ -150,7 +150,17 @@ await build({
   bundle: true,
   minify: true,
   platform: 'browser',
+  // harper.js keeps a Node-only `import('fs')` fallback behind a `process`
+  // check that never runs in the browser.
+  external: ['fs'],
   format: 'esm',
   target: 'es2022',
   outfile: fileURLToPath(new URL('../media/components/atproto-auth.js', import.meta.url)),
 });
+
+// Harper's WASM grammar engine is served lazily alongside the bundle so it is
+// only downloaded when someone opens the draft editor.
+await copyFile(
+  fileURLToPath(new URL('../node_modules/harper.js/dist/harper_wasm_slim_bg.wasm', import.meta.url)),
+  fileURLToPath(new URL('../media/components/harper_wasm_slim_bg.wasm', import.meta.url)),
+);

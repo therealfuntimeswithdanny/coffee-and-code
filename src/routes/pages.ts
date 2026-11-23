@@ -849,6 +849,17 @@ const draftEditorStyles = `
     .draft-list__item > a { flex: 1; min-width: 0; }
     .draft-list__title { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .draft-list__meta { color: var(--muted); display: block; font-size: 13px; }
+    ::highlight(draft-spell) { text-decoration: underline wavy #e5484d 1.5px; text-decoration-skip-ink: none; }
+    ::highlight(draft-grammar) { text-decoration: underline wavy #d9a441 1.5px; text-decoration-skip-ink: none; }
+    .draft-spell-pop { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); display: grid; font-size: 14px; gap: 2px; max-width: 300px; padding: 8px; position: fixed; z-index: 400; }
+    .draft-spell-pop[hidden] { display: none; }
+    .draft-spell-pop__kind { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .draft-spell-pop__message { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 0 0 4px; }
+    .draft-spell-pop__suggestion { background: transparent; border: 0; border-radius: 4px; color: var(--accent); cursor: pointer; font: inherit; font-weight: 700; padding: 5px 8px; text-align: left; }
+    .draft-spell-pop__suggestion:hover { background: var(--paper-deep); color: var(--ink); }
+    .draft-spell-pop__actions { border-top: 1px solid var(--line); display: flex; gap: 4px; margin-top: 4px; padding-top: 6px; }
+    .draft-spell-pop__minor { background: transparent; border: 0; border-radius: 4px; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; padding: 4px 6px; }
+    .draft-spell-pop__minor:hover { color: var(--ink); }
   </style>`;
 
 pages.get('/account/author/draft', (c) => {
@@ -912,6 +923,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <button type="button" data-block="website" title="Link card" aria-label="Link card"><i class="fa-solid fa-globe" aria-hidden="true"></i></button>
             <button type="button" data-block="bskyPost" title="Bluesky post" aria-label="Bluesky post"><i class="fa-brands fa-bluesky" aria-hidden="true"></i></button>
             <button type="button" data-block="math" title="Math" aria-label="Math">&#8721;</button>
+            <button type="button" data-spellcheck title="Spell &amp; grammar check" aria-label="Spell and grammar check" aria-pressed="true"><i class="fa-solid fa-spell-check" aria-hidden="true"></i></button>
             <span class="draft-toolbar__sep" aria-hidden="true"></span>
             <button type="button" data-align="#textAlignLeft" title="Align left" aria-label="Align left"><i class="fa-solid fa-align-left" aria-hidden="true"></i></button>
             <button type="button" data-align="#textAlignCenter" title="Align center" aria-label="Align center"><i class="fa-solid fa-align-center" aria-hidden="true"></i></button>
@@ -937,8 +949,8 @@ pages.get('/account/author/draft/:rkey', (c) => {
             </div>
           </details>
           <div class="draft-editor__sheet">
-            <input class="draft-editor__meta-title" name="draft-title" type="text" maxlength="5000" placeholder="Untitled story" aria-label="Title" data-draft-field="title">
-            <textarea class="draft-editor__meta-description" name="draft-description" rows="2" maxlength="30000" placeholder="Add a short description…" aria-label="Description" data-draft-field="description"></textarea>
+            <input class="draft-editor__meta-title" name="draft-title" type="text" maxlength="5000" placeholder="Untitled story" aria-label="Title" spellcheck="true" data-draft-field="title">
+            <textarea class="draft-editor__meta-description" name="draft-description" rows="2" maxlength="30000" placeholder="Add a short description…" aria-label="Description" spellcheck="true" data-draft-field="description"></textarea>
             <div class="draft-blocks" data-draft-blocks></div>
           </div>
         </div>

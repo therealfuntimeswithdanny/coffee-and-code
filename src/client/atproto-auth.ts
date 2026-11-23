@@ -5600,6 +5600,10 @@ async function loadDraftListPage(did: string) {
   }
 }
 
+// Re-entering the draft editor installs a fresh document-level listener; abort
+// the previous one so stale sessions don't accumulate.
+let draftSpellAbort: AbortController | undefined;
+
 async function loadDraftEditor(did: string) {
   if (!accountPage) return;
   const page = accountPage.querySelector<HTMLElement>('[data-draft-editor]');
@@ -5876,6 +5880,298 @@ async function loadDraftEditor(did: string) {
   };
   const changed = () => { markDirty(); queuePreview(); };
 
+  // --- Spell & grammar checking (Harper, runs locally via WASM) ---
+  // Underlines are painted with the Custom Highlight API so the contenteditable
+  // DOM is never mutated by the checker. Lints, the personal dictionary and
+  // ignored-lint hashes all stay on-device (localStorage + WASM).
+  type HarperLint = import('harper.js').Lint;
+  type HarperLinter = import('harper.js').Linter;
+  type SpellSuggestion = { kind: number; text: string };
+  type SpellLint = {
+    start: number;
+    end: number;
+    message: string;
+    kind: string;
+    suggestions: SpellSuggestion[];
+    raw: HarperLint;
+  };
+  const SPELL_PREF_KEY = 'cc:draft-spellcheck';
+  const SPELL_WORDS_KEY = 'cc:harper-words';
+  const SPELL_IGNORED_KEY = 'cc:harper-ignored';
+  let spellEnabled = (() => {
+    try { return localStorage.getItem(SPELL_PREF_KEY) !== 'off'; } catch { return true; }
+  })();
+  const highlightRegistry = typeof CSS !== 'undefined' && 'highlights' in CSS ? CSS.highlights : undefined;
+  const spellButton = toolbar.querySelector<HTMLButtonElement>('[data-spellcheck]');
+  const lintStore = new Map<HTMLElement, { version: number; lints: SpellLint[] }>();
+  const lintTimers = new Map<HTMLElement, number>();
+  let linterPromise: Promise<HarperLinter | undefined> | undefined;
+  let popoverLint: { editable: HTMLElement; lint: SpellLint } | undefined;
+
+  const spellPopover = document.createElement('div');
+  spellPopover.className = 'draft-spell-pop';
+  spellPopover.hidden = true;
+  spellPopover.addEventListener('mousedown', (event) => event.preventDefault());
+  page.append(spellPopover);
+
+  const getLinter = (): Promise<HarperLinter | undefined> => {
+    linterPromise ??= (async () => {
+      try {
+        const { LocalLinter, Dialect, createBinaryModuleFromUrl } = await import('harper.js');
+        const linter = new LocalLinter({
+          binary: createBinaryModuleFromUrl('/components/harper_wasm_slim_bg.wasm', 'slim'),
+          dialect: Dialect.American,
+        });
+        await linter.setup();
+        try {
+          const words = JSON.parse(localStorage.getItem(SPELL_WORDS_KEY) || '[]') as unknown;
+          if (Array.isArray(words)) {
+            await linter.importWords(words.filter((word): word is string => typeof word === 'string'));
+          }
+        } catch { /* A corrupt word list is not worth blocking the linter for. */ }
+        try {
+          const ignored = localStorage.getItem(SPELL_IGNORED_KEY);
+          if (ignored) await linter.importIgnoredLints(ignored);
+        } catch { /* Same for ignored-lint hashes. */ }
+        return linter as HarperLinter;
+      } catch {
+        // Offline or the WASM failed to load — checking silently stays off.
+        return undefined;
+      }
+    })();
+    return linterPromise;
+  };
+
+  const textNodesOf = (editable: HTMLElement) => {
+    const nodes: Text[] = [];
+    const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+    return nodes;
+  };
+  const rangeForOffsets = (editable: HTMLElement, start: number, end: number) => {
+    const nodes = textNodesOf(editable);
+    const range = document.createRange();
+    let offset = 0;
+    let started = false;
+    for (const node of nodes) {
+      const next = offset + node.data.length;
+      if (!started && start <= next) {
+        range.setStart(node, Math.max(0, start - offset));
+        started = true;
+      }
+      if (started && end <= next) {
+        range.setEnd(node, Math.max(0, end - offset));
+        return range;
+      }
+      offset = next;
+    }
+    if (!started || !nodes.length) return undefined;
+    const last = nodes[nodes.length - 1];
+    range.setEnd(last, last.data.length);
+    return range;
+  };
+  const offsetAt = (editable: HTMLElement, container: Node, offset: number) => {
+    const probe = document.createRange();
+    probe.selectNodeContents(editable);
+    probe.setEnd(container, offset);
+    return probe.toString().length;
+  };
+
+  const refreshHighlights = () => {
+    if (!highlightRegistry) return;
+    const spelling: Range[] = [];
+    const grammar: Range[] = [];
+    if (spellEnabled) {
+      for (const [editable, entry] of lintStore) {
+        if (!editable.isConnected) { lintStore.delete(editable); continue; }
+        for (const lint of entry.lints) {
+          const range = rangeForOffsets(editable, lint.start, lint.end);
+          if (!range) continue;
+          (lint.kind === 'Spelling' ? spelling : grammar).push(range);
+        }
+      }
+    }
+    highlightRegistry.set('draft-spell', new Highlight(...spelling));
+    highlightRegistry.set('draft-grammar', new Highlight(...grammar));
+  };
+
+  const hidePopover = () => {
+    spellPopover.hidden = true;
+    popoverLint = undefined;
+  };
+
+  const applySuggestion = async (editable: HTMLElement, lint: SpellLint, suggestion: SpellSuggestion) => {
+    const range = rangeForOffsets(editable, lint.start, lint.end);
+    if (!range) return;
+    const selection = window.getSelection();
+    if (suggestion.kind === 1) {
+      // SuggestionKind.Remove
+      range.deleteContents();
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else {
+      // Replace selects the span; InsertAfter collapses to its end. Both then go
+      // through insertText so the change joins the native undo stack.
+      range.collapse(suggestion.kind !== 2);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.execCommand('insertText', false, suggestion.text);
+    }
+    hidePopover();
+    editable.focus();
+    changed();
+    scheduleLint(editable, 250);
+  };
+
+  const refreshPopover = () => {
+    if (!spellEnabled) { hidePopover(); return; }
+    const selection = window.getSelection();
+    const anchor = selection?.anchorNode ?? null;
+    const host = anchor instanceof HTMLElement ? anchor : anchor?.parentElement;
+    const editable = host?.closest<HTMLElement>('.draft-block__editable');
+    if (!selection?.rangeCount || !editable || !page.contains(editable)) { hidePopover(); return; }
+    const entry = lintStore.get(editable);
+    if (!entry?.lints.length) { hidePopover(); return; }
+    const range = selection.getRangeAt(0);
+    if (!editable.contains(range.startContainer) || !editable.contains(range.endContainer)) { hidePopover(); return; }
+    const start = offsetAt(editable, range.startContainer, range.startOffset);
+    const end = offsetAt(editable, range.endContainer, range.endOffset);
+    const lo = Math.min(start, end);
+    const hi = Math.max(start, end);
+    const lint = entry.lints.find((item) => lo <= item.end && hi >= item.start);
+    if (!lint) { hidePopover(); return; }
+    popoverLint = { editable, lint };
+
+    spellPopover.replaceChildren();
+    const kind = document.createElement('span');
+    kind.className = 'draft-spell-pop__kind';
+    kind.textContent = lint.kind === 'Spelling' ? 'Spelling' : 'Grammar';
+    const message = document.createElement('p');
+    message.className = 'draft-spell-pop__message';
+    message.textContent = lint.message;
+    spellPopover.append(kind, message);
+    for (const suggestion of lint.suggestions.slice(0, 5)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'draft-spell-pop__suggestion';
+      const problem = (editable.textContent || '').slice(lint.start, lint.end);
+      button.textContent = suggestion.kind === 1 ? `Remove “${problem}”` : suggestion.text;
+      button.addEventListener('click', () => void applySuggestion(editable, lint, suggestion));
+      spellPopover.append(button);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'draft-spell-pop__actions';
+    const minor = (label: string, run: () => void) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'draft-spell-pop__minor';
+      button.textContent = label;
+      button.addEventListener('click', run);
+      actions.append(button);
+    };
+    if (lint.kind === 'Spelling') {
+      minor('Add to dictionary', () => void (async () => {
+        const word = (editable.textContent || '').slice(lint.start, lint.end).trim();
+        const linter = await getLinter();
+        if (!linter || !word) return;
+        await linter.importWords([word]);
+        try { localStorage.setItem(SPELL_WORDS_KEY, JSON.stringify(await linter.exportWords())); } catch { /* best effort */ }
+        hidePopover();
+        void runLint(editable);
+      })());
+    }
+    minor('Ignore', () => void (async () => {
+      const linter = await getLinter();
+      if (!linter) return;
+      await linter.ignoreLint(editable.textContent || '', lint.raw);
+      try { localStorage.setItem(SPELL_IGNORED_KEY, await linter.exportIgnoredLints()); } catch { /* best effort */ }
+      hidePopover();
+      void runLint(editable);
+    })());
+    spellPopover.append(actions);
+
+    const rect = rangeForOffsets(editable, lint.start, lint.end)?.getBoundingClientRect();
+    if (!rect) { hidePopover(); return; }
+    spellPopover.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 316))}px`;
+    spellPopover.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 10)}px`;
+    spellPopover.hidden = false;
+  };
+
+  const runLint = async (editable: HTMLElement) => {
+    if (!spellEnabled || !editable.isConnected) return;
+    const element = editable.closest<HTMLElement>('[data-block-id]');
+    const owner = element ? blockFor(element) : undefined;
+    if (!owner || owner.type === 'code') {
+      lintStore.delete(editable);
+      refreshHighlights();
+      return;
+    }
+    const entry = lintStore.get(editable) || { version: 0, lints: [] };
+    entry.version += 1;
+    lintStore.set(editable, entry);
+    const version = entry.version;
+    const linter = await getLinter();
+    if (!linter || lintStore.get(editable)?.version !== version) return;
+    try {
+      const lints = await linter.lint(editable.textContent || '', {
+        language: 'plaintext',
+        ...(owner.type === 'header' ? { forceAllHeadings: true } : {}),
+      });
+      if (lintStore.get(editable)?.version !== version) return;
+      entry.lints = lints.map((lint) => {
+        const span = lint.span();
+        return {
+          start: span.start,
+          end: span.end,
+          message: lint.message(),
+          kind: lint.lint_kind(),
+          suggestions: lint.suggestions().map((item) => ({ kind: item.kind(), text: item.get_replacement_text() })),
+          raw: lint,
+        };
+      });
+      refreshHighlights();
+      if (popoverLint?.editable === editable) refreshPopover();
+    } catch { /* A failed pass keeps the previous marks. */ }
+  };
+  const scheduleLint = (editable: HTMLElement, delay = 600) => {
+    const existing = lintTimers.get(editable);
+    if (existing) window.clearTimeout(existing);
+    lintTimers.set(editable, window.setTimeout(() => {
+      lintTimers.delete(editable);
+      void runLint(editable);
+    }, delay));
+  };
+  const lintAll = (delay = 900) => {
+    page.querySelectorAll<HTMLElement>('.draft-block__editable').forEach((editable) => scheduleLint(editable, delay));
+  };
+  const setSpellEnabled = (on: boolean) => {
+    spellEnabled = on;
+    try { localStorage.setItem(SPELL_PREF_KEY, on ? 'on' : 'off'); } catch { /* preference is best effort */ }
+    spellButton?.setAttribute('aria-pressed', String(on));
+    page.querySelectorAll<HTMLElement>('.draft-block__editable').forEach((editable) => {
+      // While Harper is off the editables fall back to the browser's checker.
+      editable.spellcheck = !on;
+    });
+    if (on) {
+      lintAll(150);
+      void getLinter();
+    } else {
+      lintStore.clear();
+      refreshHighlights();
+      hidePopover();
+    }
+  };
+  spellButton?.setAttribute('aria-pressed', String(spellEnabled));
+  spellButton?.addEventListener('click', () => setSpellEnabled(!spellEnabled));
+  draftSpellAbort?.abort();
+  draftSpellAbort = new AbortController();
+  document.addEventListener('selectionchange', refreshPopover, { signal: draftSpellAbort.signal });
+  document.addEventListener('scroll', hidePopover, { capture: true, passive: true, signal: draftSpellAbort.signal });
+  if (spellEnabled && 'requestIdleCallback' in window) {
+    window.requestIdleCallback(() => { void getLinter(); }, { timeout: 4000 });
+  }
+
   const caretAtStart = (editable: HTMLElement) => {
     const selection = window.getSelection();
     if (!selection?.rangeCount || !selection.isCollapsed) return false;
@@ -5898,9 +6194,13 @@ async function loadDraftEditor(did: string) {
     const editable = document.createElement('div');
     editable.className = className;
     editable.contentEditable = 'true';
+    editable.spellcheck = !spellEnabled;
     editable.dataset.placeholder = draftBlockLabel[block.type];
     editable.innerHTML = itemHtml;
     editable.addEventListener('input', changed);
+    editable.addEventListener('input', () => scheduleLint(editable));
+    editable.addEventListener('blur', () => window.setTimeout(hidePopover, 120));
+    scheduleLint(editable, 1500);
     editable.addEventListener('keydown', (event) => {
       const element = editable.closest<HTMLElement>('[data-block-id]');
       const owner = element ? blockFor(element) : undefined;
