@@ -7310,14 +7310,22 @@ async function loadDraftEditor(did: string) {
     return document;
   }
 
+  let cachedAuthorHandle: string | undefined;
   const draftAuthorHandle = async (): Promise<string> => {
+    if (cachedAuthorHandle) return cachedAuthorHandle;
     const known = loadKnownAccounts().find((account) => account.did === did)?.handle;
-    if (known) return known;
+    if (known) {
+      cachedAuthorHandle = known;
+      return known;
+    }
     try {
       const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
       if (response.ok) {
         const profile = await response.json() as { handle?: unknown };
-        if (typeof profile.handle === 'string' && profile.handle) return profile.handle;
+        if (typeof profile.handle === 'string' && profile.handle) {
+          cachedAuthorHandle = profile.handle;
+          return profile.handle;
+        }
       }
     } catch { /* Fall through to the publication path hint. */ }
     return did;
@@ -7449,10 +7457,18 @@ async function loadDraftEditor(did: string) {
     if (!publishedLink) return;
     const postMatch = state.postUri?.match(/^at:\/\/[^/]+\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/);
     if (postMatch) {
-      publishedLink.href = `/author/${encodeURIComponent(did)}/${encodeURIComponent(postMatch[1])}`;
+      const postRkey = postMatch[1];
+      publishedLink.href = `/author/${encodeURIComponent(cachedAuthorHandle || did)}/${encodeURIComponent(postRkey)}`;
       publishedLink.hidden = false;
       publishedLink.removeAttribute('target');
       publishedLink.removeAttribute('rel');
+      // Swap the DID for the reader-facing handle once it resolves — the
+      // canonical story URL is /author/{handle}/{rkey}.
+      void draftAuthorHandle().then((handle) => {
+        if (handle !== did && state.postUri?.endsWith(`/${postRkey}`)) {
+          publishedLink.href = `/author/${encodeURIComponent(handle)}/${encodeURIComponent(postRkey)}`;
+        }
+      });
       return;
     }
     if (state.publishedUri) {
@@ -7629,6 +7645,24 @@ async function loadDraftEditor(did: string) {
       state.publishedUri = result.uri;
       state.publishedAt = publishedAt;
       showPublishedLink();
+      // Drop the edge-cached story/post lists so readers see the new version
+      // right away instead of waiting out the cache TTL.
+      const publishedPostRkey = state.postUri?.split('/').pop() || '';
+      if (publishedPostRkey) {
+        void (async () => {
+          const handle = await draftAuthorHandle();
+          await fetch('/api/author/cache/purge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              did,
+              rkey: publishedPostRkey,
+              ...(site ? { site } : {}),
+              path: `/author/${encodeURIComponent(handle)}/${encodeURIComponent(publishedPostRkey)}`,
+            }),
+          });
+        })().catch(() => { /* A failed purge just means the cache ages out. */ });
+      }
       state.syncing = false;
       await sync();
       statusEl.textContent = existingDocRkey

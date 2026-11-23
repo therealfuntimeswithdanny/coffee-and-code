@@ -32,7 +32,7 @@ test('matches recent posts by followed authors and followed tags case-insensitiv
   assert.deepEqual(matches[0].matchedTags, ['TypeScript']);
 });
 
-test('does not notify for posts published before the follow or by the reader', () => {
+test('does not notify for posts published before the follow, but includes the reader\'s own posts', () => {
   const olderPost = document({ publishedAt: '2026-11-14T10:00:00.000Z', tags: ['TypeScript'] });
   const ownPost = document({
     author: { did: 'did:plc:reader', handle: 'reader.test' },
@@ -46,5 +46,6 @@ test('does not notify for posts published before the follow or by the reader', (
     'did:plc:reader',
   );
 
-  assert.deepEqual(matches, []);
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].document, ownPost);
 });

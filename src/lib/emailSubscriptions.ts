@@ -14,6 +14,9 @@ const PENDING_PREFIX = 'email:pending:';
 const MAX_SEEN_URIS = 200;
 const MAX_PENDING_ITEMS = 50;
 const DIGEST_BATCH = 25;
+// Each queued item gets up to this many delivery attempts per recipient
+// (initial send plus retries on later cron runs) before it is dropped.
+const MAX_SEND_ATTEMPTS = 4;
 const VERIFY_TTL_SECONDS = 24 * 60 * 60;
 const SITE_ORIGIN = 'https://coffeencode.cc';
 
@@ -207,6 +210,11 @@ type PendingDigestItem = {
   actorDid?: string;
   actorHandle?: string;
   actorName?: string;
+  // Delivery state: addresses that already received the item, and the number
+  // of failed dispatch rounds. Items are dropped once every matching
+  // recipient has them or the attempt budget is exhausted.
+  sentTo?: string[];
+  attempts?: number;
 };
 
 type PendingDigest = { items: PendingDigestItem[]; lastSent?: string };
@@ -282,8 +290,7 @@ export async function dispatchEmailNotifications(env: Env) {
         }
       }
 
-      const batch = digest.items.slice(0, DIGEST_BATCH);
-      const batchNotifications = batch.map((item) => ({
+      const toNotification = (item: PendingDigestItem) => ({
         uri: item.uri,
         type: 'followed.post' as const,
         actorDid: item.actorDid || '',
@@ -294,20 +301,31 @@ export async function dispatchEmailNotifications(env: Env) {
         matchedTags: item.matchedTags,
         actorName: item.actorName,
         actorHandle: item.actorHandle,
-      }));
+      });
+      const batch = digest.items
+        .filter((item) => (item.attempts || 0) < MAX_SEND_ATTEMPTS)
+        .slice(0, DIGEST_BATCH);
       const unsubscribeUrl = unsubscribeUrlFor(settings, did);
       const manageUrl = manageUrlFor(settings, did);
       const digestLabel = settings.frequency === 'daily' ? 'daily brief' : settings.frequency === 'weekly' ? 'weekly brief' : undefined;
+      const failed = new Set<PendingDigestItem>();
       await Promise.all(recipients.map(async (entry) => {
-        const items = batchNotifications.filter((item) => matchesFilters(
-          { uri: item.uri, title: item.documentTitle, path: item.documentPath, matchedTags: item.matchedTags, actorDid: item.actorDid, actorHandle: item.actorHandle },
-          entry,
-        ));
+        const items = batch.filter((item) => !(item.sentTo || []).includes(entry.address)
+          && matchesFilters(item, entry));
         if (!items.length) return;
-        const message = followedPostsEmail(env, items, unsubscribeUrl, manageUrl, { label: digestLabel });
-        await sendEmail(env, { to: entry.address, ...message });
+        const message = followedPostsEmail(env, items.map(toNotification), unsubscribeUrl, manageUrl, { label: digestLabel });
+        const sent = await sendEmail(env, { to: entry.address, ...message });
+        for (const item of items) {
+          if (sent) item.sentTo = [...(item.sentTo || []), entry.address];
+          else failed.add(item);
+        }
       }));
-      digest.items = digest.items.slice(DIGEST_BATCH);
+      for (const item of failed) item.attempts = (item.attempts || 0) + 1;
+      // Drop an item once every matching recipient received it or its failed
+      // attempts are exhausted; anything else stays queued for the next run.
+      digest.items = digest.items.filter((item) => (item.attempts || 0) < MAX_SEND_ATTEMPTS
+        && recipients.some((entry) => !(item.sentTo || []).includes(entry.address)
+          && matchesFilters(item, entry)));
       digest.lastSent = new Date().toISOString();
       await env.PUSH_TOKENS.put(`${PENDING_PREFIX}${did}`, JSON.stringify(digest));
     } catch (error) {

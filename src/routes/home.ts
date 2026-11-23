@@ -74,12 +74,14 @@ home.get('/', async (c) => {
     .sort((a, b) => a.pinnedOrder! - b.pinnedOrder!);
   const heroPost = posts[0];
   const pinnedForHome = pinnedPosts.filter((post) => post.uri !== heroPost?.uri).slice(0, 3);
-  const excludedUris = new Set([heroPost?.uri, ...pinnedForHome.map((post) => post.uri)]);
+  // Pinned stories keep their spotlight cards but still appear in the
+  // chronological lists — only the hero is excluded so it isn't shown twice.
+  const excludedUris = new Set([heroPost?.uri]);
   const sidePosts = posts.filter((post) => !excludedUris.has(post.uri)).slice(0, 4);
   sidePosts.forEach((post) => excludedUris.add(post.uri));
   const archivePosts = posts.filter((post) => !excludedUris.has(post.uri)).slice(0, 9);
-  const displayedPosts = [heroPost, ...sidePosts, ...pinnedForHome, ...archivePosts]
-    .filter((post): post is StandardDocument => Boolean(post));
+  const displayedPosts = [...new Set([heroPost, ...sidePosts, ...pinnedForHome, ...archivePosts]
+    .filter((post): post is StandardDocument => Boolean(post)))];
   const homeBaseUrl = new URL(c.req.url).origin;
 
   const proxiedCover = (source?: string, preset = 'feed_small') => (source ? proxyImageUrl(source, pds || homeBaseUrl, preset) : source);

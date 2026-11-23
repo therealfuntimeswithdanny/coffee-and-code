@@ -16,6 +16,10 @@ export type Env = {
   TYPEAHEAD_UPSTREAM?: string;
   // Better Stack (Better Uptime) API token for /api/pds-status; secret, optional.
   BETTERSTACK_TOKEN?: string;
+  // Optional Cloudflare zone credentials. When set, updating a published post
+  // also purges the story URL from the zone cache via the Cloudflare API.
+  CF_ZONE_ID?: string;
+  CF_API_TOKEN?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;

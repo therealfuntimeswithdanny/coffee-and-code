@@ -769,18 +769,22 @@ async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallb
   };
 }
 
-export async function getEdgeCachedValue<T>(namespace: string, key: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
-  if (typeof caches === 'undefined') return load();
-
-  let cacheKey: Request;
+async function edgeCacheRequest(namespace: string, key: string): Promise<Request | undefined> {
   try {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    cacheKey = new Request(`https://coffeencode.cc/__worker_cache/${namespace}/${hash}`);
+    return new Request(`https://coffeencode.cc/__worker_cache/${namespace}/${hash}`);
   } catch (error) {
     console.error(`Could not create the ${namespace} edge cache key:`, error);
-    return load();
+    return undefined;
   }
+}
+
+export async function getEdgeCachedValue<T>(namespace: string, key: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
+  if (typeof caches === 'undefined') return load();
+
+  const cacheKey = await edgeCacheRequest(namespace, key);
+  if (!cacheKey) return load();
 
   try {
     const cached = await caches.default.match(cacheKey);
@@ -802,6 +806,37 @@ export async function getEdgeCachedValue<T>(namespace: string, key: string, ttlS
     console.error(`Could not write the ${namespace} edge cache:`, error);
   }
   return value;
+}
+
+export async function deleteEdgeCachedValue(namespace: string, key: string): Promise<void> {
+  if (typeof caches === 'undefined') return;
+  try {
+    const cacheKey = await edgeCacheRequest(namespace, key);
+    if (cacheKey) await caches.default.delete(cacheKey);
+  } catch (error) {
+    console.error(`Could not delete the ${namespace} edge cache entry:`, error);
+  }
+}
+
+/**
+ * Drops the edge-cached copies of a story and the publication's post list after
+ * a publish/update, so the next read renders the latest record. `siteUri` is
+ * the site.standard.publication the document belongs to — its document list is
+ * cached separately under 'pubdocs'.
+ */
+export async function purgePublishedPostCache(
+  pds: string,
+  ownerDid: string,
+  repoDid: string,
+  rkey: string,
+  siteUri?: string,
+): Promise<void> {
+  const uri = `at://${repoDid}/site.standard.document/${rkey}`;
+  await Promise.all([
+    deleteEdgeCachedValue('article', `${pds}\n${ownerDid}\n${uri}`),
+    deleteEdgeCachedValue('articles', `${pds}\n${ownerDid}`),
+    ...(siteUri ? [deleteEdgeCachedValue('pubdocs', siteUri)] : []),
+  ]);
 }
 
 export function searchArticles(articles: StandardDocument[], query: string): StandardDocument[] {

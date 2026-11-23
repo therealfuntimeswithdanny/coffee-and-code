@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { fetchArticleByUri, fetchArticles, fetchPostMetadata, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl } from '../lib/atproto';
+import { fetchArticleByUri, fetchArticles, fetchPostMetadata, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl, purgePublishedPostCache } from '../lib/atproto';
 import { toPlainText } from '../lib/contentRenderer';
 import { loadNotificationsForUser } from '../lib/notifications';
 import legal from '../legal.json';
@@ -306,6 +306,60 @@ api.post('/video', async (c) => {
     console.error('Video storage failed:', error);
     return c.json({ error: 'The video could not be stored. Try again in a moment.' }, 502, { 'Cache-Control': 'no-store' });
   }
+});
+
+// Called by the draft editor after publishing or updating a post. Drops the
+// Worker's edge-cached copies of the story and the post lists so the next
+// request renders the updated record, and — when CF_ZONE_ID/CF_API_TOKEN are
+// configured — purges the story URL from the Cloudflare zone cache.
+api.post('/author/cache/purge', async (c) => {
+  const body = await c.req.json().catch(() => null) as {
+    did?: unknown;
+    rkey?: unknown;
+    site?: unknown;
+    path?: unknown;
+  } | null;
+  const did = typeof body?.did === 'string' ? body.did : '';
+  const rkey = typeof body?.rkey === 'string' ? body.rkey : '';
+  const site = typeof body?.site === 'string' ? body.site : undefined;
+  const path = typeof body?.path === 'string' && /^\/author\/[^/]+\/[^/]+$/.test(body.path) ? body.path : '';
+  if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did) || !/^[a-zA-Z0-9._~:-]+$/.test(rkey)) {
+    return c.json({ error: 'A valid did and rkey are required.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  if (site !== undefined && !/^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.publication\/[a-zA-Z0-9._~:-]+$/.test(site)) {
+    return c.json({ error: 'A valid site.standard.publication AT URI is required for site.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+
+  try {
+    const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
+    await purgePublishedPostCache(pds, c.env.OWNER_DID, did, rkey, site);
+  } catch (error) {
+    console.error('Could not purge the post edge cache:', error);
+  }
+
+  let zonePurged = false;
+  if (c.env.CF_ZONE_ID && c.env.CF_API_TOKEN) {
+    try {
+      const origin = new URL(c.req.url).origin;
+      const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${c.env.CF_ZONE_ID}/purge_cache`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${c.env.CF_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ files: [`${origin}${path || `/author/${encodeURIComponent(did)}/${encodeURIComponent(rkey)}`}`] }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      zonePurged = response.ok;
+      if (!response.ok) {
+        response.body?.cancel();
+        console.error(`Cloudflare zone purge failed (${response.status}).`);
+      }
+    } catch (error) {
+      console.error('Could not purge the Cloudflare zone cache:', error);
+    }
+  }
+  return c.json({ ok: true, zonePurged }, 200, { 'Cache-Control': 'no-store' });
 });
 
 api.get('/documents/:rkey', async (c) => {

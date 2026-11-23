@@ -15,7 +15,11 @@ export function findFollowedPostMatches(
   return documents.flatMap((document) => {
     const actorDid = document.author?.did || document.repoDid;
     const publishedAt = Date.parse(document.publishedAt);
-    if (!actorDid || actorDid.toLowerCase() === recipientDid.toLowerCase() || !Number.isFinite(publishedAt)) return [];
+    if (!actorDid || !Number.isFinite(publishedAt)) return [];
+
+    // The recipient's own posts always match: authors want notifications (and
+    // subscriber email) covering their own publishing activity.
+    const isSelf = actorDid.toLowerCase() === recipientDid.toLowerCase();
 
     const followedAuthorAt = authorFollowedAt.get(actorDid.toLowerCase());
     const seenTags = new Set<string>();
@@ -26,7 +30,7 @@ export function findFollowedPostMatches(
       seenTags.add(key);
       return true;
     });
-    if (!(followedAuthorAt !== undefined && publishedAt >= followedAuthorAt) && !matchedTags.length) return [];
+    if (!isSelf && !(followedAuthorAt !== undefined && publishedAt >= followedAuthorAt) && !matchedTags.length) return [];
     return [{ document, actorDid, matchedTags }];
   });
 }
