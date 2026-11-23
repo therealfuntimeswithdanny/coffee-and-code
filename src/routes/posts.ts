@@ -184,7 +184,7 @@ async function renderPost(
   const sourceLabel = (url: string) => {
     try {
       const parsed = new URL(url);
-      return parsed.hostname.replace(/^www\./, '') + (parsed.pathname === '/' ? '' : parsed.pathname);
+      return parsed.hostname.replace(/^www\./, '');
     } catch {
       return url;
     }

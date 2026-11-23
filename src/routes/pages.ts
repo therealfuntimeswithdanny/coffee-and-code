@@ -757,15 +757,16 @@ const draftEditorStyles = `
     .draft-preview-toggle:checked ~ .draft-editor__grid { gap: 28px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
     .draft-preview-toggle:checked ~ .draft-editor__grid .draft-preview { display: block; }
     @media (max-width: 900px) { .draft-preview-toggle:checked ~ .draft-editor__grid { grid-template-columns: 1fr; } }
-    .draft-toolbar { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); display: flex; flex-wrap: nowrap; gap: 2px; grid-column: 1 / -1; justify-content: flex-start; margin: 4px auto 18px; max-width: calc(100vw - 24px); overflow-x: auto; padding: 6px 10px; position: sticky; scrollbar-width: thin; top: 88px; width: fit-content; z-index: 50; }
+    .draft-toolbar { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); display: flex; flex-wrap: nowrap; gap: 2px; justify-content: flex-start; margin: 0 auto; max-width: 100%; overflow-x: auto; padding: 6px 10px; scrollbar-width: thin; width: fit-content; }
+    .draft-toolbar-wrap { background: var(--doc-canvas); grid-column: 1 / -1; margin-bottom: 18px; padding: 6px 0 10px; position: sticky; top: 80px; z-index: 50; }
     .draft-toolbar::-webkit-scrollbar { height: 4px; }
     .draft-toolbar::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
-    @media (max-width: 760px) { .draft-toolbar { top: 70px; } }
+    @media (max-width: 760px) { .draft-toolbar-wrap { top: 68px; } }
     .draft-toolbar button { background: transparent; border: 0; border-radius: 6px; color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; min-height: 32px; min-width: 32px; padding: 4px 8px; }
     .draft-toolbar button:hover { background: var(--paper); }
     .draft-toolbar button[aria-pressed="true"] { background: var(--paper); color: var(--accent); }
     .draft-toolbar__sep { border-left: 1px solid var(--line); height: 22px; margin: 0 4px; }
-    .draft-editor__meta { min-width: 0; }
+    .draft-editor__meta { display: flex; flex-direction: column; min-width: 0; }
     .draft-editor__doc-settings { margin: 0 auto 22px; max-width: var(--doc-width); }
     .draft-editor__doc-heading { font-size: 15px; margin: 0; }
     .draft-editor__doc-heading i { color: var(--accent); font-size: .85em; margin-right: 7px; }
@@ -781,7 +782,7 @@ const draftEditorStyles = `
     .draft-editor__doc-settings[open] summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-style: solid; }
     .draft-editor__doc-body { border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 14px; padding: 18px; }
     .draft-editor__meta-doc { display: contents; }
-    .draft-editor__sheet { background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); margin: 0 auto; max-width: var(--doc-width); min-height: 70vh; padding: clamp(24px, 6vw, 68px) clamp(20px, 8vw, 88px); }
+    .draft-editor__sheet { background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); flex: 1; margin: 0 auto; max-width: var(--doc-width); min-height: 70vh; padding: clamp(24px, 6vw, 68px) clamp(20px, 8vw, 88px); width: 100%; }
     .draft-editor__meta-title { background: transparent; border: 0; color: var(--ink); font-family: Lora, serif; font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; padding: 0 0 10px; width: 100%; }
     .draft-editor__meta-title:focus { outline: none; }
     .draft-editor__meta-title::placeholder, .draft-editor__meta-description::placeholder { color: var(--muted); opacity: .55; }
@@ -822,7 +823,7 @@ const draftEditorStyles = `
     .draft-block__image img { display: block; max-width: 100%; }
     .draft-block__video video { display: block; max-width: 100%; }
     .draft-editor__add { margin-top: 10px; }
-    .draft-preview { align-self: start; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); min-width: 0; padding: 30px; position: sticky; top: 150px; }
+    .draft-preview { align-self: stretch; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); min-width: 0; padding: 30px; }
     .draft-preview h1.draft-preview__title { font-family: Lora, serif; font-size: 34px; line-height: 1.15; margin: 0 0 8px; overflow-wrap: anywhere; }
     .draft-preview__description { color: var(--muted); margin: 0 0 18px; }
     .draft-preview__cover { display: block; margin-bottom: 18px; max-width: 100%; }
@@ -930,6 +931,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
       </div>
       <h1 id="draft-editor-title" class="visually-hidden">Edit draft</h1>
       <div class="draft-editor__grid" data-draft-workspace hidden>
+        <div class="draft-toolbar-wrap">
         <div class="draft-toolbar" role="toolbar" aria-label="Formatting" data-draft-toolbar>
             <button type="button" data-cmd="bold" title="Bold" aria-label="Bold"><i class="fa-solid fa-bold" aria-hidden="true"></i></button>
             <button type="button" data-cmd="italic" title="Italic" aria-label="Italic"><i class="fa-solid fa-italic" aria-hidden="true"></i></button>
@@ -965,6 +967,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <span class="draft-toolbar__sep" aria-hidden="true"></span>
             <button type="button" data-draft-shortcuts title="Keyboard shortcuts" aria-label="Keyboard shortcuts"><i class="fa-regular fa-circle-question" aria-hidden="true"></i></button>
           </div>
+        </div>
         <div class="draft-editor__meta">
           <details class="draft-editor__doc-settings" data-draft-settings-panel>
             <summary hidden>Document settings — tags, cover &amp; sources</summary>

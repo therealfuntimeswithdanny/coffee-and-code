@@ -6333,6 +6333,9 @@ async function loadDraftEditor(did: string) {
   type SlashCommand = { name: string; keywords: string; icon: string; apply: (after: HTMLElement) => void };
   const insertSlashBlock = (after: HTMLElement, type: DraftBlockType, level?: number) => {
     const element = insertBlock({ id: crypto.randomUUID(), type, level }, after);
+    const hasEditable = Boolean(element.querySelector('.draft-block__editable'));
+    // Structural blocks get a fresh paragraph underneath to keep writing.
+    if (!hasEditable) insertBlock({ id: crypto.randomUUID(), type: 'text' }, element);
     const target = element.querySelector<HTMLElement>('.draft-block__editable') || element.querySelector<HTMLElement>('input');
     if (target) { placeCaretAtEnd(target); target.focus(); }
     changed();
@@ -6523,6 +6526,59 @@ async function loadDraftEditor(did: string) {
     return false;
   };
 
+  // --- Arrow-key block navigation ---
+  // Up on the first visual line / Down on the last (and Left/Right at the
+  // edges) moves the caret into the adjacent block's editable.
+  const focusEditableAt = (editable: HTMLElement, atStart: boolean) => {
+    const range = document.createRange();
+    range.selectNodeContents(editable);
+    range.collapse(atStart);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    editable.focus();
+  };
+  const caretLineEdge = (editable: HTMLElement, edge: 'first' | 'last') => {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !selection.isCollapsed) return false;
+    const caretRect = selection.getRangeAt(0).getClientRects()[0]
+      || selection.getRangeAt(0).getBoundingClientRect();
+    const length = (editable.textContent || '').length;
+    if (!length) return true;
+    const edgeRect = rangeForOffsets(editable, edge === 'first' ? 0 : length - 1, edge === 'first' ? 1 : length)
+      ?.getClientRects()[0];
+    if (!caretRect || !edgeRect) return false;
+    return Math.abs(caretRect.top - edgeRect.top) < 4;
+  };
+  const blockNavKeydown = (editable: HTMLElement, event: KeyboardEvent): boolean => {
+    const editables = [...page.querySelectorAll<HTMLElement>('.draft-block__editable')];
+    const index = editables.indexOf(editable);
+    if (index < 0) return false;
+    const caret = caretTextOffset(editable);
+    const length = (editable.textContent || '').length;
+    if (event.key === 'ArrowUp' && caretLineEdge(editable, 'first')) {
+      const target = editables[index - 1];
+      if (target) focusEditableAt(target, false);
+      return Boolean(target);
+    }
+    if (event.key === 'ArrowDown' && caretLineEdge(editable, 'last')) {
+      const target = editables[index + 1];
+      if (target) focusEditableAt(target, true);
+      return Boolean(target);
+    }
+    if (event.key === 'ArrowLeft' && caret === 0) {
+      const target = editables[index - 1];
+      if (target) focusEditableAt(target, false);
+      return Boolean(target);
+    }
+    if (event.key === 'ArrowRight' && caret === length) {
+      const target = editables[index + 1];
+      if (target) focusEditableAt(target, true);
+      return Boolean(target);
+    }
+    return false;
+  };
+
   const caretAtStart = (editable: HTMLElement) => {
     const selection = window.getSelection();
     if (!selection?.rangeCount || !selection.isCollapsed) return false;
@@ -6560,7 +6616,8 @@ async function loadDraftEditor(did: string) {
         event.stopImmediatePropagation();
         return;
       }
-      if (docShortcut(editable, event)) event.preventDefault();
+      if (docShortcut(editable, event)) { event.preventDefault(); return; }
+      if (blockNavKeydown(editable, event)) event.preventDefault();
     });
     editable.addEventListener('keydown', (event) => {
       const element = editable.closest<HTMLElement>('[data-block-id]');
@@ -7122,6 +7179,8 @@ async function loadDraftEditor(did: string) {
     if (structural.includes(type)) {
       const block: DraftBlock = { id: crypto.randomUUID(), type };
       const element = insertBlock(block, current);
+      // Leave a fresh paragraph underneath so writing can continue.
+      insertBlock({ id: crypto.randomUUID(), type: 'text' }, element);
       element.querySelector('input')?.focus();
       changed();
     }
