@@ -569,7 +569,7 @@ const accountEmailCard = `
 function accountPageShell(
   title: string,
   main: string,
-  options: { secondary?: string; signedOutMessage?: string; mainClass?: string } = {},
+  options: { secondary?: string; signedOutMessage?: string; mainClass?: string; hideSidebar?: boolean } = {},
 ) {
   const secondary = options.secondary
     ? `<div class="account-layout__column account-layout__secondary">${options.secondary}</div>`
@@ -578,8 +578,8 @@ function accountPageShell(
     <section class="auth-page account-page" aria-labelledby="account-title" data-account-page>
       <h1 id="account-title">${title}</h1>
       <div class="auth-account" data-auth-account hidden>
-        <div class="account-layout">
-        ${accountProfileSidebar}
+        <div class="account-layout${options.hideSidebar ? ' account-layout--solo' : ''}">
+        ${options.hideSidebar ? '' : accountProfileSidebar}
         <div class="account-layout__column account-layout__main${options.mainClass ? ` ${options.mainClass}` : ''}">
         ${main}
         </div>
@@ -732,13 +732,6 @@ pages.get('/account/author', (c) => {
           </aside>
         </div>
       </form>
-      <div class="account-post-metadata" data-post-metadata>
-        <h3 class="account-page__subheading" id="post-metadata-title"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Post metadata</h3>
-        <p class="account-post-metadata__intro">Attach sources and a backing document to stories published in your repository. Metadata appears on the story page.</p>
-        <input type="search" class="account-search-input" data-post-metadata-search placeholder="Search your stories to edit metadata…" aria-label="Search your stories to edit metadata">
-        <p class="account-post-metadata__status" data-post-metadata-status role="status" aria-live="polite"></p>
-        <ul class="account-post-metadata__list" data-post-metadata-list></ul>
-      </div>
     </section>
     <section class="account-card account-page__viewed" data-author-gate hidden aria-labelledby="author-gate-title">
       <h2 id="author-gate-title">Author profile</h2>
@@ -756,8 +749,8 @@ const draftEditorStyles = `
     .draft-editor-page__status { color: var(--muted); font-size: 13px; margin-left: auto; }
     .draft-editor-page__actions { display: flex; gap: 8px; }
     .draft-preview-toggle { position: absolute; opacity: 0; pointer-events: none; }
-    .draft-preview-toggle__btn { align-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--accent); cursor: pointer; display: inline-flex; font-size: 12px; font-weight: 700; gap: 7px; letter-spacing: .08em; min-height: 34px; padding: 6px 14px; text-transform: uppercase; }
-    .draft-preview-toggle__btn:hover { color: var(--ink); }
+    .draft-preview-toggle__btn { align-items: center; border: 1px solid var(--line-strong); color: var(--ink); cursor: pointer; display: inline-flex; font: 600 13px 'Source Sans 3', sans-serif; gap: 7px; padding: 9px 14px; }
+    .draft-preview-toggle__btn:hover { color: var(--accent); }
     .draft-preview-toggle:checked ~ .draft-editor-page__bar .draft-preview-toggle__btn { background: var(--accent); color: var(--paper); }
     .draft-editor__grid { background: var(--doc-canvas); border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); padding: 14px clamp(8px, 3vw, 28px) 48px; }
     .draft-preview { display: none; }
@@ -777,7 +770,7 @@ const draftEditorStyles = `
     .draft-editor__doc-settings summary::before { content: '⚙ '; }
     .draft-editor__doc-settings summary:hover { border-color: var(--line-strong); color: var(--ink); }
     .draft-editor__doc-settings[open] summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-style: solid; }
-    .draft-editor__doc-body { border: 1px solid var(--line); border-top: 0; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; display: grid; gap: 14px; padding: 18px; }
+    .draft-editor__doc-body { border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 14px; padding: 18px; }
     .draft-editor__meta-doc { display: contents; }
     .draft-editor__sheet { background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); margin: 0 auto; max-width: var(--doc-width); min-height: 70vh; padding: clamp(24px, 6vw, 68px) clamp(20px, 8vw, 88px); }
     .draft-editor__meta-title { background: transparent; border: 0; color: var(--ink); font-family: Lora, serif; font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; padding: 0 0 10px; width: 100%; }
@@ -839,6 +832,7 @@ const draftEditorStyles = `
     .draft-preview__card span { color: var(--muted); display: block; font-size: 13px; }
     .draft-preview__embed { border: 1px solid var(--line); color: var(--muted); font-size: 14px; margin-bottom: 14px; padding: 12px 14px; }
     .draft-preview__math { font-family: ui-monospace, monospace; margin-bottom: 14px; text-align: center; }
+    .draft-preview__embed-frame { border: 1px solid var(--line); display: block; margin-bottom: 14px; }
     .draft-preview__empty { color: var(--muted); }
     .draft-preview__sources { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 14px; }
     .draft-preview__sources h2 { font-size: 15px; margin: 0 0 8px; }
@@ -849,6 +843,7 @@ const draftEditorStyles = `
     .draft-list__item > a { flex: 1; min-width: 0; }
     .draft-list__title { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .draft-list__meta { color: var(--muted); display: block; font-size: 13px; }
+    .draft-list__badge { border: 1px solid var(--line-strong); border-radius: 3px; color: var(--accent); display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 1px 5px; text-transform: uppercase; }
     ::highlight(draft-spell) { text-decoration: underline wavy #e5484d 1.5px; text-decoration-skip-ink: none; }
     ::highlight(draft-grammar) { text-decoration: underline wavy #d9a441 1.5px; text-decoration-skip-ink: none; }
     .draft-spell-pop { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); display: grid; font-size: 14px; gap: 2px; max-width: 300px; padding: 8px; position: fixed; z-index: 400; }
@@ -860,6 +855,24 @@ const draftEditorStyles = `
     .draft-spell-pop__actions { border-top: 1px solid var(--line); display: flex; gap: 4px; margin-top: 4px; padding-top: 6px; }
     .draft-spell-pop__minor { background: transparent; border: 0; border-radius: 4px; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; padding: 4px 6px; }
     .draft-spell-pop__minor:hover { color: var(--ink); }
+    .draft-publish-dialog { background: transparent; border: 0; max-width: min(520px, calc(100vw - 32px)); padding: 0; }
+    .draft-publish-dialog::backdrop { background: rgba(10, 6, 4, .72); }
+    .draft-publish-dialog__card { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 24px 60px rgba(0, 0, 0, .55); padding: 26px; }
+    .draft-publish-dialog__card h1 { font-family: Lora, serif; font-size: 27px; line-height: 1.15; margin: 0 0 10px; }
+    .draft-publish-dialog__intro { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 18px; }
+    .draft-share-card { border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+    .draft-share-card__image { aspect-ratio: 1.91 / 1; background: var(--paper-deep); display: block; object-fit: cover; width: 100%; }
+    .draft-share-card__body { display: grid; gap: 4px; padding: 12px 14px; }
+    .draft-share-card__title { font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+    .draft-share-card__description { -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); display: -webkit-box; font-size: 13px; line-height: 1.45; margin: 0; overflow: hidden; }
+    .draft-share-card__meta { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; margin-top: 4px; text-transform: uppercase; }
+    .draft-publish-dialog__actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
+    .draft-slash-menu { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); display: grid; gap: 1px; max-height: 300px; overflow-y: auto; padding: 6px; position: fixed; width: 250px; z-index: 400; }
+    .draft-slash-menu[hidden] { display: none; }
+    .draft-slash-menu__item { align-items: center; background: transparent; border: 0; border-radius: 5px; color: var(--ink); cursor: pointer; display: flex; font: inherit; font-size: 14px; gap: 10px; padding: 7px 10px; text-align: left; }
+    .draft-slash-menu__item i { color: var(--accent); font-size: 13px; text-align: center; width: 16px; }
+    .draft-slash-menu__item:hover, .draft-slash-menu__item[aria-selected="true"] { background: var(--paper-deep); }
+    .draft-slash-menu__empty { color: var(--muted); font-size: 13px; margin: 0; padding: 8px 10px; }
   </style>`;
 
 pages.get('/account/author/draft', (c) => {
@@ -868,7 +881,7 @@ pages.get('/account/author/draft', (c) => {
       <div class="account-card__header"><h2 id="drafts-title"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Drafts</h2><button type="button" class="auth-signout" data-draft-new><i class="fa-solid fa-plus" aria-hidden="true"></i> New draft</button></div>
       <p class="account-page__viewed-status" data-drafts-status role="status" aria-live="polite">Loading your drafts…</p>
       <ul data-drafts-list></ul>
-      <p class="account-page__blocks-note">Drafts are stored in your AT Protocol account as <code>cc.coffeencode.author.draft</code> records and sync automatically while you write.</p>
+      <p class="account-page__blocks-note">Drafts are stored in your AT Protocol account as <code>cc.coffeencode.author.draft</code> records and sync automatically while you write. Published posts appear too — editing one creates a draft copy of it.</p>
     </section>
     <section class="account-card account-page__viewed" data-draft-gate hidden aria-labelledby="draft-gate-title">
       <h2 id="draft-gate-title">Drafts</h2>
@@ -892,6 +905,9 @@ pages.get('/account/author/draft/:rkey', (c) => {
         <span class="draft-editor-page__status" data-draft-status role="status" aria-live="polite">Loading draft…</span>
         <a class="read-link" data-draft-published-link hidden target="_blank" rel="noopener">Published <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
         <div class="draft-editor-page__actions">
+          <button type="button" class="auth-signout" data-draft-import><i class="fa-solid fa-file-import" aria-hidden="true"></i> Import</button>
+          <input type="file" data-draft-import-file accept=".md,.markdown,.mdx,.docx,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+          <button type="button" class="auth-signout" data-draft-settings aria-expanded="false"><i class="fa-solid fa-gear" aria-hidden="true"></i> Settings</button>
           <button type="button" class="auth-signout" data-draft-delete><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
           <button type="button" class="auth-signout" data-draft-save><i class="fa-solid fa-check" aria-hidden="true"></i> Save</button>
           <button type="button" class="auth-signout" data-draft-publish><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish</button>
@@ -919,6 +935,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <button type="button" data-block="horizontalRule" title="Divider" aria-label="Divider"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
             <button type="button" data-block="image" title="Image" aria-label="Image"><i class="fa-solid fa-image" aria-hidden="true"></i></button>
             <button type="button" data-block="video" title="Video" aria-label="Video"><i class="fa-solid fa-film" aria-hidden="true"></i></button>
+            <button type="button" data-block="embed" title="Website embed" aria-label="Embed a website"><i class="fa-solid fa-window-restore" aria-hidden="true"></i></button>
             <button type="button" data-block="button" title="Button" aria-label="Button"><i class="fa-solid fa-square-check" aria-hidden="true"></i></button>
             <button type="button" data-block="website" title="Link card" aria-label="Link card"><i class="fa-solid fa-globe" aria-hidden="true"></i></button>
             <button type="button" data-block="bskyPost" title="Bluesky post" aria-label="Bluesky post"><i class="fa-brands fa-bluesky" aria-hidden="true"></i></button>
@@ -931,8 +948,8 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <button type="button" data-align="#textAlignJustify" title="Justify" aria-label="Justify"><i class="fa-solid fa-align-justify" aria-hidden="true"></i></button>
           </div>
         <div class="draft-editor__meta">
-          <details class="draft-editor__doc-settings">
-            <summary>Document settings — tags, cover &amp; sources</summary>
+          <details class="draft-editor__doc-settings" data-draft-settings-panel>
+            <summary hidden>Document settings — tags, cover &amp; sources</summary>
             <div class="draft-editor__doc-body">
               <div class="draft-editor__meta-grid">
                 <label>Tags<input name="draft-tags" placeholder="coffee, code, …" data-draft-field="tags"></label>
@@ -960,8 +977,19 @@ pages.get('/account/author/draft/:rkey', (c) => {
         <h2 id="draft-gate-title">Drafts</h2>
         <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
       </section>
+      <dialog class="draft-publish-dialog" data-draft-publish-dialog aria-labelledby="draft-publish-dialog-title">
+        <div class="draft-publish-dialog__card">
+          <h1 id="draft-publish-dialog-title">Publish post</h1>
+          <p class="draft-publish-dialog__intro">Publishing this post will publish it as a record on your account, and it will be shown on the Coffee &amp; Code home page.</p>
+          <div class="draft-share-card" data-draft-publish-preview></div>
+          <div class="draft-publish-dialog__actions">
+            <button type="button" class="account-author-form__cancel" data-draft-publish-cancel>Cancel</button>
+            <button type="button" class="auth-signout" data-draft-publish-confirm><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish</button>
+          </div>
+        </div>
+      </dialog>
     </section>`;
-  const body = accountPageShell('Edit draft', inner, { signedOutMessage: 'Sign in to edit this draft.' });
+  const body = accountPageShell('Edit draft', inner, { signedOutMessage: 'Sign in to edit this draft.', hideSidebar: true });
   return c.html(renderLayout(c, 'Edit draft', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
 });
 

@@ -5301,7 +5301,7 @@ const LEAFLET_FACET = 'pub.leaflet.richtext.facet';
 type DraftFacetFeature = Record<string, unknown> & { $type: string };
 type DraftFacet = { index: { byteStart: number; byteEnd: number }; features: DraftFacetFeature[] };
 type DraftBlockType = 'text' | 'header' | 'blockquote' | 'code' | 'unorderedList' | 'orderedList'
-  | 'horizontalRule' | 'image' | 'video' | 'button' | 'website' | 'bskyPost' | 'math';
+  | 'horizontalRule' | 'image' | 'video' | 'button' | 'website' | 'bskyPost' | 'math' | 'embed';
 type DraftBlock = {
   id: string;
   type: DraftBlockType;
@@ -5315,6 +5315,7 @@ type DraftBlock = {
   mimeType?: string;
   alt?: string;
   aspectRatio?: { width: number; height: number };
+  height?: number;
   url?: string;
   label?: string;
   title?: string;
@@ -5437,11 +5438,12 @@ const draftBlockLabel: Record<DraftBlockType, string> = {
   website: '',
   bskyPost: '',
   math: '',
+  embed: '',
 };
 
-// Video blocks round-trip as pub.leaflet.blocks.iframe; on reload only those
-// pointing at a /video/ path or a video file extension map back to the editor's
-// video block — other iframes stay unsupported as before.
+// Video blocks round-trip as pub.leaflet.blocks.iframe; on reload those pointing
+// at a /video/ path or a video file extension map back to the editor's video
+// block, and every other iframe URL hydrates as a website embed.
 function isVideoEmbedUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -5470,19 +5472,30 @@ function draftBlockFromLeaflet(block: Record<string, unknown>, alignment?: strin
       base.type = 'image';
       return base;
     }
-    // pub.leaflet.blocks.iframe — the editor only writes these for uploaded
-    // videos, so only hydrate ones whose URL is clearly a video file.
+    // pub.leaflet.blocks.iframe — uploaded videos hydrate back into video
+    // blocks; everything else becomes a generic website embed.
     case 'iframe': {
       const url = typeof block.url === 'string' ? block.url : '';
-      if (!isVideoEmbedUrl(url)) return undefined;
-      base.video = url;
-      base.videoObjectUrl = url;
-      base.alt = typeof block.title === 'string' && block.title !== 'Embedded video' ? block.title : '';
       const ratio = block.aspectRatio as { width?: unknown; height?: unknown } | undefined;
-      if (Number.isInteger(ratio?.width) && Number.isInteger(ratio?.height) && (ratio!.width as number) > 0) {
-        base.aspectRatio = { width: ratio!.width as number, height: ratio!.height as number };
+      const validRatio = Number.isInteger(ratio?.width) && Number.isInteger(ratio?.height) && (ratio!.width as number) > 0
+        ? { width: ratio!.width as number, height: ratio!.height as number }
+        : undefined;
+      if (isVideoEmbedUrl(url)) {
+        base.video = url;
+        base.videoObjectUrl = url;
+        base.alt = typeof block.title === 'string' && block.title !== 'Embedded video' ? block.title : '';
+        if (validRatio) base.aspectRatio = validRatio;
+        base.type = 'video';
+        return base;
       }
-      base.type = 'video';
+      if (!url) return undefined;
+      base.url = url;
+      base.title = typeof block.title === 'string' && block.title !== 'Embedded website' ? block.title : '';
+      if (Number.isInteger(block.height) && (block.height as number) >= 16 && (block.height as number) <= 1600) {
+        base.height = block.height as number;
+      }
+      if (validRatio) base.aspectRatio = validRatio;
+      base.type = 'embed';
       return base;
     }
     default: return undefined;
@@ -5538,10 +5551,19 @@ async function loadDraftListPage(did: string) {
 
   try {
     const query = new URLSearchParams({ repo: did, collection: DRAFT_COLLECTION, limit: '100' });
-    const response = await repoRequest(`com.atproto.repo.listRecords?${query}`);
+    const postsQuery = new URLSearchParams({ repo: did, collection: 'pub.leaflet.document', limit: '100' });
+    const [response, postsResponse] = await Promise.all([
+      repoRequest(`com.atproto.repo.listRecords?${query}`),
+      // Leaflet documents predate the draft collection — list them too so they
+      // can be imported for editing.
+      repoRequest(`com.atproto.repo.listRecords?${postsQuery}`).catch(() => undefined),
+    ]);
     const payload = await response.json() as {
       records?: Array<{ uri?: unknown; value?: Record<string, unknown> }>;
     };
+    const postsPayload = postsResponse?.ok
+      ? await postsResponse.json() as { records?: Array<{ uri?: unknown; value?: Record<string, unknown> }> }
+      : { records: [] };
     if (session?.did !== did) return;
     const drafts = (payload.records || []).flatMap((record) => {
       if (typeof record.uri !== 'string' || !record.value || typeof record.value !== 'object') return [];
@@ -5554,8 +5576,28 @@ async function loadDraftListPage(did: string) {
       const updatedAt = typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt))
         ? value.updatedAt
         : typeof value.createdAt === 'string' ? value.createdAt : '';
-      return [{ uri: record.uri, rkey, title, updatedAt }];
+      const publishedUri = typeof value.publishedUri === 'string' ? value.publishedUri : '';
+      const postUri = typeof value.postUri === 'string' ? value.postUri : '';
+      return [{ uri: record.uri, rkey, title, updatedAt, published: Boolean(publishedUri || postUri), publishedUri }];
     }).sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+    const draftedUris = new Set(drafts.map((draft) => draft.publishedUri).filter(Boolean));
+    const posts = (postsPayload.records || []).flatMap((record) => {
+      if (typeof record.uri !== 'string' || !record.value || typeof record.value !== 'object') return [];
+      // Drafts that already point at this post are listed above as drafts.
+      if (draftedUris.has(record.uri)) return [];
+      const value = record.value;
+      const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim() : 'Untitled';
+      const publishedAt = typeof value.publishedAt === 'string' && Number.isFinite(Date.parse(value.publishedAt))
+        ? value.publishedAt : '';
+      return [{ uri: record.uri, title, publishedAt, value }];
+    }).sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0));
+
+    const publishedBadge = () => {
+      const badge = document.createElement('span');
+      badge.className = 'draft-list__badge';
+      badge.textContent = 'Published';
+      return badge;
+    };
 
     list.replaceChildren();
     for (const draft of drafts) {
@@ -5571,6 +5613,7 @@ async function loadDraftListPage(did: string) {
       meta.textContent = draft.updatedAt
         ? `Updated ${new Date(draft.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
         : 'Draft';
+      if (draft.published) meta.prepend(publishedBadge(), ' ');
       link.append(title, meta);
       const remove = document.createElement('button');
       remove.type = 'button';
@@ -5592,7 +5635,62 @@ async function loadDraftListPage(did: string) {
       item.append(link, remove);
       list.append(item);
     }
-    status.textContent = drafts.length ? '' : 'You have no drafts yet. Start a new one.';
+    for (const post of posts) {
+      const item = document.createElement('li');
+      item.className = 'draft-list__item';
+      const link = document.createElement('a');
+      link.href = '#';
+      const title = document.createElement('span');
+      title.className = 'draft-list__title';
+      title.textContent = post.title;
+      const meta = document.createElement('span');
+      meta.className = 'draft-list__meta';
+      meta.textContent = post.publishedAt
+        ? `Published ${new Date(post.publishedAt).toLocaleString(undefined, { dateStyle: 'medium' })}`
+        : 'Published post';
+      meta.prepend(publishedBadge(), ' ');
+      link.append(title, meta);
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'auth-signout';
+      edit.textContent = 'Edit';
+      const editPost = async () => {
+        edit.disabled = true;
+        link.removeAttribute('href');
+        status.textContent = `Preparing “${post.title}” for editing…`;
+        try {
+          // Wrap the published Leaflet document in a draft record so the editor
+          // can load it; the draft remembers which post it came from.
+          const rkey = createTid();
+          const now = new Date().toISOString();
+          await repoRequest('com.atproto.repo.putRecord', {
+            repo: did,
+            collection: DRAFT_COLLECTION,
+            rkey,
+            record: {
+              $type: DRAFT_COLLECTION,
+              createdAt: now,
+              updatedAt: now,
+              title: post.title,
+              publishedUri: post.uri,
+              ...(post.publishedAt ? { publishedAt: post.publishedAt } : {}),
+              document: post.value,
+            },
+          });
+          window.location.assign(`/account/author/draft/${encodeURIComponent(rkey)}`);
+        } catch (error) {
+          status.textContent = errorMessage(error);
+          edit.disabled = false;
+        }
+      };
+      edit.addEventListener('click', () => { void editPost(); });
+      link.addEventListener('click', (event) => { event.preventDefault(); void editPost(); });
+      item.append(link, edit);
+      list.append(item);
+    }
+    status.textContent = drafts.length || posts.length
+      ? ''
+      : 'You have no drafts yet. Start a new one.';
   } catch (error) {
     if (session?.did !== did) return;
     if (await showGate()) return;
@@ -5622,6 +5720,15 @@ async function loadDraftEditor(did: string) {
   const publishButton = page.querySelector<HTMLButtonElement>('[data-draft-publish]');
   const publishedLink = page.querySelector<HTMLAnchorElement>('[data-draft-published-link]');
   const metaForm = page.querySelector<HTMLElement>('.draft-editor__meta');
+  const settingsButton = page.querySelector<HTMLButtonElement>('[data-draft-settings]');
+  const settingsPanel = page.querySelector<HTMLDetailsElement>('[data-draft-settings-panel]');
+  const importButton = page.querySelector<HTMLButtonElement>('[data-draft-import]');
+  const importInput = page.querySelector<HTMLInputElement>('[data-draft-import-file]');
+  settingsButton?.addEventListener('click', () => {
+    if (!settingsPanel) return;
+    settingsPanel.open = !settingsPanel.open;
+    settingsButton.setAttribute('aria-expanded', String(settingsPanel.open));
+  });
   if (!blocksEl || !previewEl || !statusEl || !workspace || !toolbar || !saveButton || !deleteButton || !publishButton || !metaForm) return;
   const titleInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="title"]')!;
   const descriptionInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="description"]')!;
@@ -5759,6 +5866,19 @@ async function loadDraftEditor(did: string) {
         if (!label || !url) return undefined;
         return { $type: 'pub.leaflet.blocks.button', text: label, url };
       }
+      case 'embed': {
+        const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || block.url || '';
+        if (!url) return undefined;
+        const out: Record<string, unknown> = {
+          $type: 'pub.leaflet.blocks.iframe',
+          url,
+          title: element.querySelector<HTMLInputElement>('[data-field="title"]')?.value.trim() || 'Embedded website',
+        };
+        const height = Number(element.querySelector<HTMLInputElement>('[data-field="height"]')?.value);
+        if (Number.isInteger(height) && height >= 16 && height <= 1600) out.height = height;
+        else if (block.aspectRatio) out.aspectRatio = block.aspectRatio;
+        return out;
+      }
       case 'website': {
         const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || '';
         if (!url) return undefined;
@@ -5857,6 +5977,19 @@ async function loadDraftEditor(did: string) {
         case 'math': {
           const tex = element.querySelector<HTMLInputElement>('[data-field="tex"]')?.value.trim() || '';
           body += `<div class="draft-preview__math">${draftEscapeHtml(tex)}</div>`;
+          break;
+        }
+        case 'embed': {
+          const url = element.querySelector<HTMLInputElement>('[data-field="url"]')?.value.trim() || block.url || '';
+          if (!url) break;
+          const title = element.querySelector<HTMLInputElement>('[data-field="title"]')?.value.trim() || 'Embedded website';
+          const height = Number(element.querySelector<HTMLInputElement>('[data-field="height"]')?.value);
+          const sizing = Number.isInteger(height) && height >= 16 && height <= 1600
+            ? `height:${height}px;`
+            : block.aspectRatio
+              ? `aspect-ratio:${block.aspectRatio.width}/${block.aspectRatio.height};height:auto;`
+              : 'aspect-ratio:16/9;height:auto;';
+          body += `<iframe class="draft-preview__embed-frame" title="${draftEscapeHtml(title)}" src="${draftEscapeHtml(url)}" sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" loading="lazy" style="width:100%;${sizing}"></iframe>`;
           break;
         }
       }
@@ -6013,7 +6146,7 @@ async function loadDraftEditor(did: string) {
     } else {
       // Replace selects the span; InsertAfter collapses to its end. Both then go
       // through insertText so the change joins the native undo stack.
-      range.collapse(suggestion.kind !== 2);
+      range.collapse(suggestion.kind === 2);
       selection?.removeAllRanges();
       selection?.addRange(range);
       document.execCommand('insertText', false, suggestion.text);
@@ -6172,6 +6305,149 @@ async function loadDraftEditor(did: string) {
     window.requestIdleCallback(() => { void getLinter(); }, { timeout: 4000 });
   }
 
+  // --- Slash commands ---
+  // Typing "/" in an editable opens a filterable menu of block commands; Enter
+  // deletes the "/query" text and inserts the chosen block below.
+  type SlashCommand = { name: string; keywords: string; icon: string; apply: (after: HTMLElement) => void };
+  const insertSlashBlock = (after: HTMLElement, type: DraftBlockType, level?: number) => {
+    const element = insertBlock({ id: crypto.randomUUID(), type, level }, after);
+    const target = element.querySelector<HTMLElement>('.draft-block__editable') || element.querySelector<HTMLElement>('input');
+    if (target) { placeCaretAtEnd(target); target.focus(); }
+    changed();
+  };
+  const slashCommands: SlashCommand[] = [
+    { name: 'Paragraph', keywords: 'text p', icon: 'fa-solid fa-paragraph', apply: (after) => insertSlashBlock(after, 'text') },
+    { name: 'Heading 1', keywords: 'h1 title', icon: '', apply: (after) => insertSlashBlock(after, 'header', 1) },
+    { name: 'Heading 2', keywords: 'h2 subtitle', icon: '', apply: (after) => insertSlashBlock(after, 'header', 2) },
+    { name: 'Heading 3', keywords: 'h3 section', icon: '', apply: (after) => insertSlashBlock(after, 'header', 3) },
+    { name: 'Quote', keywords: 'blockquote callout', icon: 'fa-solid fa-quote-left', apply: (after) => insertSlashBlock(after, 'blockquote') },
+    { name: 'Code block', keywords: 'code pre', icon: 'fa-solid fa-file-code', apply: (after) => insertSlashBlock(after, 'code') },
+    { name: 'Bulleted list', keywords: 'list bullet ul', icon: 'fa-solid fa-list-ul', apply: (after) => insertSlashBlock(after, 'unorderedList') },
+    { name: 'Numbered list', keywords: 'list number ol', icon: 'fa-solid fa-list-ol', apply: (after) => insertSlashBlock(after, 'orderedList') },
+    { name: 'Divider', keywords: 'hr rule line separator', icon: 'fa-solid fa-minus', apply: (after) => insertSlashBlock(after, 'horizontalRule') },
+    { name: 'Image', keywords: 'picture photo img', icon: 'fa-solid fa-image', apply: (after) => insertSlashBlock(after, 'image') },
+    { name: 'Video', keywords: 'film movie', icon: 'fa-solid fa-film', apply: (after) => insertSlashBlock(after, 'video') },
+    { name: 'Website embed', keywords: 'embed iframe site', icon: 'fa-solid fa-window-restore', apply: (after) => insertSlashBlock(after, 'embed') },
+    { name: 'Link card', keywords: 'website url card link', icon: 'fa-solid fa-globe', apply: (after) => insertSlashBlock(after, 'website') },
+    { name: 'Button', keywords: 'cta link button', icon: 'fa-solid fa-square-check', apply: (after) => insertSlashBlock(after, 'button') },
+    { name: 'Bluesky post', keywords: 'bsky skeet bluesky', icon: 'fa-brands fa-bluesky', apply: (after) => insertSlashBlock(after, 'bskyPost') },
+    { name: 'Math', keywords: 'tex equation formula sum', icon: '', apply: (after) => insertSlashBlock(after, 'math') },
+    { name: 'Spell check', keywords: 'check spelling grammar harper', icon: 'fa-solid fa-spell-check', apply: () => setSpellEnabled(!spellEnabled) },
+  ];
+  const slashMenu = document.createElement('div');
+  slashMenu.className = 'draft-slash-menu';
+  slashMenu.hidden = true;
+  slashMenu.addEventListener('mousedown', (event) => event.preventDefault());
+  page.append(slashMenu);
+  let slashState: { editable: HTMLElement; slashOffset: number; items: SlashCommand[]; index: number } | undefined;
+
+  const closeSlashMenu = () => {
+    slashState = undefined;
+    slashMenu.hidden = true;
+  };
+  const caretTextOffset = (editable: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !selection.isCollapsed) return -1;
+    const range = selection.getRangeAt(0);
+    if (!editable.contains(range.startContainer)) return -1;
+    return offsetAt(editable, range.startContainer, range.startOffset);
+  };
+  const renderSlashMenu = () => {
+    const state = slashState;
+    if (!state) { closeSlashMenu(); return; }
+    slashMenu.replaceChildren();
+    if (!state.items.length) {
+      const empty = document.createElement('p');
+      empty.className = 'draft-slash-menu__empty';
+      empty.textContent = 'No matching blocks';
+      slashMenu.append(empty);
+    }
+    state.items.forEach((command, itemIndex) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'draft-slash-menu__item';
+      item.setAttribute('aria-selected', String(itemIndex === state.index));
+      const icon = document.createElement('i');
+      icon.className = command.icon || 'fa-solid fa-heading';
+      icon.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.textContent = command.name;
+      item.append(icon, label);
+      item.addEventListener('click', () => applySlashCommand(command));
+      slashMenu.append(item);
+    });
+    // Anchor the menu under the caret.
+    const selection = window.getSelection();
+    const caretRange = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : undefined;
+    caretRange?.collapse(true);
+    const rect = caretRange?.getClientRects()[0] || state.editable.getBoundingClientRect();
+    slashMenu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 268))}px`;
+    slashMenu.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 320)}px`;
+    slashMenu.hidden = false;
+  };
+  const updateSlashMenu = (editable: HTMLElement) => {
+    const element = editable.closest<HTMLElement>('[data-block-id]');
+    const owner = element ? blockFor(element) : undefined;
+    if (!owner || owner.type === 'code') { closeSlashMenu(); return; }
+    const caret = caretTextOffset(editable);
+    if (caret < 0) { closeSlashMenu(); return; }
+    const before = (editable.textContent || '').slice(0, caret);
+    const match = before.match(/(?:^|\s)\/([a-z0-9]*)$/i);
+    if (!match) { closeSlashMenu(); return; }
+    const query = match[1].toLowerCase();
+    const items = slashCommands.filter((command) =>
+      `${command.name} ${command.keywords}`.toLowerCase().includes(query));
+    const slashOffset = caret - query.length - 1;
+    if (slashState?.editable === editable && slashState.slashOffset === slashOffset) {
+      slashState.items = items;
+      if (slashState.index >= items.length) slashState.index = 0;
+    } else {
+      slashState = { editable, slashOffset, items, index: 0 };
+    }
+    renderSlashMenu();
+  };
+  const applySlashCommand = (command: SlashCommand) => {
+    const state = slashState;
+    if (!state) return;
+    const caret = caretTextOffset(state.editable);
+    if (caret >= 0) {
+      const range = rangeForOffsets(state.editable, state.slashOffset, caret);
+      range?.deleteContents();
+      changed();
+      scheduleLint(state.editable, 200);
+    }
+    const element = state.editable.closest<HTMLElement>('[data-block-id]');
+    closeSlashMenu();
+    if (element) command.apply(element);
+  };
+  // Returns true when the keydown was consumed by the open menu — callers should
+  // stopImmediatePropagation so Enter doesn't also split the block.
+  const slashMenuKeydown = (editable: HTMLElement, event: KeyboardEvent): boolean => {
+    if (!slashState) return false;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const count = slashState.items.length;
+      if (count) slashState.index = (slashState.index + (event.key === 'ArrowDown' ? 1 : -1) + count) % count;
+      renderSlashMenu();
+      return true;
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      const command = slashState.items[slashState.index];
+      if (command) applySlashCommand(command);
+      return true;
+    }
+    if (event.key === 'Escape') { closeSlashMenu(); return true; }
+    // Caret moved away by mouse/keys — recompute on next selectionchange.
+    return false;
+  };
+  document.addEventListener('selectionchange', () => {
+    if (!slashState) return;
+    const editable = slashState.editable;
+    const caret = caretTextOffset(editable);
+    // Keep the menu only while the caret sits inside the "/query" text.
+    if (caret <= slashState.slashOffset || caret < 0) closeSlashMenu(); else updateSlashMenu(editable);
+  }, { signal: draftSpellAbort.signal });
+  document.addEventListener('scroll', closeSlashMenu, { capture: true, passive: true, signal: draftSpellAbort.signal });
+
   const caretAtStart = (editable: HTMLElement) => {
     const selection = window.getSelection();
     if (!selection?.rangeCount || !selection.isCollapsed) return false;
@@ -6199,8 +6475,16 @@ async function loadDraftEditor(did: string) {
     editable.innerHTML = itemHtml;
     editable.addEventListener('input', changed);
     editable.addEventListener('input', () => scheduleLint(editable));
+    editable.addEventListener('input', () => updateSlashMenu(editable));
     editable.addEventListener('blur', () => window.setTimeout(hidePopover, 120));
+    editable.addEventListener('blur', () => window.setTimeout(closeSlashMenu, 120));
     scheduleLint(editable, 1500);
+    editable.addEventListener('keydown', (event) => {
+      if (slashMenuKeydown(editable, event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    });
     editable.addEventListener('keydown', (event) => {
       const element = editable.closest<HTMLElement>('[data-block-id]');
       const owner = element ? blockFor(element) : undefined;
@@ -6468,6 +6752,17 @@ async function loadDraftEditor(did: string) {
       element.append(fields);
       return element;
     }
+    if (block.type === 'embed') {
+      const height = createField('Height in px (optional)', 'height', block.height ? String(block.height) : '', 'Default 16:9');
+      height.inputMode = 'numeric';
+      fields.append(
+        createField('Embed URL', 'url', block.url || '', 'https://…'),
+        createField('Embed title (optional)', 'title', block.title || '', 'Embedded website'),
+        height,
+      );
+      element.append(fields);
+      return element;
+    }
     if (block.type === 'math') {
       fields.append(createField('TeX expression', 'tex', block.tex || '', 'e = mc^2'));
       element.append(fields);
@@ -6509,6 +6804,140 @@ async function loadDraftEditor(did: string) {
     if (target) { target.focus(); placeCaretAtEnd(target); }
     changed();
   }
+
+  // --- Import (Markdown / Word) ---
+  // Reduce imported HTML to the inline tags the editor's facet serializer
+  // understands: everything else is unwrapped, scripts/media dropped.
+  const sanitizeImportedHtml = (root: HTMLElement) => {
+    const allowed = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'INS', 'S', 'STRIKE', 'DEL', 'CODE', 'MARK', 'A', 'BR']);
+    const dropped = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'IMG', 'VIDEO', 'AUDIO', 'SVG', 'TEMPLATE']);
+    const clean = (node: ChildNode) => {
+      if (!(node instanceof HTMLElement)) return;
+      const tag = node.tagName;
+      if (dropped.has(tag)) { node.remove(); return; }
+      [...node.childNodes].forEach(clean);
+      if (allowed.has(tag)) {
+        if (tag === 'A') {
+          const href = node.getAttribute('href') || '';
+          if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
+            [...node.attributes].forEach((attr) => { if (attr.name !== 'href') node.removeAttribute(attr.name); });
+          } else {
+            node.replaceWith(...node.childNodes);
+          }
+        } else {
+          [...node.attributes].forEach((attr) => node.removeAttribute(attr.name));
+        }
+      } else {
+        node.replaceWith(...node.childNodes);
+      }
+    };
+    [...root.childNodes].forEach(clean);
+  };
+
+  type ImportedBlock = { model: DraftBlock; html?: string; rows?: string[] };
+  const draftBlocksFromHtml = (html: string): ImportedBlock[] => {
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    sanitizeImportedHtml(container);
+    const out: ImportedBlock[] = [];
+    const pushText = (inner: string, type: DraftBlockType = 'text') => {
+      const probe = document.createElement('div');
+      probe.innerHTML = inner;
+      if (!(probe.textContent || '').trim()) return;
+      out.push({ model: { id: crypto.randomUUID(), type }, html: inner });
+    };
+    const visit = (element: Element) => {
+      const tag = element.tagName;
+      if (/^H[1-6]$/.test(tag)) {
+        out.push({ model: { id: crypto.randomUUID(), type: 'header', level: Number(tag[1]) }, html: element.innerHTML });
+      } else if (tag === 'P') {
+        pushText(element.innerHTML);
+      } else if (tag === 'BLOCKQUOTE') {
+        // Flatten nested paragraphs inside quotes into line breaks.
+        const probe = element.cloneNode(true) as HTMLElement;
+        probe.querySelectorAll('p').forEach((p) => p.replaceWith(...p.childNodes, document.createElement('br')));
+        pushText(probe.innerHTML, 'blockquote');
+      } else if (tag === 'PRE') {
+        const code = element.querySelector('code') || element;
+        const language = (code.getAttribute('class') || '').match(/language-([a-zA-Z0-9#+_-]{1,40})/)?.[1] || '';
+        const plaintext = code.textContent || '';
+        if (plaintext.trim()) {
+          out.push({ model: { id: crypto.randomUUID(), type: 'code', language }, html: draftEscapeHtml(plaintext) });
+        }
+      } else if (tag === 'UL' || tag === 'OL') {
+        const rows = [...element.children]
+          .filter((item) => item.tagName === 'LI')
+          .map((item) => item.innerHTML)
+          .filter((inner) => {
+            const probe = document.createElement('div');
+            probe.innerHTML = inner;
+            return (probe.textContent || '').trim().length > 0;
+          });
+        if (rows.length) {
+          out.push({ model: { id: crypto.randomUUID(), type: tag === 'OL' ? 'orderedList' : 'unorderedList' }, rows });
+        }
+      } else if (tag === 'HR') {
+        out.push({ model: { id: crypto.randomUUID(), type: 'horizontalRule' } });
+      } else if (tag === 'DIV' || tag === 'SECTION' || tag === 'ARTICLE' || tag === 'MAIN' || tag === 'BODY') {
+        [...element.children].forEach(visit);
+      } else {
+        pushText(element.innerHTML || element.textContent || '');
+      }
+    };
+    [...container.children].forEach(visit);
+    return out;
+  };
+
+  const insertImportedBlock = ({ model, html = '', rows }: ImportedBlock) => {
+    const isList = model.type === 'unorderedList' || model.type === 'orderedList';
+    const element = insertBlock(model, undefined, isList ? (rows?.[0] || '') : html);
+    if (isList) {
+      for (const rowHtml of (rows || []).slice(1)) {
+        const row = document.createElement('div');
+        row.className = 'draft-block__item-row';
+        row.append(makeEditable(model, rowHtml, 'draft-block__editable draft-block__item-editable'));
+        element.append(row);
+      }
+    }
+    return element;
+  };
+
+  const importFile = async (file: File) => {
+    statusEl.textContent = `Importing ${file.name}…`;
+    let html = '';
+    if (/\.docx$/i.test(file.name)) {
+      await import('mammoth/mammoth.browser.js');
+      const mammoth = (window as { mammoth?: { convertToHtml: (input: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }> } }).mammoth;
+      if (!mammoth) throw new Error('The Word importer failed to load.');
+      html = (await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() })).value;
+    } else {
+      const { marked } = await import('marked');
+      html = await marked.parse(await file.text());
+    }
+    const imported = draftBlocksFromHtml(html);
+    if (!imported.length) throw new Error('Nothing importable was found in that file.');
+    // Replace the lone empty starter block rather than appending below it.
+    if (state.blocks.length === 1) {
+      const only = state.blocks[0];
+      const onlyElement = state.blockElements.get(only.id);
+      if (only.type === 'text' && onlyElement && !(onlyElement.textContent || '').trim()) removeBlock(onlyElement);
+    }
+    imported.forEach(insertImportedBlock);
+    if (!titleInput.value.trim()) {
+      titleInput.value = file.name.replace(/\.(md|markdown|mdx|docx)$/i, '');
+    }
+    changed();
+    statusEl.textContent = `Imported ${file.name}.`;
+  };
+  importButton?.addEventListener('click', () => importInput?.click());
+  importInput?.addEventListener('change', () => {
+    const file = importInput.files?.[0];
+    importInput.value = '';
+    if (!file) return;
+    importFile(file).catch((error) => {
+      statusEl.textContent = errorMessage(error);
+    });
+  });
 
   const toggleInlineCode = () => {
     const selection = window.getSelection();
@@ -6567,7 +6996,7 @@ async function loadDraftEditor(did: string) {
     const blockSpec = button.dataset.block;
     if (!blockSpec) return;
     const [type, level] = blockSpec.split(':') as [DraftBlockType, string?];
-    const structural: DraftBlockType[] = ['horizontalRule', 'image', 'video', 'button', 'website', 'bskyPost', 'math'];
+    const structural: DraftBlockType[] = ['horizontalRule', 'image', 'video', 'button', 'website', 'bskyPost', 'math', 'embed'];
     if (DRAFT_TEXT_TYPES.includes(type) || type === 'unorderedList' || type === 'orderedList') {
       if (current) convertBlock(current, type, level ? Number(level) : undefined);
       else {
@@ -6879,11 +7308,10 @@ async function loadDraftEditor(did: string) {
       deleteButton.disabled = false;
     }
   });
-  publishButton.addEventListener('click', async () => {
-    if (state.syncing) return;
-    const metaError = metadataValidationError();
-    if (metaError) { statusEl.textContent = metaError; return; }
-    if (!window.confirm('Publish this draft as a Leaflet document in your repository?')) return;
+  const publishDialog = page.querySelector<HTMLDialogElement>('[data-draft-publish-dialog]');
+  const publishPreview = publishDialog?.querySelector<HTMLElement>('[data-draft-publish-preview]');
+  const publishConfirm = publishDialog?.querySelector<HTMLButtonElement>('[data-draft-publish-confirm]');
+  const publishDraft = async () => {
     state.syncing = true;
     publishButton.disabled = true;
     saveButton.disabled = true;
@@ -6896,13 +7324,20 @@ async function loadDraftEditor(did: string) {
       const site = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.publication\/[a-zA-Z0-9._~:-]+$/.test(publication)
         ? publication
         : undefined;
+      // Republishing updates the records in place — the document URIs, and so
+      // the story's canonical path, stay the same.
+      const existingDocRkey = state.publishedUri
+        ?.match(/^at:\/\/[^/]+\/pub\.leaflet\.document\/([a-zA-Z0-9._~:-]+)$/)?.[1];
+      const existingPostRkey = state.postUri
+        ?.match(/^at:\/\/[^/]+\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/)?.[1];
+      const publishedAt = state.publishedAt || now;
 
       let postRef: { uri: string; cid: string } | undefined;
       if (site) {
         // site.standard.document.path joins with the publication's url to form
         // the document's canonical web URL — standard.site readers and
         // verification rely on it resolving to this site's rendered page.
-        const docRkey = createTid();
+        const docRkey = existingPostRkey || createTid();
         let basePath = '';
         try {
           basePath = new URL(publicationUrls.get(site) || '').pathname.replace(/\/+$/, '');
@@ -6924,7 +7359,7 @@ async function loadDraftEditor(did: string) {
           site,
           path: documentPath,
           title: draftDocument.title,
-          publishedAt: now,
+          publishedAt,
           author: did,
           content: { $type: 'pub.leaflet.content', pages: draftDocument.pages },
         };
@@ -6950,21 +7385,31 @@ async function loadDraftEditor(did: string) {
         postRef = { uri: standardResult.uri, cid: standardResult.cid };
       }
 
-      const response = await repoRequest('com.atproto.repo.createRecord', {
-        repo: did,
-        collection: 'pub.leaflet.document',
-        record: { ...draftDocument, publishedAt: now, ...(postRef ? { postRef } : {}) },
-      });
+      const leafRecord = { ...draftDocument, publishedAt, ...(postRef ? { postRef } : {}) };
+      const response = existingDocRkey
+        ? await repoRequest('com.atproto.repo.putRecord', {
+          repo: did,
+          collection: 'pub.leaflet.document',
+          rkey: existingDocRkey,
+          record: leafRecord,
+        })
+        : await repoRequest('com.atproto.repo.createRecord', {
+          repo: did,
+          collection: 'pub.leaflet.document',
+          record: leafRecord,
+        });
       const result = await response.json() as { uri?: unknown };
       if (typeof result.uri !== 'string') throw new Error('The account provider did not return the published document URI.');
       state.publishedUri = result.uri;
-      state.publishedAt = now;
+      state.publishedAt = publishedAt;
       showPublishedLink();
       state.syncing = false;
       await sync();
-      statusEl.textContent = state.postUri
-        ? 'Published to Coffee & Code. The story link is live next to the Save button.'
-        : 'Published as a Leaflet document. Add a site.standard.publication URI in metadata to also publish it to Coffee & Code.';
+      statusEl.textContent = existingDocRkey
+        ? 'Updated the published post — same link, latest content.'
+        : state.postUri
+          ? 'Published to Coffee & Code. The story link is live next to the Save button.'
+          : 'Published as a Leaflet document. Add a site.standard.publication URI in metadata to also publish it to Coffee & Code.';
     } catch (error) {
       state.syncing = false;
       statusEl.textContent = error instanceof Error ? error.message : 'The draft could not be published.';
@@ -6972,6 +7417,58 @@ async function loadDraftEditor(did: string) {
       publishButton.disabled = false;
       saveButton.disabled = false;
     }
+  };
+
+  const openPublishDialog = async () => {
+    if (!publishDialog || !publishPreview || !publishConfirm) {
+      await publishDraft();
+      return;
+    }
+    const title = titleInput.value.trim() || 'Untitled';
+    const description = descriptionInput.value.trim();
+    const handle = await draftAuthorHandle();
+    publishPreview.replaceChildren();
+    if (state.coverObjectUrl) {
+      const image = document.createElement('img');
+      image.className = 'draft-share-card__image';
+      image.src = state.coverObjectUrl;
+      image.alt = '';
+      publishPreview.append(image);
+    }
+    const cardBody = document.createElement('div');
+    cardBody.className = 'draft-share-card__body';
+    const cardTitle = document.createElement('span');
+    cardTitle.className = 'draft-share-card__title';
+    cardTitle.textContent = title;
+    cardBody.append(cardTitle);
+    if (description) {
+      const cardDescription = document.createElement('p');
+      cardDescription.className = 'draft-share-card__description';
+      cardDescription.textContent = description;
+      cardBody.append(cardDescription);
+    }
+    const cardMeta = document.createElement('span');
+    cardMeta.className = 'draft-share-card__meta';
+    cardMeta.textContent = `${handle === did ? did : `@${handle}`} · coffeencode.cc`;
+    cardBody.append(cardMeta);
+    publishPreview.append(cardBody);
+    publishConfirm.disabled = false;
+    publishDialog.showModal();
+  };
+  publishDialog?.querySelector<HTMLButtonElement>('[data-draft-publish-cancel]')
+    ?.addEventListener('click', () => publishDialog.close());
+  publishDialog?.addEventListener('click', (event) => {
+    if (event.target === publishDialog) publishDialog.close();
+  });
+  publishConfirm?.addEventListener('click', () => {
+    publishDialog?.close();
+    void publishDraft();
+  });
+  publishButton.addEventListener('click', () => {
+    if (state.syncing) return;
+    const metaError = metadataValidationError();
+    if (metaError) { statusEl.textContent = metaError; return; }
+    void openPublishDialog();
   });
   window.addEventListener('beforeunload', (event) => {
     if (state.version !== state.savedVersion && !state.syncing) {

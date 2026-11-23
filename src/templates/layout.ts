@@ -1004,6 +1004,8 @@ export function renderLayout(
     .search-result .eyebrow { margin: 0 0 6px; }
     .search-result mark { background: rgba(178, 172, 136, .32); border-radius: 2px; color: var(--ink); padding: 0 2px; }
     .account-layout { align-items: start; display: grid; gap: clamp(24px, 3vw, 40px); grid-template-columns: minmax(240px, 300px) minmax(0, 1.4fr) minmax(260px, 1fr); }
+    .account-layout--solo { grid-template-columns: 1fr; }
+    .account-layout.account-layout--solo .account-layout__main { grid-column: 1 / -1; }
     .account-layout__column { display: grid; gap: 24px; min-width: 0; }
     .account-layout__sidebar { position: sticky; top: 96px; }
     .account-card { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 4px; padding: 20px; }
