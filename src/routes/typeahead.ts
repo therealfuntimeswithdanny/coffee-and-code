@@ -2,7 +2,9 @@ import { Hono, type Context } from 'hono';
 import { Env } from '../types';
 import { renderLayout } from '../templates/layout';
 
-const DEFAULT_UPSTREAM = 'https://public.api.bsky.app/xrpc/app.bsky.actor.searchActorsTypeahead';
+// typeahead.waow.tech is a community-run, network-wide actor index that keeps a
+// Bluesky-compatible endpoint, so the swap is only a base-URL change.
+const DEFAULT_UPSTREAM = 'https://typeahead.waow.tech/xrpc/app.bsky.actor.searchActorsTypeahead';
 const CACHE_TTL_SECONDS = 30;
 const MAX_QUERY_LENGTH = 100;
 
@@ -85,7 +87,8 @@ async function searchActorsTypeahead(c: Context<{ Bindings: Env }>) {
   let payload: { actors?: unknown };
   try {
     const response = await fetch(upstream.toString(), {
-      headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc)' },
+      // X-Client attributes this app's traffic on the upstream's public stats.
+      headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc)', 'X-Client': 'coffeencode.cc' },
     });
     if (!response.ok) throw new Error(`Upstream typeahead returned ${response.status}`);
     payload = await response.json() as { actors?: unknown };
@@ -123,7 +126,7 @@ function typeaheadPage(c: Context<{ Bindings: Env }>) {
   const body = `
     <section class="typeahead-page" aria-labelledby="typeahead-title">
       <h1 id="typeahead-title">Handle typeahead</h1>
-      <p class="typeahead-page__intro">Type-ahead search over AT Protocol handles and display names. Start typing to see matching accounts — the same unauthenticated JSON API shown below powers the suggestions.</p>
+      <p class="typeahead-page__intro">Type-ahead search over AT Protocol handles and display names, powered by the network-wide index at <a href="https://typeahead.waow.tech/">typeahead.waow.tech</a>. Start typing to see matching accounts — the same unauthenticated JSON API shown below powers the suggestions.</p>
       <handle-typeahead api="${escapeHtml(apiUrl)}" profile-base="https://coffeencode.cc/user/"></handle-typeahead>
       <p class="typeahead-page__selection" data-typeahead-selection role="status" aria-live="polite"></p>
       <section class="typeahead-page__api" aria-labelledby="typeahead-api-title">

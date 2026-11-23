@@ -390,7 +390,7 @@ pages.get('/auth', (c) => {
           </div>
           <form class="auth-form auth-handle-form" data-auth-form hidden>
             <label for="auth-handle" data-handle-label>Your handle</label>
-            <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
+            <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" data-handle-typeahead required>
             <p class="auth-handle-form__hint" data-handle-hint hidden></p>
             <button type="submit" class="login-button auth-option__button" data-handle-submit>Continue</button>
           </form>
@@ -399,7 +399,7 @@ pages.get('/auth', (c) => {
             <summary><i class="fa-solid fa-key" aria-hidden="true"></i> Use an app password</summary>
             <form class="auth-form" data-app-password-form>
               <label for="auth-app-identifier">Handle</label>
-              <input id="auth-app-identifier" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" required>
+              <input id="auth-app-identifier" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" data-handle-typeahead required>
               <label for="auth-app-password">App password</label>
               <input id="auth-app-password" name="password" type="password" autocomplete="current-password" placeholder="xxxx-xxxx-xxxx-xxxx" required>
               <button type="submit" class="login-button auth-option__button">Sign in</button>
@@ -417,6 +417,7 @@ pages.get('/auth', (c) => {
       </div>
       <p class="auth-page__error" data-auth-error role="alert" hidden></p>
     </section>
+    <script type="module" src="/components/typeahead.js"></script>
     <script type="module">
       (async () => {
         try {
