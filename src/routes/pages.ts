@@ -390,7 +390,7 @@ pages.get('/auth', (c) => {
           </div>
           <form class="auth-form auth-handle-form" data-auth-form hidden>
             <label for="auth-handle" data-handle-label>Your handle</label>
-            <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" data-handle-typeahead required>
+            <input id="auth-handle" name="handle" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" data-handle-typeahead data-typeahead-limit="5" data-1p-ignore data-lpignore="true" required>
             <p class="auth-handle-form__hint" data-handle-hint hidden></p>
             <button type="submit" class="login-button auth-option__button" data-handle-submit>Continue</button>
           </form>
@@ -399,7 +399,7 @@ pages.get('/auth', (c) => {
             <summary><i class="fa-solid fa-key" aria-hidden="true"></i> Use an app password</summary>
             <form class="auth-form" data-app-password-form>
               <label for="auth-app-identifier">Handle</label>
-              <input id="auth-app-identifier" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" data-handle-typeahead required>
+              <input id="auth-app-identifier" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" data-handle-typeahead data-typeahead-limit="5" required>
               <label for="auth-app-password">App password</label>
               <input id="auth-app-password" name="password" type="password" autocomplete="current-password" placeholder="xxxx-xxxx-xxxx-xxxx" required>
               <button type="submit" class="login-button auth-option__button">Sign in</button>

@@ -3940,6 +3940,9 @@ async function startOAuthSignIn(target: string, submit?: HTMLElement | null, isS
 }
 
 if (authForm) {
+  // Picking a suggestion from the handle typeahead is confirmation enough —
+  // jump straight into the OAuth redirect for that account.
+  handleInput?.addEventListener('handle-selected', () => authForm.requestSubmit());
   authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearAuthError();
