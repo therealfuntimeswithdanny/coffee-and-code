@@ -5732,9 +5732,10 @@ async function loadDraftEditor(did: string) {
   if (!blocksEl || !previewEl || !statusEl || !workspace || !toolbar || !saveButton || !deleteButton || !publishButton || !metaForm) return;
   const titleInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="title"]')!;
   const descriptionInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="description"]')!;
-  const tagsInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="tags"]')!;
+  const tagsInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="tags"]')!;
   const publicationInput = metaForm.querySelector<HTMLSelectElement>('[data-draft-field="publication"]')!;
   const coverInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="cover"]')!;
+  const coverPreview = metaForm.querySelector<HTMLImageElement>('[data-draft-cover-preview]');
   const coverRemoveInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="coverRemove"]')!;
   const sourcesInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="sources"]')!;
   const backlinkInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="backlink"]')!;
@@ -5905,6 +5906,10 @@ async function loadDraftEditor(did: string) {
   }
 
   const renderPreview = () => {
+    if (coverPreview) {
+      coverPreview.src = state.coverObjectUrl || '';
+      coverPreview.hidden = !state.coverObjectUrl;
+    }
     const title = titleInput.value.trim();
     const description = descriptionInput.value.trim();
     const parts: string[] = [];
@@ -6138,18 +6143,35 @@ async function loadDraftEditor(did: string) {
     if (!range) return;
     const selection = window.getSelection();
     if (suggestion.kind === 1) {
-      // SuggestionKind.Remove
+      // SuggestionKind.Remove — delete the flagged span entirely.
       range.deleteContents();
-      range.collapse(true);
+      range.collapse(false);
       selection?.removeAllRanges();
       selection?.addRange(range);
     } else {
-      // Replace selects the span; InsertAfter collapses to its end. Both then go
-      // through insertText so the change joins the native undo stack.
-      range.collapse(suggestion.kind === 2);
+      // Replace selects the flagged span; InsertAfter collapses to its end.
+      // insertText goes through the native editing pipeline so the fix is
+      // undoable with Cmd/Ctrl+Z; fall back to a manual insert if it declines.
+      if (suggestion.kind === 2) range.collapse(false);
       selection?.removeAllRanges();
       selection?.addRange(range);
-      document.execCommand('insertText', false, suggestion.text);
+      const beforeLength = (editable.textContent || '').length;
+      const expectedLength = suggestion.kind === 2
+        ? beforeLength + suggestion.text.length
+        : beforeLength - (lint.end - lint.start) + suggestion.text.length;
+      const insertedNatively = document.execCommand('insertText', false, suggestion.text);
+      // execCommand can report success yet leave the DOM untouched.
+      if (!insertedNatively || (editable.textContent || '').length !== expectedLength) {
+        if (suggestion.kind !== 2) range.deleteContents();
+        else range.collapse(false);
+        const inserted = document.createTextNode(suggestion.text);
+        range.insertNode(inserted);
+        const caret = document.createRange();
+        caret.setStartAfter(inserted);
+        caret.collapse(true);
+        selection?.removeAllRanges();
+        selection?.addRange(caret);
+      }
     }
     hidePopover();
     editable.focus();
@@ -6448,6 +6470,55 @@ async function loadDraftEditor(did: string) {
   }, { signal: draftSpellAbort.signal });
   document.addEventListener('scroll', closeSlashMenu, { capture: true, passive: true, signal: draftSpellAbort.signal });
 
+  // --- Document keyboard shortcuts (Google Docs-style) ---
+  // Cmd/Ctrl+B/I/U/Z already come free with contenteditable; these add the rest.
+  const docShortcut = (editable: HTMLElement, event: KeyboardEvent): boolean => {
+    const mod = event.metaKey || event.ctrlKey;
+    if (!mod) return false;
+    const element = editable.closest<HTMLElement>('[data-block-id]');
+    const inline = (command: string) => { document.execCommand(command); changed(); return true; };
+    const convert = (type: DraftBlockType, level?: number) => {
+      if (!element) return false;
+      convertBlock(element, type, level);
+      return true;
+    };
+    const align = (alignment: string) => {
+      const block = element ? blockFor(element) : undefined;
+      if (!block || !element) return false;
+      block.alignment = block.alignment === alignment ? undefined : alignment;
+      element.dataset.align = block.alignment || '';
+      changed();
+      return true;
+    };
+    if (event.altKey) {
+      // Cmd/Ctrl+Alt+0..3 — paragraph / headings.
+      const level = { Digit0: 0, Digit1: 1, Digit2: 2, Digit3: 3 }[event.code];
+      if (level !== undefined) return convert(level === 0 ? 'text' : 'header', level || undefined);
+      return false;
+    }
+    if (event.shiftKey) {
+      switch (event.code) {
+        case 'KeyX': return inline('strikeThrough');
+        case 'Digit7': return convert('orderedList');
+        case 'Digit8': return convert('unorderedList');
+        case 'KeyL': return align('#textAlignLeft');
+        case 'KeyE': return align('#textAlignCenter');
+        case 'KeyR': return align('#textAlignRight');
+        case 'KeyJ': return align('#textAlignJustify');
+        default: return false;
+      }
+    }
+    if (event.code === 'KeyK') {
+      const url = window.prompt('Link URL (leave empty to remove a link):');
+      if (url === null) return true;
+      if (url.trim()) document.execCommand('createLink', false, url.trim());
+      else document.execCommand('unlink');
+      changed();
+      return true;
+    }
+    return false;
+  };
+
   const caretAtStart = (editable: HTMLElement) => {
     const selection = window.getSelection();
     if (!selection?.rangeCount || !selection.isCollapsed) return false;
@@ -6483,7 +6554,9 @@ async function loadDraftEditor(did: string) {
       if (slashMenuKeydown(editable, event)) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        return;
       }
+      if (docShortcut(editable, event)) event.preventDefault();
     });
     editable.addEventListener('keydown', (event) => {
       const element = editable.closest<HTMLElement>('[data-block-id]');
@@ -7220,6 +7293,9 @@ async function loadDraftEditor(did: string) {
   };
 
   const showPublishedLink = () => {
+    publishButton.innerHTML = state.publishedUri
+      ? '<i class="fa-solid fa-rotate" aria-hidden="true"></i> Update'
+      : '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish';
     if (!publishedLink) return;
     const postMatch = state.postUri?.match(/^at:\/\/[^/]+\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/);
     if (postMatch) {
@@ -7427,6 +7503,18 @@ async function loadDraftEditor(did: string) {
     const title = titleInput.value.trim() || 'Untitled';
     const description = descriptionInput.value.trim();
     const handle = await draftAuthorHandle();
+    const updating = Boolean(state.publishedUri);
+    const dialogTitle = publishDialog.querySelector<HTMLElement>('#draft-publish-dialog-title');
+    if (dialogTitle) dialogTitle.textContent = updating ? 'Update post' : 'Publish post';
+    const dialogIntro = publishDialog.querySelector<HTMLElement>('.draft-publish-dialog__intro');
+    if (dialogIntro) {
+      dialogIntro.textContent = updating
+        ? 'This will update the existing record on your account — the link stays the same and the Coffee & Code home page will show the latest version.'
+        : 'Publishing this post will publish it as a record on your account, and it will be shown on the Coffee & Code home page.';
+    }
+    publishConfirm.innerHTML = updating
+      ? '<i class="fa-solid fa-rotate" aria-hidden="true"></i> Update'
+      : '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish';
     publishPreview.replaceChildren();
     if (state.coverObjectUrl) {
       const image = document.createElement('img');
@@ -7469,6 +7557,14 @@ async function loadDraftEditor(did: string) {
     const metaError = metadataValidationError();
     if (metaError) { statusEl.textContent = metaError; return; }
     void openPublishDialog();
+  });
+  const shortcutsDialog = page.querySelector<HTMLDialogElement>('[data-draft-shortcuts-dialog]');
+  toolbar.querySelector<HTMLButtonElement>('[data-draft-shortcuts]')
+    ?.addEventListener('click', () => shortcutsDialog?.showModal());
+  shortcutsDialog?.querySelector<HTMLButtonElement>('[data-draft-shortcuts-close]')
+    ?.addEventListener('click', () => shortcutsDialog.close());
+  shortcutsDialog?.addEventListener('click', (event) => {
+    if (event.target === shortcutsDialog) shortcutsDialog.close();
   });
   window.addEventListener('beforeunload', (event) => {
     if (state.version !== state.savedVersion && !state.syncing) {

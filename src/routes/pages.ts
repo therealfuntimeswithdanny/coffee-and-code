@@ -765,6 +765,13 @@ const draftEditorStyles = `
     .draft-toolbar__sep { border-left: 1px solid var(--line); height: 22px; margin: 0 4px; }
     .draft-editor__meta { min-width: 0; }
     .draft-editor__doc-settings { margin: 0 auto 22px; max-width: var(--doc-width); }
+    .draft-editor__doc-heading { font-size: 15px; margin: 0; }
+    .draft-editor__doc-heading i { color: var(--accent); font-size: .85em; margin-right: 7px; }
+    .draft-editor__meta-wide { grid-column: 1 / -1; }
+    .draft-editor__meta-grid textarea { resize: vertical; }
+    .draft-editor__meta-cover-row { align-items: end; display: grid; gap: 8px; }
+    .draft-editor__cover-preview { border: 1px solid var(--line); border-radius: 4px; display: block; max-height: 80px; object-fit: cover; width: auto; }
+    .draft-editor__cover-preview[hidden] { display: none; }
     .draft-editor__doc-settings summary { border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .08em; list-style: none; padding: 10px 16px; text-align: center; text-transform: uppercase; }
     .draft-editor__doc-settings summary::-webkit-details-marker { display: none; }
     .draft-editor__doc-settings summary::before { content: '⚙ '; }
@@ -780,8 +787,8 @@ const draftEditorStyles = `
     .draft-editor__meta-description:focus { color: var(--ink); outline: none; }
     .draft-editor__meta-grid { column-gap: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); row-gap: 12px; }
     .draft-editor__meta-grid label, .draft-editor__meta-sources label { color: var(--muted); display: grid; font-size: 11px; font-weight: 700; gap: 4px; letter-spacing: .06em; text-transform: uppercase; }
-    .draft-editor__meta-grid input, .draft-editor__meta-grid select, .draft-editor__meta-sources input, .draft-editor__meta-sources textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font: inherit; font-size: 14px; letter-spacing: normal; padding: 7px 10px; text-transform: none; }
-    .draft-editor__meta-grid input:focus, .draft-editor__meta-grid select:focus, .draft-editor__meta-sources input:focus, .draft-editor__meta-sources textarea:focus { border-color: var(--accent); outline: none; }
+    .draft-editor__meta-grid input, .draft-editor__meta-grid select, .draft-editor__meta-grid textarea, .draft-editor__meta-sources input, .draft-editor__meta-sources textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font: inherit; font-size: 14px; letter-spacing: normal; padding: 7px 10px; text-transform: none; }
+    .draft-editor__meta-grid input:focus, .draft-editor__meta-grid select:focus, .draft-editor__meta-grid textarea:focus, .draft-editor__meta-sources input:focus, .draft-editor__meta-sources textarea:focus { border-color: var(--accent); outline: none; }
     .draft-editor__meta-grid input[type="file"] { font-size: 13px; padding: 5px 0; }
     .draft-editor__meta-check { align-items: center; align-self: end; display: flex !important; flex-direction: row; gap: 7px !important; letter-spacing: normal !important; padding-bottom: 8px; text-transform: none !important; }
     .draft-editor__meta-sources { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 10px; padding: 14px 16px; }
@@ -813,7 +820,7 @@ const draftEditorStyles = `
     .draft-block__image img { display: block; max-width: 100%; }
     .draft-block__video video { display: block; max-width: 100%; }
     .draft-editor__add { margin-top: 10px; }
-    .draft-preview { align-self: start; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); margin-top: 52px; min-width: 0; padding: 30px; position: sticky; top: 150px; }
+    .draft-preview { align-self: start; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); min-width: 0; padding: 30px; position: sticky; top: 150px; }
     .draft-preview h1.draft-preview__title { font-family: Lora, serif; font-size: 34px; line-height: 1.15; margin: 0 0 8px; overflow-wrap: anywhere; }
     .draft-preview__description { color: var(--muted); margin: 0 0 18px; }
     .draft-preview__cover { display: block; margin-bottom: 18px; max-width: 100%; }
@@ -873,6 +880,12 @@ const draftEditorStyles = `
     .draft-slash-menu__item i { color: var(--accent); font-size: 13px; text-align: center; width: 16px; }
     .draft-slash-menu__item:hover, .draft-slash-menu__item[aria-selected="true"] { background: var(--paper-deep); }
     .draft-slash-menu__empty { color: var(--muted); font-size: 13px; margin: 0; padding: 8px 10px; }
+    .draft-shortcuts-dialog__list { display: grid; gap: 4px; margin: 0; }
+    .draft-shortcuts-dialog__list > div { align-items: baseline; border-bottom: 1px solid var(--line); display: flex; gap: 12px; justify-content: space-between; padding: 7px 0; }
+    .draft-shortcuts-dialog__list > div:last-child { border-bottom: 0; }
+    .draft-shortcuts-dialog__list dt { font-weight: 700; }
+    .draft-shortcuts-dialog__list dd { color: var(--muted); margin: 0; text-align: right; }
+    .draft-shortcuts-dialog__list kbd { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: 600 11px ui-monospace, monospace; padding: 1px 5px; }
   </style>`;
 
 pages.get('/account/author/draft', (c) => {
@@ -946,16 +959,22 @@ pages.get('/account/author/draft/:rkey', (c) => {
             <button type="button" data-align="#textAlignCenter" title="Align center" aria-label="Align center"><i class="fa-solid fa-align-center" aria-hidden="true"></i></button>
             <button type="button" data-align="#textAlignRight" title="Align right" aria-label="Align right"><i class="fa-solid fa-align-right" aria-hidden="true"></i></button>
             <button type="button" data-align="#textAlignJustify" title="Justify" aria-label="Justify"><i class="fa-solid fa-align-justify" aria-hidden="true"></i></button>
+            <span class="draft-toolbar__sep" aria-hidden="true"></span>
+            <button type="button" data-draft-shortcuts title="Keyboard shortcuts" aria-label="Keyboard shortcuts"><i class="fa-regular fa-circle-question" aria-hidden="true"></i></button>
           </div>
         <div class="draft-editor__meta">
           <details class="draft-editor__doc-settings" data-draft-settings-panel>
             <summary hidden>Document settings — tags, cover &amp; sources</summary>
             <div class="draft-editor__doc-body">
+              <h2 class="draft-editor__doc-heading"><i class="fa-solid fa-gear" aria-hidden="true"></i> Document settings</h2>
               <div class="draft-editor__meta-grid">
-                <label>Tags<input name="draft-tags" placeholder="coffee, code, …" data-draft-field="tags"></label>
+                <label class="draft-editor__meta-wide">Tags — comma separated<textarea name="draft-tags" rows="2" placeholder="coffee, code, …" data-draft-field="tags"></textarea></label>
                 <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
                 <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
-                <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
+                <div class="draft-editor__meta-cover-row">
+                  <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
+                  <img class="draft-editor__cover-preview" data-draft-cover-preview alt="" hidden>
+                </div>
               </div>
               <section class="draft-editor__meta-sources" aria-labelledby="draft-sources-heading">
                 <h2 id="draft-sources-heading"><i class="fa-solid fa-book-open" aria-hidden="true"></i> Sources</h2>
@@ -985,6 +1004,29 @@ pages.get('/account/author/draft/:rkey', (c) => {
           <div class="draft-publish-dialog__actions">
             <button type="button" class="account-author-form__cancel" data-draft-publish-cancel>Cancel</button>
             <button type="button" class="auth-signout" data-draft-publish-confirm><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish</button>
+          </div>
+        </div>
+      </dialog>
+      <dialog class="draft-publish-dialog draft-shortcuts-dialog" data-draft-shortcuts-dialog aria-labelledby="draft-shortcuts-title">
+        <div class="draft-publish-dialog__card">
+          <h1 id="draft-shortcuts-title">Keyboard shortcuts</h1>
+          <dl class="draft-shortcuts-dialog__list">
+            <div><dt>Bold</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>B</kbd></dd></div>
+            <div><dt>Italic</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>I</kbd></dd></div>
+            <div><dt>Underline</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>U</kbd></dd></div>
+            <div><dt>Strikethrough</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⇧</kbd> <kbd>X</kbd></dd></div>
+            <div><dt>Link</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>K</kbd></dd></div>
+            <div><dt>Paragraph</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⌥</kbd>/<kbd>Alt</kbd> <kbd>0</kbd></dd></div>
+            <div><dt>Heading 1–3</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⌥</kbd>/<kbd>Alt</kbd> <kbd>1–3</kbd></dd></div>
+            <div><dt>Bulleted list</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⇧</kbd> <kbd>8</kbd></dd></div>
+            <div><dt>Numbered list</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⇧</kbd> <kbd>7</kbd></dd></div>
+            <div><dt>Align left / center / right / justify</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>⇧</kbd> <kbd>L/E/R/J</kbd></dd></div>
+            <div><dt>Block menu</dt><dd>Type <kbd>/</kbd> then filter &amp; press <kbd>Enter</kbd></dd></div>
+            <div><dt>New block</dt><dd><kbd>Enter</kbd></dd></div>
+            <div><dt>Undo / redo</dt><dd><kbd>⌘</kbd>/<kbd>Ctrl</kbd> <kbd>Z</kbd> / <kbd>⇧</kbd> <kbd>Z</kbd></dd></div>
+          </dl>
+          <div class="draft-publish-dialog__actions">
+            <button type="button" class="auth-signout" data-draft-shortcuts-close>Close</button>
           </div>
         </div>
       </dialog>
