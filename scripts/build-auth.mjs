@@ -57,7 +57,6 @@ for (const scope of [
   'include:cc.coffeencode.authPublic',
   'include:cc.coffeencode.authAuthor',
   'include:site.standard.authSocial',
-  'include:app.userinput.authBasic',
   'repo:cc.coffeencode.user.block?action=create&action=delete',
   'repo:cc.coffeencode.save?action=create&action=delete',
   'repo:cc.coffeencode.notifications.read?action=create&action=update',

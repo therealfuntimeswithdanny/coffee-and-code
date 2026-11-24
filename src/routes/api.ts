@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { Env, StandardDocument } from '../types';
-import { fetchArticleByUri, fetchArticles, fetchPostMetadata, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl, purgePublishedPostCache } from '../lib/atproto';
+import { fetchArticleByUri, fetchArticles, fetchPostMetadata, fetchRecord, getPdsEndpoint, isPdsAvailable, proxyAvatarUrl, proxyImageUrl, purgePublishedPostCache } from '../lib/atproto';
 import { toPlainText } from '../lib/contentRenderer';
 import { loadNotificationsForUser } from '../lib/notifications';
 import legal from '../legal.json';
@@ -361,6 +361,43 @@ api.post('/author/cache/purge', async (c) => {
     }
   }
   return c.json({ ok: true, zonePurged }, 200, { 'Cache-Control': 'no-store' });
+});
+
+// Reads the subject's public com.germnetwork.declaration record from their PDS
+// and returns just the fields needed to decide whether a Germ DM button
+// renders on their profile (see mark-germ.leaflet.pub/3mem22lhe222t).
+api.get('/germ/declaration', async (c) => {
+  const did = c.req.query('did') || '';
+  if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did)) {
+    return c.json({ error: 'A valid did query parameter is required.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  const unavailable = () => c.json({ available: false }, 200, { 'Cache-Control': 'public, max-age=300' });
+  try {
+    const pdsUrl = await getPdsEndpoint(did, c.env.OWNER_PDS);
+    const record = await fetchRecord(pdsUrl, did, 'com.germnetwork.declaration', 'self');
+    const value = record?.value;
+    const messageMe = value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>).messageMe
+      : undefined;
+    if (!messageMe || typeof messageMe !== 'object' || Array.isArray(messageMe)) return unavailable();
+    const messageMeUrl = typeof (messageMe as Record<string, unknown>).messageMeUrl === 'string'
+      ? (messageMe as Record<string, unknown>).messageMeUrl as string
+      : '';
+    const showButtonTo = typeof (messageMe as Record<string, unknown>).showButtonTo === 'string'
+      ? (messageMe as Record<string, unknown>).showButtonTo as string
+      : '';
+    try {
+      const parsed = new URL(messageMeUrl);
+      if (!/^https?:$/.test(parsed.protocol) || parsed.hash) return unavailable();
+    } catch {
+      return unavailable();
+    }
+    if (!['everyone', 'usersIFollow', 'none'].includes(showButtonTo)) return unavailable();
+    return c.json({ available: true, showButtonTo, messageMeUrl }, 200, { 'Cache-Control': 'public, max-age=300' });
+  } catch (error) {
+    console.error(`Could not load the Germ declaration for ${did}:`, error);
+    return c.json({ error: 'The Germ declaration is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+  }
 });
 
 api.get('/documents/:rkey', async (c) => {

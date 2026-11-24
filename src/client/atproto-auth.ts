@@ -4606,6 +4606,55 @@ function promptAuthorUnfollow(name: string): Promise<'both' | 'site' | null> {
   });
 }
 
+// Germ DM buttons — the profile owner's com.germnetwork.declaration record
+// says who may message them ("everyone" or only accounts they follow). For
+// "usersIFollow" we check the owner's Bluesky graph for a follow of the
+// signed-in viewer, then complete the messageMeUrl with [subject]+[viewer]
+// DIDs in the fragment per the Germ spec (plus the "web" platform hint).
+document.querySelectorAll<HTMLAnchorElement>('[data-germ-dm]').forEach((link) => {
+  const subjectDid = link.dataset.germDid || '';
+  if (!subjectDid) return;
+  void (async () => {
+    try {
+      const response = await fetch(`/api/germ/declaration?did=${encodeURIComponent(subjectDid)}`, { cache: 'no-store' });
+      if (!response.ok) return;
+      const info = await response.json() as { available?: unknown; showButtonTo?: unknown; messageMeUrl?: unknown };
+      if (!info.available || typeof info.messageMeUrl !== 'string' || typeof info.showButtonTo !== 'string') return;
+
+      await oauthReady;
+      const viewerDid = session?.did;
+      if (viewerDid === subjectDid) return; // No DM button on your own profile.
+      if (info.showButtonTo === 'none') return;
+      if (info.showButtonTo === 'usersIFollow') {
+        // Only people the profile owner follows may DM them. The public
+        // Bluesky appview exposes the relationship check; signed-out viewers
+        // can't prove a follow, so the button stays hidden.
+        if (!viewerDid || viewerDid === subjectDid) return;
+        let follows = false;
+        try {
+          const rel = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.graph.getRelationships?actor=${encodeURIComponent(subjectDid)}&others=${encodeURIComponent(viewerDid)}`);
+          if (!rel.ok) return;
+          const payload = await rel.json() as { relationships?: Array<{ did?: unknown; following?: unknown }> };
+          const entry = Array.isArray(payload.relationships)
+            ? payload.relationships.find((item) => item.did === viewerDid) || payload.relationships[0]
+            : undefined;
+          follows = Boolean(entry?.following);
+        } catch {
+          return;
+        }
+        if (!follows) return;
+      }
+
+      const url = new URL(info.messageMeUrl);
+      if (!/^https?:$/.test(url.protocol)) return;
+      url.pathname = `${url.pathname.replace(/\/+$/, '')}/web`;
+      url.hash = viewerDid ? `${subjectDid}+${viewerDid}` : subjectDid;
+      link.href = url.toString();
+      link.hidden = false;
+    } catch { /* No declaration record or unreachable PDS — no button. */ }
+  })();
+});
+
 document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((container) => {
   const button = container.querySelector<HTMLButtonElement>('[data-author-follow-button]');
   const status = container.querySelector<HTMLElement>('[data-author-follow-status]');

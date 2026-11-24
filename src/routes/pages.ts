@@ -1343,6 +1343,7 @@ pages.get('/author/:handle', async (c) => {
         <a class="author-page__profile-link" href="/user/${encodeURIComponent(author.handle)}">View user profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(author.did)}" data-block-user-name="${escapeHtml(authorName)}" hidden disabled>Block user</button>
         <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
+        <a class="author-germ" data-germ-dm data-germ-did="${escapeHtml(author.did)}" href="#" target="_blank" rel="noopener noreferrer" hidden><img src="/logomarks/germ.png" alt="" width="18" height="18" aria-hidden="true">Message on Germ</a>
         <span class="author-follow__status" data-author-follow-status role="status" aria-live="polite">${publicationUri ? '' : 'Following is unavailable for this author.'}</span>
       </div>
       ${author.description ? `<p class="author-page__description">${escapeHtml(author.description)}</p>` : ''}
