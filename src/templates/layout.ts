@@ -1367,15 +1367,18 @@ export function renderLayout(
             };
             authorNameElements.forEach((element) => {
               const did = element.dataset.authorVerificationDid;
-              const type = badges[did] || (verifiedDids.has(did) ? 'verified' : undefined);
-              const style = type && badgeStyles[type];
-              if (!style || element.querySelector('.author-verification-badge')) return;
-              const badge = document.createElement('i');
-              badge.className = 'fa-solid ' + style.icon + ' author-verification-badge author-verification-badge--' + type;
-              badge.setAttribute('role', 'img');
-              badge.setAttribute('aria-label', style.label);
-              badge.title = style.label;
-              element.append(badge);
+              const listed = Array.isArray(badges[did]) ? badges[did] : badges[did] ? [badges[did]] : [];
+              const types = [...new Set([...listed, ...(verifiedDids.has(did) ? ['verified'] : [])])];
+              types.forEach((type) => {
+                const style = badgeStyles[type];
+                if (!style || element.querySelector('.author-verification-badge--' + type)) return;
+                const badge = document.createElement('i');
+                badge.className = 'fa-solid ' + style.icon + ' author-verification-badge author-verification-badge--' + type;
+                badge.setAttribute('role', 'img');
+                badge.setAttribute('aria-label', style.label);
+                badge.title = style.label;
+                element.append(badge);
+              });
             });
           })
           .catch((error) => console.error('Could not load author verification badges:', error));

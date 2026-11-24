@@ -37,10 +37,15 @@ export async function getVerifiedDids(dids: string[]): Promise<Set<string>> {
   return verified;
 }
 
-type BadgeRecord = { value?: { subject?: unknown; type?: unknown } };
+type BadgeRecord = { value?: { subject?: unknown; type?: unknown; types?: unknown } };
 
-async function loadBadgeMap(pdsUrl: string, ownerDid: string): Promise<Record<string, string>> {
-  const badges: Record<string, string> = {};
+function recordBadgeTypes(value: BadgeRecord['value']): string[] {
+  const raw = Array.isArray(value?.types) ? value.types : [value?.type];
+  return [...new Set(raw.filter((type): type is string => typeof type === 'string' && badgeTypes.has(type)))];
+}
+
+async function loadBadgeMap(pdsUrl: string, ownerDid: string): Promise<Record<string, string[]>> {
+  const badges: Record<string, Set<string>> = {};
   let cursor: string | undefined;
   for (let page = 0; page < 10; page += 1) {
     const url = new URL(`${pdsUrl}/xrpc/com.atproto.repo.listRecords`);
@@ -53,20 +58,20 @@ async function loadBadgeMap(pdsUrl: string, ownerDid: string): Promise<Record<st
     const payload = await response.json() as { records?: BadgeRecord[]; cursor?: string };
     for (const record of payload.records || []) {
       const subject = record.value?.subject;
-      const type = record.value?.type;
-      if (typeof subject === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(subject)
-        && typeof type === 'string' && badgeTypes.has(type)) {
-        badges[subject] = type;
+      const types = recordBadgeTypes(record.value);
+      if (typeof subject === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(subject) && types.length) {
+        badges[subject] = badges[subject] || new Set();
+        types.forEach((type) => badges[subject].add(type));
       }
     }
     if (!payload.cursor) break;
     cursor = payload.cursor;
   }
-  return badges;
+  return Object.fromEntries(Object.entries(badges).map(([did, types]) => [did, [...types]]));
 }
 
 /** cc.coffeencode.verification badges granted by the publication owner. */
-export async function getVerificationBadges(pdsUrl: string, ownerDid: string): Promise<Map<string, string>> {
+export async function getVerificationBadges(pdsUrl: string, ownerDid: string): Promise<Map<string, string[]>> {
   const map = await getEdgeCachedValue('verifications', `${pdsUrl}\n${ownerDid}`, 300, () =>
     loadBadgeMap(pdsUrl, ownerDid));
   return new Map(Object.entries(map));

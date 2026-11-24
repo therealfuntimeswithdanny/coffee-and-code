@@ -21,10 +21,10 @@ verifications.get('/', async (c) => {
       getVerifiedDids(dids),
       getVerificationBadges(badgePds, badgeDid),
     ]);
-    const badges: Record<string, string> = {};
+    const badges: Record<string, string[]> = {};
     dids.forEach((did) => {
-      const type = badgeMap.get(did);
-      if (type) badges[did] = type;
+      const types = badgeMap.get(did);
+      if (types?.length) badges[did] = types;
     });
     return c.json({ verifiedDids: [...verifiedDids], badges }, 200, {
       'Cache-Control': 'public, max-age=300',

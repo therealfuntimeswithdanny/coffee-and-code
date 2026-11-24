@@ -8,17 +8,26 @@
       "description": "A badge Coffee & Code grants to an account. Created by the publication owner; the record key is conventionally the subject's DID.",
       "record": {
         "type": "object",
-        "required": ["subject", "type", "createdAt"],
+        "required": ["subject", "createdAt"],
         "properties": {
           "subject": {
             "type": "string",
             "format": "did",
             "description": "The account this badge applies to."
           },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "knownValues": ["verified", "author", "moderator", "developer"]
+            },
+            "maxLength": 4,
+            "description": "All badges to show for this account."
+          },
           "type": {
             "type": "string",
             "knownValues": ["verified", "author", "moderator", "developer"],
-            "description": "verified — real-human check; author — publication author; moderator — community moderator; developer — Coffee & Code developer."
+            "description": "Legacy single badge — prefer types. verified — real-human check; author — publication author; moderator — community moderator; developer — Coffee & Code developer."
           },
           "createdAt": {
             "type": "string",
