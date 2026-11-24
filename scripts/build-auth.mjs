@@ -3,9 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const metadataPath = new URL('../media/oauth-client-metadata.json', import.meta.url);
+const createMetadataPath = new URL('../media/oauth-client-metadata-create.json', import.meta.url);
 const permissionSetPath = new URL('../lexicons/cc/coffeencode/fullPermissions.json', import.meta.url);
 const forumModeratorPermissionSetPath = new URL('../lexicons/cc/coffeencode/forum/authModerator.json', import.meta.url);
 const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+const createMetadata = JSON.parse(await readFile(createMetadataPath, 'utf8'));
 const permissionSet = JSON.parse(await readFile(permissionSetPath, 'utf8'));
 const forumModeratorPermissionSet = JSON.parse(await readFile(forumModeratorPermissionSetPath, 'utf8'));
 const expectedClientId = 'https://coffeencode.cc/oauth-client-metadata.json';
@@ -144,6 +146,29 @@ for (const [collection, actions] of expectedRepoActions) {
 assert(metadata.token_endpoint_auth_method === 'none', 'browser client must be public');
 assert(metadata.application_type === 'native', 'application_type must be native for the shared app and website client');
 assert(metadata.dpop_bound_access_tokens === true, 'DPoP must be enabled');
+
+// The publication-creator client (unlinked /account/author/create page) is a
+// separate, narrow grant: only site.standard.publication records and an icon.
+assert(createMetadata.client_id === 'https://coffeencode.cc/oauth-client-metadata-create.json',
+  'create client_id must match the deployed metadata URL');
+assertHttpsUrl(createMetadata.client_id, 'create client_id');
+assert(createMetadata.client_uri === 'https://coffeencode.cc', 'create client_uri must be the site origin');
+assert(Array.isArray(createMetadata.redirect_uris)
+  && createMetadata.redirect_uris.length === 1
+  && createMetadata.redirect_uris[0] === 'https://coffeencode.cc/account/author/create',
+'create client must redirect only to the create page');
+const createScopes = new Set((createMetadata.scope?.split(' ') ?? []).map(normalizeScope));
+const expectedCreateScopes = new Set([
+  'atproto',
+  normalizeScope('repo:site.standard.publication?action=create&action=update&action=delete'),
+  normalizeScope('repo:cc.coffeencode.publications?action=create&action=update'),
+  'blob:image/*',
+].map(normalizeScope));
+assert(createScopes.size === expectedCreateScopes.size
+  && [...expectedCreateScopes].every((scope) => createScopes.has(scope)),
+'create client scope must stay limited to publications and image blobs');
+assert(createMetadata.token_endpoint_auth_method === 'none', 'create client must be public');
+assert(createMetadata.dpop_bound_access_tokens === true, 'DPoP must be enabled for the create client');
 
 await build({
   entryPoints: [fileURLToPath(new URL('../src/client/atproto-auth.ts', import.meta.url))],

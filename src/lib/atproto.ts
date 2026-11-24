@@ -160,6 +160,20 @@ function canonicalDocumentPath(did: string, authorHandle: string | undefined, rk
   return `/author/${encodeURIComponent(handle)}/${encodeURIComponent(rkey)}`;
 }
 
+/** All author DIDs on a document: `author` plus any `authors` array entries (strings or {did}). */
+function documentAuthorDids(value: any): string[] {
+  const dids: string[] = [];
+  const push = (entry: unknown) => {
+    const did = typeof entry === 'string' ? entry : (entry as { did?: unknown } | undefined)?.did;
+    if (typeof did === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did) && !dids.includes(did)) {
+      dids.push(did);
+    }
+  };
+  push(value?.author);
+  if (Array.isArray(value?.authors)) value.authors.forEach(push);
+  return dids;
+}
+
 function documentTags(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -312,7 +326,13 @@ export async function resolveAtprotoIdentifier(identifier: string): Promise<stri
     : undefined;
 }
 
-async function fetchRecord(pdsUrl: string, repo: string, collection: string, rkey: string): Promise<any | undefined> {
+/** A document whose publishedAt is in the future is scheduled: hidden from listings but live at its URL. */
+export function isScheduledDocument(publishedAt?: string): boolean {
+  const time = Date.parse(publishedAt || '');
+  return Number.isFinite(time) && time > Date.now();
+}
+
+export async function fetchRecord(pdsUrl: string, repo: string, collection: string, rkey: string): Promise<any | undefined> {
   try {
     const url = new URL(`${pdsUrl}/xrpc/com.atproto.repo.getRecord`);
     url.searchParams.set('repo', repo);
@@ -328,12 +348,45 @@ async function fetchRecord(pdsUrl: string, repo: string, collection: string, rke
 }
 
 async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[]; pinnedUris: string[] }> {
-  const publicationsRecord = await fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self');
+  const [publicationsRecord, ownerPublicationUris] = await Promise.all([
+    fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self'),
+    // Standard.site discovery: every site.standard.publication record in the
+    // owner's repository is a publication of this site — no separate config
+    // needed. Foreign publications still register via cc.coffeencode.publications.
+    (async () => {
+      const uris: string[] = [];
+      let cursor: string | undefined;
+      const seenCursors = new Set<string>();
+      try {
+        do {
+          const response = await fetchWithRetry(recordsUrl(pdsUrl, ownerDid, 'site.standard.publication', 100, cursor).toString());
+          if (!response.ok) break;
+          const data: any = await response.json();
+          for (const record of data.records || []) {
+            if (typeof record?.uri === 'string'
+              && /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.publication\/[^/]+$/.test(record.uri)) {
+              uris.push(record.uri);
+            }
+          }
+          cursor = typeof data.cursor === 'string' && data.cursor && !seenCursors.has(data.cursor) ? data.cursor : undefined;
+          if (cursor) seenCursors.add(cursor);
+        } while (cursor);
+      } catch (error) {
+        console.error('Error listing site.standard.publication records:', error);
+      }
+      return uris;
+    })(),
+  ]);
+
+  const publicationUris = (Array.isArray(publicationsRecord?.value?.publications)
+    ? publicationsRecord.value.publications.filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
+    : []) as string[];
+  for (const uri of ownerPublicationUris) {
+    if (!publicationUris.includes(uri)) publicationUris.push(uri);
+  }
 
   return {
-    publicationUris: Array.isArray(publicationsRecord?.value?.publications)
-      ? publicationsRecord.value.publications.filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
-      : [],
+    publicationUris,
     pinnedUris: Array.isArray(publicationsRecord?.value?.pinned)
       ? publicationsRecord.value.pinned.filter((uri: unknown): uri is string => typeof uri === 'string' && /^at:\/\/[^/]+\/site\.standard\.document\/[^/]+$/.test(uri))
       : [],
@@ -406,13 +459,15 @@ async function fetchPublicationDocumentsUncached(publicationUri: string, fallbac
       const rkey = rec.uri ? String(rec.uri).split('/').pop() || '' : '';
       if (!rkey) continue;
       const { content, format, mimeType } = extractDocumentContent(rec.value);
+      const publishedAt = rec.value.publishedAt || rec.value.createdAt || new Date().toISOString();
       documents.push({
         uri: rec.uri || '',
         cid: rec.cid || '',
         rkey,
         title: typeof rec.value.title === 'string' && rec.value.title ? rec.value.title : 'Untitled',
         content,
-        publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+        publishedAt,
+        scheduled: isScheduledDocument(publishedAt),
         tags: documentTags(rec.value.tags),
         path: `/docs/${encodeURIComponent(rkey)}`,
         description: rec.value.description || rec.value.summary || '',
@@ -429,17 +484,24 @@ async function fetchPublicationDocumentsUncached(publicationUri: string, fallbac
     if (!cursor) break;
   }
   documents.sort((a, b) => a.title.localeCompare(b.title));
-  return documents;
+  return documents.filter((document) => !document.scheduled);
 }
 
 export async function fetchArticles(
   fallbackPds: string,
   fallbackDid: string,
   pagination?: ArticlePagination,
+  opts?: { includeScheduled?: boolean },
 ): Promise<StandardDocument[]> {
-  if (pagination) return fetchArticlesUncached(fallbackPds, fallbackDid, pagination);
-  return getEdgeCachedValue('articles', `${fallbackPds}\n${fallbackDid}`, 120, () =>
-    fetchArticlesUncached(fallbackPds, fallbackDid));
+  const articles = pagination
+    ? await fetchArticlesUncached(fallbackPds, fallbackDid, pagination)
+    : await getEdgeCachedValue('articles', `${fallbackPds}\n${fallbackDid}`, 120, () =>
+      fetchArticlesUncached(fallbackPds, fallbackDid));
+  // Scheduled stories stay out of every listing until their publishedAt
+  // passes; the article route opts in so a scheduled story's own URL works as
+  // a preview link.
+  if (opts?.includeScheduled) return articles;
+  return articles.filter((article) => !article.scheduled);
 }
 
 async function fetchArticlesUncached(
@@ -496,13 +558,15 @@ async function fetchArticlesUncached(
                 ? rec.value.author.did
                 : did;
             articleAuthors.set(rec.uri || '', articleAuthorDid);
+            const publishedAt = rec.value.publishedAt || rec.value.createdAt || new Date().toISOString();
             articles.push({
               uri: rec.uri || '',
               cid: rec.cid || '',
               rkey: rkey || '',
               title: rec.value.title || 'Untitled Post',
               content: content,
-              publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+              publishedAt,
+              scheduled: isScheduledDocument(publishedAt),
               tags: documentTags(rec.value.tags),
               pinnedOrder: pinnedOrderByUri.get(rec.uri || ''),
               path: canonicalDocumentPath(articleAuthorDid, undefined, rkey || '', configuredHandles),
@@ -514,6 +578,7 @@ async function fetchArticlesUncached(
               repoDid: did,
               pdsUrl,
               publicationUri,
+              coAuthorDids: documentAuthorDids(rec.value).filter((d) => d !== articleAuthorDid),
             });
           }
         }
@@ -580,6 +645,7 @@ async function fetchArticlesUncached(
           const { content, format, mimeType } = extractDocumentContent(rec.value);
           const authorDid = ownerProfile?.did || did;
           const domainHandle = configuredHandles.get(authorDid.toLowerCase());
+          const publishedAt = rec.value.publishedAt || rec.value.createdAt || new Date().toISOString();
 
           articles.push({
             uri: rec.uri || '',
@@ -587,7 +653,8 @@ async function fetchArticlesUncached(
             rkey: rkey || '',
             title: rec.value.title || 'Untitled Post',
             content: content,
-            publishedAt: rec.value.publishedAt || rec.value.createdAt || new Date().toISOString(),
+            publishedAt,
+            scheduled: isScheduledDocument(publishedAt),
             tags: documentTags(rec.value.tags),
             path: canonicalDocumentPath(authorDid, ownerProfile?.handle, rkey || '', configuredHandles),
             alternatePaths: domainHandle
@@ -602,6 +669,7 @@ async function fetchArticlesUncached(
             pdsUrl,
             publicationUri: typeof rec.value.site === 'string' ? rec.value.site : undefined,
             author: ownerProfile,
+            coAuthorDids: documentAuthorDids(rec.value).filter((d) => d !== authorDid),
           });
         }
       }
@@ -739,15 +807,17 @@ async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallb
   ]);
   const path = canonicalDocumentPath(authorDid, author?.handle, rkey, configuredHandles);
   const domainHandle = configuredHandles.get(authorDid.toLowerCase());
+  const publishedAt = typeof record.value.publishedAt === 'string'
+    ? record.value.publishedAt
+    : typeof record.value.createdAt === 'string' ? record.value.createdAt : new Date().toISOString();
   return {
     uri,
     cid: typeof record.cid === 'string' ? record.cid : '',
     rkey,
     title: typeof record.value.title === 'string' && record.value.title ? record.value.title : 'Untitled Post',
     content,
-    publishedAt: typeof record.value.publishedAt === 'string'
-      ? record.value.publishedAt
-      : typeof record.value.createdAt === 'string' ? record.value.createdAt : new Date().toISOString(),
+    publishedAt,
+    scheduled: isScheduledDocument(publishedAt),
     tags: documentTags(record.value.tags),
     pinnedOrder: configuredLists.pinnedUris.indexOf(uri) >= 0 ? configuredLists.pinnedUris.indexOf(uri) : undefined,
     path,
@@ -766,6 +836,7 @@ async function fetchArticleByUriUncached(uri: string, fallbackPds: string, fallb
     publicationUri,
     author,
     metadata,
+    coAuthorDids: documentAuthorDids(record.value).filter((d) => d !== authorDid),
   };
 }
 

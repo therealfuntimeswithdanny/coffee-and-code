@@ -5,6 +5,7 @@ import {
   type OAuthSession,
 } from '@atproto/oauth-client-browser';
 import rawClientMetadata from '../../media/oauth-client-metadata.json';
+import rawCreateClientMetadata from '../../media/oauth-client-metadata-create.json';
 import {
   USER_PROFILE_COLLECTION,
   USER_PROFILE_RKEY,
@@ -502,6 +503,9 @@ const handleLabel = document.querySelector<HTMLElement>('[data-handle-label]');
 const handleHint = document.querySelector<HTMLElement>('[data-handle-hint]');
 const appPasswordForm = document.querySelector<HTMLFormElement>('[data-app-password-form]');
 const authOptions = document.querySelector<HTMLElement>('[data-auth-options]');
+const authWaiting = document.querySelector<HTMLElement>('[data-auth-waiting]');
+const authWaitingDetail = document.querySelector<HTMLElement>('[data-auth-waiting-detail]');
+const authWaitingCancel = document.querySelector<HTMLButtonElement>('[data-auth-waiting-cancel]');
 const welcomeBlock = document.querySelector<HTMLElement>('[data-auth-welcome]');
 const welcomeAvatar = document.querySelector<HTMLImageElement>('[data-welcome-avatar]');
 const welcomePlaceholder = document.querySelector<HTMLElement>('[data-welcome-placeholder]');
@@ -720,6 +724,10 @@ function renderAccount() {
   }
 
   renderAccountSwitchers();
+
+  // The publication creator carries its own OAuth session — run it whether or
+  // not the main site session is signed in.
+  void loadCreatePublication();
 
   if (accountPage) {
     if (signedOutAccount) signedOutAccount.hidden = Boolean(session);
@@ -3916,16 +3924,57 @@ providerButtons.forEach((button) => {
 // "Add account" links land on /auth?state=add — retitle the card and reveal
 // the free-form handle form (providers still work for adding accounts too).
 const authPageParams = new URLSearchParams(window.location.search);
+if (window.location.pathname === '/auth' && authPageParams.get('state') === 'waiting') {
+  // Landing back on ?state=waiting (e.g. browser Back) shouldn't leave the
+  // card stuck on the waiting screen — nothing is actually in flight.
+  setAuthUrlState(undefined);
+}
 if (window.location.pathname === '/auth' && (authPageParams.get('state') === 'add' || authPageParams.has('add'))) {
   const heading = authOptions?.querySelector<HTMLElement>('.auth-card__heading');
   if (heading) heading.textContent = 'Add an account';
   providerButtons.find((b) => !b.dataset.provider)?.click();
 }
 
+// Resolving the PDS and building the authorization URL can take a few seconds
+// before the redirect actually fires — swap the card for a waiting state and
+// mark the URL so the pause reads as intentional.
+function setAuthUrlState(state: string | undefined) {
+  const url = new URL(window.location.href);
+  if (state) url.searchParams.set('state', state);
+  else url.searchParams.delete('state');
+  window.history.replaceState(null, '', url);
+}
+
+let authWaitingPreviousUrl: string | undefined;
+function showAuthWaiting(detail: string) {
+  if (!authWaiting) return;
+  if (authWaitingDetail) authWaitingDetail.textContent = detail;
+  authWaiting.hidden = false;
+  authOptions?.classList.add('auth-card--waiting');
+  if (authWaitingPreviousUrl === undefined) {
+    authWaitingPreviousUrl = window.location.href;
+    setAuthUrlState('waiting');
+  }
+}
+
+function hideAuthWaiting() {
+  if (!authWaiting) return;
+  authWaiting.hidden = true;
+  authOptions?.classList.remove('auth-card--waiting');
+  if (authWaitingPreviousUrl !== undefined) {
+    window.history.replaceState(null, '', authWaitingPreviousUrl);
+    authWaitingPreviousUrl = undefined;
+  }
+}
+
+authWaitingCancel?.addEventListener('click', hideAuthWaiting);
+
 async function startOAuthSignIn(target: string, submit?: HTMLElement | null, isService = false) {
   if (submit) {
     submit.setAttribute('aria-busy', 'true');
   }
+  const targetLabel = target.replace(/^https?:\/\//, '').replace(/^@/, '');
+  showAuthWaiting(`Contacting ${targetLabel} — you'll finish signing in on your provider's site.`);
   try {
     // A bare service URL has no handle to check author status against.
     const scope = isService ? memberScope : await requestedScope(target);
@@ -3934,6 +3983,7 @@ async function startOAuthSignIn(target: string, submit?: HTMLElement | null, isS
     const returnPath = safeReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
     await activeClient.signInRedirect(target, { state: returnPath, scope });
   } catch (error) {
+    hideAuthWaiting();
     showAuthError(errorMessage(error));
     if (submit) submit.removeAttribute('aria-busy');
   }
@@ -5583,7 +5633,10 @@ async function loadDraftListPage(did: string) {
         : typeof value.createdAt === 'string' ? value.createdAt : '';
       const publishedUri = typeof value.publishedUri === 'string' ? value.publishedUri : '';
       const postUri = typeof value.postUri === 'string' ? value.postUri : '';
-      return [{ uri: record.uri, rkey, title, updatedAt, published: Boolean(publishedUri || postUri), publishedUri }];
+      const publishedAt = typeof value.publishedAt === 'string' && Number.isFinite(Date.parse(value.publishedAt))
+        ? value.publishedAt
+        : '';
+      return [{ uri: record.uri, rkey, title, updatedAt, published: Boolean(publishedUri || postUri), publishedUri, publishedAt }];
     }).sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
     const draftedUris = new Set(drafts.map((draft) => draft.publishedUri).filter(Boolean));
     const posts = (postsPayload.records || []).flatMap((record) => {
@@ -5597,12 +5650,13 @@ async function loadDraftListPage(did: string) {
       return [{ uri: record.uri, title, publishedAt, value }];
     }).sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0));
 
-    const publishedBadge = () => {
+    const publishedBadge = (label = 'Published') => {
       const badge = document.createElement('span');
       badge.className = 'draft-list__badge';
-      badge.textContent = 'Published';
+      badge.textContent = label;
       return badge;
     };
+    const isFuture = (iso: string) => Date.parse(iso) > Date.now();
 
     list.replaceChildren();
     for (const draft of drafts) {
@@ -5618,7 +5672,7 @@ async function loadDraftListPage(did: string) {
       meta.textContent = draft.updatedAt
         ? `Updated ${new Date(draft.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
         : 'Draft';
-      if (draft.published) meta.prepend(publishedBadge(), ' ');
+      if (draft.published) meta.prepend(publishedBadge(draft.publishedAt && isFuture(draft.publishedAt) ? 'Scheduled' : 'Published'), ' ');
       link.append(title, meta);
       const remove = document.createElement('button');
       remove.type = 'button';
@@ -5650,10 +5704,11 @@ async function loadDraftListPage(did: string) {
       title.textContent = post.title;
       const meta = document.createElement('span');
       meta.className = 'draft-list__meta';
+      const postScheduled = post.publishedAt && isFuture(post.publishedAt);
       meta.textContent = post.publishedAt
-        ? `Published ${new Date(post.publishedAt).toLocaleString(undefined, { dateStyle: 'medium' })}`
+        ? `${postScheduled ? 'Scheduled for' : 'Published'} ${new Date(post.publishedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: postScheduled ? 'short' : undefined })}`
         : 'Published post';
-      meta.prepend(publishedBadge(), ' ');
+      meta.prepend(publishedBadge(postScheduled ? 'Scheduled' : 'Published'), ' ');
       link.append(title, meta);
       const edit = document.createElement('button');
       edit.type = 'button';
@@ -5724,6 +5779,20 @@ async function loadDraftEditor(did: string) {
   const deleteButton = page.querySelector<HTMLButtonElement>('[data-draft-delete]');
   const publishButton = page.querySelector<HTMLButtonElement>('[data-draft-publish]');
   const publishedLink = page.querySelector<HTMLAnchorElement>('[data-draft-published-link]');
+  const previewLinkButton = page.querySelector<HTMLButtonElement>('[data-draft-preview-link]');
+  previewLinkButton?.addEventListener('click', async () => {
+    // Draft records are public on the author's repo; this link renders the
+    // unpublished draft on the site (noindexed) for anyone you share it with.
+    const url = `${window.location.origin}/preview/draft/${encodeURIComponent(did)}/${encodeURIComponent(rkey)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      const label = previewLinkButton.innerHTML;
+      previewLinkButton.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Copied';
+      window.setTimeout(() => { previewLinkButton.innerHTML = label; }, 2000);
+    } catch {
+      window.prompt('Copy the draft preview link', url);
+    }
+  });
   const metaForm = page.querySelector<HTMLElement>('.draft-editor__meta');
   const settingsButton = page.querySelector<HTMLButtonElement>('[data-draft-settings]');
   const settingsPanel = page.querySelector<HTMLDetailsElement>('[data-draft-settings-panel]');
@@ -5744,6 +5813,32 @@ async function loadDraftEditor(did: string) {
   const coverRemoveInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="coverRemove"]')!;
   const sourcesInput = metaForm.querySelector<HTMLTextAreaElement>('[data-draft-field="sources"]')!;
   const backlinkInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="backlink"]')!;
+  const coauthorsInput = metaForm.querySelector<HTMLInputElement>('[data-draft-field="coauthors"]');
+  const coauthorTokens = () => (coauthorsInput?.value || '')
+    .split(',')
+    .map((token) => token.trim().replace(/^@/, ''))
+    .filter(Boolean)
+    .slice(0, 8);
+  // Handles resolve through the public bsky API; DIDs pass through.
+  const resolveCoauthorDids = async () => {
+    const dids: string[] = [];
+    for (const token of coauthorTokens()) {
+      if (/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(token)) {
+        if (token !== did && !dids.includes(token)) dids.push(token);
+        continue;
+      }
+      if (!/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(token)) {
+        throw new Error(`“${token}” is not a handle or a DID.`);
+      }
+      const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(token)}`);
+      const data = await res.json().catch(() => ({})) as { did?: unknown };
+      if (!res.ok || typeof data.did !== 'string') {
+        throw new Error(`Could not resolve the co-author “${token}”.`);
+      }
+      if (data.did !== did && !dids.includes(data.did)) dids.push(data.did);
+    }
+    return dids;
+  };
 
   const state = {
     blocks: [] as DraftBlock[],
@@ -5784,6 +5879,7 @@ async function loadDraftEditor(did: string) {
           ...(state.publishedUri ? { publishedUri: state.publishedUri } : {}),
           ...(state.postUri ? { postUri: state.postUri } : {}),
           ...(state.publishedAt ? { publishedAt: state.publishedAt } : {}),
+          ...(coauthorTokens().length ? { coauthors: coauthorTokens() } : {}),
           document: draftDocument,
         },
       }));
@@ -7239,7 +7335,8 @@ async function loadDraftEditor(did: string) {
     }
   });
 
-  [titleInput, descriptionInput, tagsInput, publicationInput, sourcesInput, backlinkInput].forEach((input) => input.addEventListener('input', changed));
+  [titleInput, descriptionInput, tagsInput, publicationInput, sourcesInput, backlinkInput, ...(coauthorsInput ? [coauthorsInput] : [])]
+    .forEach((input) => input.addEventListener('input', changed));
   coverInput.addEventListener('change', async () => {
     const picked = coverInput.files?.[0];
     if (!picked) return;
@@ -7513,6 +7610,7 @@ async function loadDraftEditor(did: string) {
           ...(state.publishedUri ? { publishedUri: state.publishedUri } : {}),
           ...(state.postUri ? { postUri: state.postUri } : {}),
           ...(state.publishedAt ? { publishedAt: state.publishedAt } : {}),
+          ...(coauthorTokens().length ? { coauthors: coauthorTokens() } : {}),
           document: draftDocument,
         },
       });
@@ -7522,6 +7620,8 @@ async function loadDraftEditor(did: string) {
         try { await syncPostMetadata(); } catch { /* Metadata sync must not fail the draft sync. */ }
       }
       state.exists = true;
+      // A synced draft record is previewable by link.
+      if (previewLinkButton) previewLinkButton.hidden = false;
       state.savedVersion = versionAtStart;
       // If edits arrived mid-sync the backup holds them; only clear when clean.
       if (state.version === state.savedVersion) clearBackup();
@@ -7556,6 +7656,26 @@ async function loadDraftEditor(did: string) {
   const publishDialog = page.querySelector<HTMLDialogElement>('[data-draft-publish-dialog]');
   const publishPreview = publishDialog?.querySelector<HTMLElement>('[data-draft-publish-preview]');
   const publishConfirm = publishDialog?.querySelector<HTMLButtonElement>('[data-draft-publish-confirm]');
+  const scheduleInput = publishDialog?.querySelector<HTMLInputElement>('[data-draft-schedule]');
+  const updateNoteRow = publishDialog?.querySelector<HTMLElement>('[data-draft-update-note-row]');
+  const updateNoteInput = publishDialog?.querySelector<HTMLInputElement>('[data-draft-update-note]');
+  // datetime-local wants "YYYY-MM-DDTHH:mm" in local time.
+  const toLocalInputValue = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+  const scheduledFromInput = () => {
+    const value = scheduleInput?.value ? new Date(scheduleInput.value) : undefined;
+    return value && Number.isFinite(value.getTime()) && value.getTime() > Date.now() + 30000 ? value : undefined;
+  };
+  const refreshPublishConfirmLabel = (updating: boolean) => {
+    if (!publishConfirm) return;
+    publishConfirm.innerHTML = scheduledFromInput()
+      ? '<i class="fa-regular fa-clock" aria-hidden="true"></i> Schedule'
+      : updating
+        ? '<i class="fa-solid fa-rotate" aria-hidden="true"></i> Update'
+        : '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish';
+  };
   const publishDraft = async () => {
     state.syncing = true;
     publishButton.disabled = true;
@@ -7569,13 +7689,24 @@ async function loadDraftEditor(did: string) {
       const site = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.publication\/[a-zA-Z0-9._~:-]+$/.test(publication)
         ? publication
         : undefined;
+      // A future "Publish at" schedules the story: the record is written now
+      // with a future publishedAt, the site keeps it out of listings until the
+      // time passes, and its URL works as a preview link immediately.
+      const scheduleValue = scheduleInput?.value ? new Date(scheduleInput.value) : undefined;
+      const scheduledFor = scheduleValue && Number.isFinite(scheduleValue.getTime())
+        && scheduleValue.getTime() > Date.now() + 30000
+        ? scheduleValue.toISOString()
+        : undefined;
       // Republishing updates the records in place — the document URIs, and so
       // the story's canonical path, stay the same.
       const existingDocRkey = state.publishedUri
         ?.match(/^at:\/\/[^/]+\/pub\.leaflet\.document\/([a-zA-Z0-9._~:-]+)$/)?.[1];
       const existingPostRkey = state.postUri
         ?.match(/^at:\/\/[^/]+\/site\.standard\.document\/([a-zA-Z0-9._~:-]+)$/)?.[1];
-      const publishedAt = state.publishedAt || now;
+      // Keep the original publishedAt for stories already live; a cleared
+      // schedule field on a scheduled story means "publish now".
+      const publishedAt = scheduledFor
+        || (state.publishedAt && Date.parse(state.publishedAt) <= Date.now() ? state.publishedAt : now);
 
       let postRef: { uri: string; cid: string } | undefined;
       if (site) {
@@ -7608,6 +7739,32 @@ async function loadDraftEditor(did: string) {
           author: did,
           content: { $type: 'pub.leaflet.content', pages: draftDocument.pages },
         };
+        const coAuthorDids = await resolveCoauthorDids();
+        if (coAuthorDids.length) standardRecord.authors = [did, ...coAuthorDids];
+        if (existingPostRkey) {
+          // Republishes stamp updatedAt; an update note appends to the update
+          // history readers see under the headline.
+          standardRecord.updatedAt = now;
+          const note = updateNoteInput?.value.trim() || '';
+          let priorUpdates: Array<{ at: string; note?: string }> = [];
+          try {
+            const existingResponse = await repoRequest(`com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'site.standard.document', rkey: existingPostRkey })}`);
+            if (existingResponse.ok) {
+              const existingValue = (await existingResponse.json() as { value?: { updates?: unknown } }).value;
+              if (Array.isArray(existingValue?.updates)) {
+                priorUpdates = existingValue.updates.filter(
+                  (entry): entry is { at: string; note?: string } => Boolean(entry) && typeof (entry as { at?: unknown }).at === 'string',
+                );
+              }
+            }
+          } catch { /* Update history is best-effort — the record still writes. */ }
+          if (note) {
+            standardRecord.updates = [...priorUpdates, { at: now, note }].slice(-20);
+            standardRecord.updateNote = note;
+          } else if (priorUpdates.length) {
+            standardRecord.updates = priorUpdates;
+          }
+        }
         const textContent = draftPlainText(draftDocument.pages);
         const description = typeof draftDocument.description === 'string' && draftDocument.description.trim()
           ? draftDocument.description.trim()
@@ -7668,11 +7825,14 @@ async function loadDraftEditor(did: string) {
       }
       state.syncing = false;
       await sync();
-      statusEl.textContent = existingDocRkey
-        ? 'Updated the published post — same link, latest content.'
-        : state.postUri
-          ? 'Published to Coffee & Code. The story link is live next to the Save button.'
-          : 'Published as a Leaflet document. Add a site.standard.publication URI in metadata to also publish it to Coffee & Code.';
+      if (updateNoteInput) updateNoteInput.value = '';
+      statusEl.textContent = scheduledFor
+        ? `Scheduled for ${scheduleValue!.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} — the story link works as a preview now and the story lists itself when the time comes.`
+        : existingDocRkey
+          ? 'Updated the published post — same link, latest content.'
+          : state.postUri
+            ? 'Published to Coffee & Code. The story link is live next to the Save button.'
+            : 'Published as a Leaflet document. Add a site.standard.publication URI in metadata to also publish it to Coffee & Code.';
     } catch (error) {
       state.syncing = false;
       statusEl.textContent = error instanceof Error ? error.message : 'The draft could not be published.';
@@ -7699,9 +7859,17 @@ async function loadDraftEditor(did: string) {
         ? 'This will update the existing record on your account — the link stays the same and the Coffee & Code home page will show the latest version.'
         : 'Publishing this post will publish it as a record on your account, and it will be shown on the Coffee & Code home page.';
     }
-    publishConfirm.innerHTML = updating
-      ? '<i class="fa-solid fa-rotate" aria-hidden="true"></i> Update'
-      : '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish';
+    if (scheduleInput) {
+      scheduleInput.min = toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000));
+      // Prefill with the existing schedule when the story is still scheduled.
+      scheduleInput.value = state.publishedAt && Date.parse(state.publishedAt) > Date.now()
+        ? toLocalInputValue(new Date(state.publishedAt))
+        : '';
+      scheduleInput.oninput = () => refreshPublishConfirmLabel(updating);
+    }
+    refreshPublishConfirmLabel(updating);
+    // Update notes only apply to stories already on the site.
+    if (updateNoteRow) updateNoteRow.hidden = !(updating && state.postUri);
     publishPreview.replaceChildren();
     if (state.coverObjectUrl) {
       const image = document.createElement('img');
@@ -7793,6 +7961,11 @@ async function loadDraftEditor(did: string) {
         sourcesInput.value = value.sources.filter((source): source is string => typeof source === 'string').join('\n');
       }
       if (typeof value.backlink === 'string') backlinkInput.value = value.backlink;
+      if (coauthorsInput) {
+        coauthorsInput.value = Array.isArray(value.coauthors)
+          ? value.coauthors.filter((token): token is string => typeof token === 'string').join(', ')
+          : '';
+      }
       if (state.postUri) {
         // Older drafts may predate stored sources — hydrate from the published
         // story's metadata record so the fields match what readers see.
@@ -7869,10 +8042,13 @@ async function loadDraftEditor(did: string) {
       const remoteValue = payload.value;
       if (session?.did !== did) return;
       state.exists = true;
+      if (previewLinkButton) previewLinkButton.hidden = false;
       state.createdAt = typeof remoteValue?.createdAt === 'string' ? remoteValue.createdAt : undefined;
+      if (typeof remoteValue?.publishedAt === 'string') {
+        state.publishedAt = remoteValue.publishedAt;
+      }
       if (typeof remoteValue?.publishedUri === 'string' && /^at:\/\//.test(remoteValue.publishedUri)) {
         state.publishedUri = remoteValue.publishedUri;
-        state.publishedAt = typeof remoteValue.publishedAt === 'string' ? remoteValue.publishedAt : undefined;
       }
       if (typeof remoteValue?.postUri === 'string' && /^at:\/\//.test(remoteValue.postUri)) {
         state.postUri = remoteValue.postUri;
@@ -7923,4 +8099,379 @@ async function loadDraftEditor(did: string) {
     ? 'Restored unsaved changes from this browser — syncing…'
     : state.exists ? 'Draft loaded.' : 'New draft — it will sync automatically.';
   renderPreview();
+}
+
+// ---------------------------------------------------------------------------
+// Publication creator — /account/author/create (unlinked page). Uses a
+// dedicated OAuth client whose only grant is site.standard.publication plus
+// image blobs, so the permission never lands in the main session's scope. Its
+// OAuth callback lands back on this same page.
+// ---------------------------------------------------------------------------
+
+const createClientScope = (rawCreateClientMetadata as { scope?: string }).scope
+  || 'atproto repo:site.standard.publication?action=create&action=update&action=delete blob:image/*';
+let publicationClient: BrowserOAuthClient | undefined;
+let publicationClientInit: Promise<Awaited<ReturnType<BrowserOAuthClient['init']>>> | undefined;
+
+function getPublicationClient() {
+  if (!publicationClient) {
+    publicationClient = new BrowserOAuthClient({
+      clientMetadata: rawCreateClientMetadata as OAuthClientMetadataInput,
+      handleResolver,
+    });
+  }
+  if (!publicationClientInit) publicationClientInit = publicationClient.init();
+  return { client: publicationClient, initialized: publicationClientInit };
+}
+
+function hexToRgb(value: string): { r: number; g: number; b: number } | undefined {
+  const match = /^#([0-9a-f]{6})$/i.exec(value.trim());
+  if (!match) return undefined;
+  const rgb = parseInt(match[1], 16);
+  return { r: (rgb >> 16) & 255, g: (rgb >> 8) & 255, b: rgb & 255 };
+}
+
+async function loadCreatePublication() {
+  const page = document.querySelector<HTMLElement>('[data-publication-create]');
+  if (!page || page.dataset.pubCreateLoaded) return;
+  page.dataset.pubCreateLoaded = '1';
+
+  const signinPanel = page.querySelector<HTMLElement>('[data-pub-signin]');
+  const identifierInput = page.querySelector<HTMLInputElement>('[data-pub-identifier]');
+  const signinButton = page.querySelector<HTMLButtonElement>('[data-pub-signin-button]');
+  const form = page.querySelector<HTMLFormElement>('[data-pub-form]');
+  const nameInput = page.querySelector<HTMLInputElement>('[data-pub-name]');
+  const descriptionInput = page.querySelector<HTMLTextAreaElement>('[data-pub-description]');
+  const iconInput = page.querySelector<HTMLInputElement>('[data-pub-icon]');
+  const widthInput = page.querySelector<HTMLInputElement>('[data-pub-width]');
+  const submitButton = page.querySelector<HTMLButtonElement>('[data-pub-submit]');
+  const switchButton = page.querySelector<HTMLButtonElement>('[data-pub-switch]');
+  const status = page.querySelector<HTMLElement>('[data-pub-status]');
+  const result = page.querySelector<HTMLElement>('[data-pub-result]');
+  const registeredSection = page.querySelector<HTMLElement>('[data-pub-registered]');
+  const registeredList = page.querySelector<HTMLElement>('[data-pub-registered-list]');
+  const adminPanel = page.querySelector<HTMLElement>('[data-pub-admin]');
+  const addUriInput = page.querySelector<HTMLInputElement>('[data-pub-add-uri]');
+  const addButton = page.querySelector<HTMLButtonElement>('[data-pub-add-button]');
+  if (!signinPanel || !form || !nameInput || !status || !result || !submitButton) return;
+
+  // Publications only appear on the site once the owner lists them in
+  // cc.coffeencode.publications on their repo. That record is public, so the
+  // list below renders for everyone; the add/remove controls need the owner's
+  // session in the create client.
+  const SITE_OWNER_DID = 'did:plc:l37td5yhxl2irrzrgvei4qay';
+  const SITE_OWNER_PDS = 'https://account.coffeencode.cc';
+  const PUBLICATIONS_COLLECTION = 'cc.coffeencode.publications';
+  const publicationUriPattern = /^at:\/\/did:[a-z0-9]+:[a-zA-Z0-9._:%-]+\/site\.standard\.publication\/[a-zA-Z0-9._~:-]+$/;
+
+  type RegisteredPublication = { uri: string; rkey: string; name?: string; owned: boolean };
+  const readRegistered = async (): Promise<RegisteredPublication[]> => {
+    const configQuery = new URLSearchParams({ repo: SITE_OWNER_DID, collection: PUBLICATIONS_COLLECTION, rkey: 'self' });
+    const ownQuery = new URLSearchParams({ repo: SITE_OWNER_DID, collection: 'site.standard.publication', limit: '100' });
+    const [configResponse, ownResponse] = await Promise.all([
+      fetch(`${SITE_OWNER_PDS}/xrpc/com.atproto.repo.getRecord?${configQuery}`),
+      fetch(`${SITE_OWNER_PDS}/xrpc/com.atproto.repo.listRecords?${ownQuery}`),
+    ]);
+    // Publications whose records live in the owner's repo are discovered by
+    // the site automatically — they're "standard site publications".
+    const owned: RegisteredPublication[] = [];
+    if (ownResponse.ok) {
+      const data = await ownResponse.json() as { records?: Array<{ uri?: unknown; value?: { name?: unknown } }> };
+      for (const record of data.records || []) {
+        if (typeof record?.uri === 'string' && publicationUriPattern.test(record.uri)) {
+          owned.push({
+            uri: record.uri,
+            rkey: record.uri.split('/').pop() || '',
+            name: typeof record.value?.name === 'string' && record.value.name ? record.value.name : undefined,
+            owned: true,
+          });
+        }
+      }
+    }
+    // Publications living in other repos register by URI in cc.coffeencode.publications.
+    const registered: RegisteredPublication[] = [];
+    if (configResponse.ok) {
+      const record = await configResponse.json() as { value?: { publications?: unknown } };
+      const raw = Array.isArray(record.value?.publications) ? record.value.publications : [];
+      const uris = raw
+        .filter((uri): uri is string => typeof uri === 'string' && publicationUriPattern.test(uri))
+        .filter((uri) => !owned.some((entry) => entry.uri === uri));
+      for (const uri of uris) {
+        const parts = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/)!;
+        let name: string | undefined;
+        try {
+          const { pds } = await resolveSignInPds(parts[1]);
+          const pubQuery = new URLSearchParams({ repo: parts[1], collection: 'site.standard.publication', rkey: parts[2] });
+          const pubResponse = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${pubQuery}`);
+          if (pubResponse.ok) {
+            const pub = await pubResponse.json() as { value?: { name?: unknown } };
+            if (typeof pub.value?.name === 'string' && pub.value.name) name = pub.value.name;
+          }
+        } catch { /* Name is decorative — the URI still lists. */ }
+        registered.push({ uri, rkey: parts[2], name, owned: false });
+      }
+    }
+    return [...owned, ...registered];
+  };
+
+  let pubSession: OAuthSession | undefined;
+  let initError: unknown;
+  try {
+    const { initialized } = getPublicationClient();
+    const resolved = await initialized;
+    if (resolved) pubSession = resolved.session;
+  } catch (error) {
+    initError = error;
+  }
+
+  const writeRegistered = async (publications: string[]) => {
+    const activeSession = pubSession;
+    if (!activeSession || activeSession.did !== SITE_OWNER_DID) throw new Error('Only the site owner can change the publications list.');
+    const query = new URLSearchParams({ repo: activeSession.did, collection: PUBLICATIONS_COLLECTION, rkey: 'self' });
+    const getResponse = await activeSession.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${query}`);
+    let value: Record<string, unknown> = { $type: PUBLICATIONS_COLLECTION, publications: [] };
+    if (getResponse.ok) {
+      const record = await getResponse.json() as { value?: Record<string, unknown> };
+      if (record.value && typeof record.value === 'object') value = record.value;
+    }
+    value.$type = PUBLICATIONS_COLLECTION;
+    value.publications = publications;
+    const putResponse = await activeSession.fetchHandler('/xrpc/com.atproto.repo.putRecord', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: activeSession.did, collection: PUBLICATIONS_COLLECTION, rkey: 'self', record: value }),
+    });
+    if (!putResponse.ok) {
+      const payload = await putResponse.json().catch(() => null) as { error?: string; message?: string } | null;
+      throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ') || `The publications record could not be saved (${putResponse.status}).`);
+    }
+  };
+
+  const renderRegistered = async () => {
+    if (!registeredSection || !registeredList) return;
+    registeredSection.hidden = false;
+    const entries = await readRegistered();
+    registeredList.replaceChildren();
+    if (!entries.length) {
+      const empty = document.createElement('li');
+      empty.textContent = 'No publications are registered yet.';
+      registeredList.append(empty);
+      return;
+    }
+    for (const entry of entries) {
+      const item = document.createElement('li');
+      const label = document.createElement('code');
+      label.textContent = `${entry.name ? `${entry.name} — ` : ''}${entry.uri}${entry.owned ? ' (site publication)' : ''}`;
+      item.append(label);
+      if (pubSession?.did === SITE_OWNER_DID) {
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', async () => {
+          remove.disabled = true;
+          try {
+            if (entry.owned) {
+              // Site-owned publications unregister by deleting the record.
+              const response = await pubSession!.fetchHandler('/xrpc/com.atproto.repo.deleteRecord', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  repo: SITE_OWNER_DID,
+                  collection: 'site.standard.publication',
+                  rkey: entry.rkey,
+                }),
+              });
+              if (!response.ok) throw new Error(`The publication record could not be deleted (${response.status}).`);
+            } else {
+              const current = await readRegistered();
+              await writeRegistered(current.filter((candidate) => !candidate.owned).map((candidate) => candidate.uri).filter((uri) => uri !== entry.uri));
+            }
+            await renderRegistered();
+          } catch (error) {
+            status.textContent = errorMessage(error);
+            remove.disabled = false;
+          }
+        });
+        item.append(remove);
+      }
+      registeredList.append(item);
+    }
+  };
+  void renderRegistered();
+
+  if (adminPanel && pubSession?.did === SITE_OWNER_DID) {
+    adminPanel.hidden = false;
+    addButton?.addEventListener('click', async () => {
+      const uri = (addUriInput?.value || '').trim();
+      if (!publicationUriPattern.test(uri)) {
+        status.textContent = 'That is not a site.standard.publication URI.';
+        return;
+      }
+      addButton.disabled = true;
+      try {
+        const current = await readRegistered();
+        const publications = current.map((candidate) => candidate.uri);
+        if (!publications.includes(uri)) publications.push(uri);
+        await writeRegistered(publications);
+        if (addUriInput) addUriInput.value = '';
+        await renderRegistered();
+        status.textContent = 'Publication added — it will list on the site within a couple of minutes.';
+      } catch (error) {
+        status.textContent = errorMessage(error);
+      } finally {
+        addButton.disabled = false;
+      }
+    });
+  }
+
+  if (!pubSession) {
+    signinPanel.hidden = false;
+    status.textContent = initError
+      ? (initError instanceof Error ? initError.message : 'Publication sign-in could not initialize.')
+      : '';
+    signinButton?.addEventListener('click', async () => {
+      const identifier = identifierInput?.value.trim() || '';
+      if (!identifier) {
+        status.textContent = 'Enter your handle or DID first.';
+        return;
+      }
+      signinButton.disabled = true;
+      status.textContent = 'Redirecting to your account provider…';
+      try {
+        await publicationClient!.signInRedirect(identifier as Parameters<BrowserOAuthClient['signInRedirect']>[0], { scope: createClientScope });
+      } catch (error) {
+        signinButton.disabled = false;
+        status.textContent = errorMessage(error);
+      }
+    });
+    return;
+  }
+
+  signinPanel.hidden = true;
+  form.hidden = false;
+  status.textContent = '';
+
+  switchButton?.addEventListener('click', async () => {
+    await pubSession!.signOut().catch(() => { /* Local sign-out is what matters. */ });
+    window.location.reload();
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const activeSession = pubSession;
+    if (!activeSession) return;
+    submitButton.disabled = true;
+    status.textContent = 'Creating your publication…';
+    result.hidden = true;
+    try {
+      const name = nameInput.value.trim();
+      if (!name) throw new Error('Give your publication a name.');
+      const description = descriptionInput?.value.trim() || '';
+      const pageWidth = Math.min(2000, Math.max(320, parseInt(widthInput?.value || '', 10) || 768));
+
+      // The publication URL keys on the account's handle — that's how the site
+      // mounts it under /author/{handle}.
+      let handle: string = activeSession.did;
+      try {
+        const profileResponse = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(activeSession.did)}`);
+        if (profileResponse.ok) {
+          const profile = await profileResponse.json() as { handle?: unknown };
+          if (typeof profile.handle === 'string' && profile.handle) handle = profile.handle;
+        }
+      } catch { /* A DID path works as a fallback — author pages resolve DIDs. */ }
+
+      let iconBlob: unknown;
+      const iconFile = iconInput?.files?.[0];
+      if (iconFile) {
+        const upload = await activeSession.fetchHandler('/xrpc/com.atproto.repo.uploadBlob', {
+          method: 'POST',
+          headers: { 'Content-Type': iconFile.type || 'application/octet-stream' },
+          body: iconFile,
+        });
+        const uploadPayload = await upload.json().catch(() => null) as { blob?: unknown; error?: string; message?: string } | null;
+        if (!upload.ok || !uploadPayload?.blob) {
+          throw new Error([uploadPayload?.error, uploadPayload?.message].filter(Boolean).join(': ')
+            || `Icon upload failed (${upload.status}).`);
+        }
+        iconBlob = uploadPayload.blob;
+      }
+
+      const color = (key: string) => hexToRgb(
+        page.querySelector<HTMLInputElement>(`[data-pub-color="${key}"]`)?.value || '',
+      );
+      const accent = color('accent');
+      const accentForeground = color('accentForeground');
+      const background = color('background');
+      const foreground = color('foreground');
+      const rgb = (type: string, value?: { r: number; g: number; b: number }) => value
+        ? { $type: type, ...value }
+        : undefined;
+
+      const record: Record<string, unknown> = {
+        $type: 'site.standard.publication',
+        name,
+        url: `https://coffeencode.cc/author/${encodeURIComponent(handle)}`,
+        ...(description ? { description } : {}),
+        ...(iconBlob ? { icon: iconBlob } : {}),
+        ...(accent && accentForeground && background && foreground
+          ? {
+            basicTheme: {
+              $type: 'site.standard.theme.basic',
+              accent: rgb('site.standard.theme.color#rgb', accent),
+              accentForeground: rgb('site.standard.theme.color#rgb', accentForeground),
+              background: rgb('site.standard.theme.color#rgb', background),
+              foreground: rgb('site.standard.theme.color#rgb', foreground),
+            },
+            theme: {
+              $type: 'pub.leaflet.publication#theme',
+              accentBackground: rgb('pub.leaflet.theme.color#rgb', accent),
+              accentText: rgb('pub.leaflet.theme.color#rgb', accentForeground),
+              backgroundColor: rgb('pub.leaflet.theme.color#rgb', background),
+              primary: rgb('pub.leaflet.theme.color#rgb', foreground),
+              bodyFont: 'source-sans',
+              headingFont: 'lora',
+              pageBackground: { $type: 'pub.leaflet.theme.color#rgba', a: 100, b: 0, g: 0, r: 255 },
+              pageWidth,
+              showPageBackground: false,
+            },
+          }
+          : {}),
+        preferences: {
+          prevNextDirection: 'rtl',
+          showComments: true,
+          showFirstLast: false,
+          showInDiscover: true,
+          showMentions: true,
+          showPrevNext: true,
+          showRecommends: true,
+        },
+      };
+
+      const response = await activeSession.fetchHandler('/xrpc/com.atproto.repo.createRecord', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: activeSession.did, collection: 'site.standard.publication', record }),
+      });
+      const payload = await response.json().catch(() => null) as { uri?: unknown; error?: string; message?: string } | null;
+      if (!response.ok || typeof payload?.uri !== 'string') {
+        throw new Error([payload?.error, payload?.message].filter(Boolean).join(': ')
+          || `The account provider did not create the record (${response.status}).`);
+      }
+      const uri = payload.uri;
+      status.textContent = 'Publication created.';
+      const isOwner = activeSession.did === SITE_OWNER_DID;
+      result.innerHTML = `<strong>Publication URI</strong><br><code>${draftEscapeHtml(uri)}</code><br>`
+        + `Paste this into the <strong>Publication</strong> field in your draft's document settings to publish under it. `
+        + (isOwner
+          ? 'It is already a site publication — the site discovers it automatically.'
+          : 'The site lists it once the owner adds the URI under <em>Publications on Coffee &amp; Code</em> below. ')
+        + `<a href="https://pdsls.dev/${draftEscapeHtml(uri)}" target="_blank" rel="noopener">View on PDSls <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a> · `
+        + `<a href="/account/author/draft">Open your drafts <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>`;
+      result.hidden = false;
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : 'The publication could not be created.';
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
 }

@@ -1,0 +1,22 @@
+{
+  "client_id": "https://coffeencode.cc/oauth-client-metadata-create.json",
+  "client_name": "Coffee & Code — Publications",
+  "client_uri": "https://coffeencode.cc",
+  "logo_uri": "https://coffeencode.cc/favicon.png",
+  "tos_uri": "https://coffeencode.cc/terms",
+  "policy_uri": "https://coffeencode.cc/privacy",
+  "redirect_uris": [
+    "https://coffeencode.cc/account/author/create"
+  ],
+  "scope": "atproto repo:site.standard.publication?action=create&action=update&action=delete repo:cc.coffeencode.publications?action=create&action=update blob:image/*",
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "application_type": "web",
+  "token_endpoint_auth_method": "none",
+  "dpop_bound_access_tokens": true
+}

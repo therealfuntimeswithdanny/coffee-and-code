@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { Env } from '../types';
-import { getPdsEndpoint, fetchArticles, fetchArticleByPath, fetchPostMetadata, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
+import { getPdsEndpoint, fetchArticles, fetchArticleByPath, fetchPostMetadata, fetchRecord, fetchAuthorProfile, proxyImageUrl, proxyAvatarUrl } from '../lib/atproto';
 import { renderLayout, browserRunScreenshotUrl } from '../templates/layout';
 import { renderContent, renderHtmlAsMarkdown, processImages, enhanceHtmlStructure, readingTimeMinutes } from '../lib/contentRenderer';
 import { routeExternalLinks, externalLinkUrl } from '../lib/externalLinks';
@@ -17,6 +17,80 @@ function formatDate(date?: string) {
   });
 }
 
+function formatDateTime(date?: string) {
+  if (!date) return '';
+  return new Date(date).toLocaleString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+// Fixed top progress bar plus a "pick up where you left off" toast. Position is
+// remembered per post URI in localStorage so a returning reader resumes their
+// spot on any article — signed in or not.
+function readingProgressHtml(subjectUri: string) {
+  return `
+    <style>
+      .reading-progress { height: 3px; left: 0; position: fixed; right: 0; top: 0; z-index: 320; }
+      .reading-progress__bar { background: var(--accent); display: block; height: 100%; transform: scaleX(0); transform-origin: 0 50%; transition: transform .12s linear; }
+      .reading-resume { align-items: center; background: var(--paper-deep); border: 1px solid var(--line-strong); bottom: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); color: var(--ink); display: flex; font: 14px 'Source Sans 3', sans-serif; gap: 14px; left: 50%; max-width: min(92vw, 480px); padding: 10px 12px 10px 16px; position: fixed; transform: translateX(-50%); z-index: 320; }
+      .reading-resume__actions { display: flex; gap: 6px; margin-left: auto; }
+      .reading-resume button { background: transparent; border: 1px solid var(--line-strong); color: var(--ink); cursor: pointer; font: 600 13px 'Source Sans 3', sans-serif; padding: 6px 12px; white-space: nowrap; }
+      .reading-resume button:hover { border-color: var(--accent); color: var(--accent); }
+      .reading-resume [data-resume-go] { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+      .reading-resume [data-resume-go]:hover { color: var(--paper); }
+    </style>
+    <div class="reading-progress" aria-hidden="true"><span class="reading-progress__bar" data-reading-progress-bar></span></div>
+    <script>
+    (() => {
+      const bar = document.querySelector('[data-reading-progress-bar]');
+      if (!bar) return;
+      const key = 'cc:readpos:' + ${JSON.stringify(subjectUri)};
+      const maxScroll = () => Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      const fraction = () => Math.min(1, Math.max(0, window.scrollY / maxScroll()));
+      let saved;
+      try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch { saved = null; }
+      if (saved && typeof saved.y === 'number' && typeof saved.f === 'number'
+        && saved.f > 0.03 && saved.f < 0.95 && Number.isFinite(saved.t) && Date.now() - saved.t < 30 * 864e5) {
+        const toast = document.createElement('div');
+        toast.className = 'reading-resume';
+        toast.setAttribute('role', 'status');
+        toast.innerHTML = '<span>You\\u2019re ' + Math.round(saved.f * 100) + '% through this story.</span>'
+          + '<span class="reading-resume__actions"><button type="button" data-resume-go>Resume</button>'
+          + '<button type="button" data-resume-dismiss aria-label="Dismiss">\\u00d7</button></span>';
+        document.body.append(toast);
+        const done = () => toast.remove();
+        toast.querySelector('[data-resume-go]').addEventListener('click', () => {
+          window.scrollTo({ top: saved.y, behavior: 'auto' });
+          done();
+        });
+        toast.querySelector('[data-resume-dismiss]').addEventListener('click', done);
+        window.setTimeout(done, 20000);
+      }
+      let ticking = false;
+      let saveTimer;
+      const onScroll = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          ticking = false;
+          const f = fraction();
+          bar.style.transform = 'scaleX(' + f + ')';
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(() => {
+            try { localStorage.setItem(key, JSON.stringify({ y: window.scrollY, f, t: Date.now() })); } catch {}
+          }, 400);
+        });
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      bar.style.transform = 'scaleX(' + fraction() + ')';
+    })();
+    </script>`;
+}
+
 async function renderPost(
   c: Context<{ Bindings: Env }>,
   rkey: string,
@@ -24,7 +98,9 @@ async function renderPost(
   requestedPath?: string,
 ) {
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
-  const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
+  // Scheduled stories render at their own URL — it doubles as a preview link —
+  // but stay out of listings until publishedAt passes.
+  const allPosts = await fetchArticles(pds, c.env.OWNER_DID, undefined, { includeScheduled: true });
   const candidates = allPosts.filter((p) => p.rkey === rkey);
   const post = (requestedPath
     ? candidates.find((item) => item.path === requestedPath || item.alternatePaths?.includes(requestedPath))
@@ -63,16 +139,36 @@ async function renderPost(
     || await fetchPostMetadata(post.pdsUrl || pds, post.repoDid || c.env.OWNER_DID, post.rkey);
 
   const postTagKeys = new Set((post.tags || []).map((tag) => tag.toLocaleLowerCase()));
-  const recommendations = allPosts
+  // Scheduled stories stay out of rails and recommendations — their own URL is
+  // the only place they render.
+  const listedPosts = allPosts.filter((item) => !item.scheduled);
+  const tagMatches = listedPosts
     .filter((item) => item.path !== post.path && item.tags?.some((tag) => postTagKeys.has(tag.toLocaleLowerCase())))
     .map((item) => ({
       post: item,
       sharedTagCount: item.tags?.filter((tag) => postTagKeys.has(tag.toLocaleLowerCase())).length || 0,
     }))
     .sort((a, b) => b.sharedTagCount - a.sharedTagCount
-      || (Date.parse(b.post.publishedAt) || 0) - (Date.parse(a.post.publishedAt) || 0))
-    .slice(0, 3)
-    .map(({ post: item }) => item);
+      || (Date.parse(b.post.publishedAt) || 0) - (Date.parse(a.post.publishedAt) || 0));
+  const recommendations = tagMatches.slice(0, 3).map(({ post: item }) => item);
+  // Keep the rail populated when tags don't overlap: more from this author
+  // first, then the latest stories overall.
+  if (recommendations.length < 3) {
+    const seen = new Set([post.path, ...recommendations.map((item) => item.path)]);
+    const authorDid = post.author?.did || post.repoDid;
+    const fill = listedPosts
+      .filter((item) => !seen.has(item.path))
+      .map((item) => ({
+        post: item,
+        sameAuthor: Boolean(authorDid) && (item.author?.did || item.repoDid) === authorDid,
+      }))
+      .sort((a, b) => Number(b.sameAuthor) - Number(a.sameAuthor)
+        || (Date.parse(b.post.publishedAt) || 0) - (Date.parse(a.post.publishedAt) || 0));
+    for (const { post: item } of fill) {
+      if (recommendations.length >= 3) break;
+      recommendations.push(item);
+    }
+  }
 
   // Render content based on detected format
   const renderedContent = await renderContent(post.content || '', post.format, post.mimeType);
@@ -122,6 +218,43 @@ async function renderPost(
   const authorLink = post.author ? `/author/${encodeURIComponent(post.author.handle)}` : '';
   const authorName = post.author?.displayName || post.author?.handle || '';
   const authorAvatar = post.author?.avatar ? escapeHtml(proxyAvatarUrl(post.author.avatar)) : '';
+  // Co-authors come from the document's `authors` array; profiles resolve
+  // lazily here so listing pages never pay for the extra lookups.
+  const coAuthors = (await Promise.all(
+    (post.coAuthorDids || []).map((did) => fetchAuthorProfile(did, post.pdsUrl || pds)),
+  )).filter((profile): profile is NonNullable<typeof profile> => Boolean(profile));
+  const bylineLinks = [
+    post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</span></a>` : '',
+    ...coAuthors.map((coAuthor) => {
+      const name = coAuthor.displayName || coAuthor.handle;
+      const avatar = coAuthor.avatar ? escapeHtml(proxyAvatarUrl(coAuthor.avatar)) : '';
+      return `<a class="article__author" href="/author/${encodeURIComponent(coAuthor.handle)}">${avatar ? `<img src="${avatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span data-author-verification-did="${escapeHtml(coAuthor.did)}">${escapeHtml(name)}</span></a>`;
+    }),
+  ].filter(Boolean);
+  const bylineHtml = bylineLinks.length
+    ? `<span class="article__byline">Written by ${bylineLinks.join('<span class="article__byline-sep"> and </span>')} <span class="article__byline-sep"> on </span>${formatDate(post.publishedAt)}</span>`
+    : '';
+
+  // Update history: republishes stamp `updatedAt` (and optionally append
+  // {at, note} entries to `updates`) on the document record.
+  const updateEntries = (Array.isArray(post.record?.updates) ? post.record.updates : [])
+    .filter((entry): entry is { at: string; note?: string } =>
+      Boolean(entry) && typeof entry === 'object' && typeof (entry as { at?: unknown }).at === 'string'
+        && Number.isFinite(Date.parse((entry as { at: string }).at)))
+    .filter((entry) => Date.parse(entry.at) > Date.parse(post.publishedAt) + 60000)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 20);
+  const recordUpdatedAt = typeof post.record?.updatedAt === 'string' && Number.isFinite(Date.parse(post.record.updatedAt))
+    && Date.parse(post.record.updatedAt) > Date.parse(post.publishedAt) + 60000
+    ? post.record.updatedAt as string
+    : '';
+  const latestUpdateAt = updateEntries[0]?.at || recordUpdatedAt;
+  const updateNote = updateEntries[0]?.note
+    || (typeof post.record?.updateNote === 'string' ? post.record.updateNote : '');
+  const updatesHtml = latestUpdateAt
+    ? `<p class="article__updated"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Updated ${escapeHtml(formatDateTime(latestUpdateAt))}${updateNote ? ` — ${escapeHtml(updateNote)}` : ''}</p>
+      ${updateEntries.length > 1 ? `<details class="article__history"><summary>Update history (${updateEntries.length})</summary><ul>${updateEntries.map((entry) => `<li><time datetime="${escapeHtml(entry.at)}">${escapeHtml(formatDateTime(entry.at))}</time>${entry.note ? ` — ${escapeHtml(entry.note)}` : ''}</li>`).join('')}</ul></details>` : ''}`
+    : '';
   const readingTime = readingTimeMinutes(post.content || '', post.mimeType);
   const safeTitle = escapeHtml(post.title);
   const safeDescription = escapeHtml(articleSubtitle);
@@ -150,7 +283,7 @@ async function renderPost(
   const relatedRail = recommendations.map((item) => `
     <li><a href="${escapeHtml(item.path)}">${escapeHtml(item.title || 'Untitled')}</a></li>`).join('');
   const authorsByDid = new Map<string, NonNullable<typeof allPosts[number]['author']>>();
-  allPosts.forEach((item) => {
+  listedPosts.forEach((item) => {
     if (item.author) authorsByDid.set(item.author.did, item.author);
   });
   const railAuthors = [...authorsByDid.values()]
@@ -166,13 +299,21 @@ async function renderPost(
     datePublished: post.publishedAt,
     mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl },
     image: [ogImage],
-    author: post.author
-      ? {
-          '@type': 'Person',
-          name: authorName,
-          url: `${pageOrigin}/author/${encodeURIComponent(post.author.handle)}`,
-        }
-      : { '@type': 'Organization', name: c.env.PUB_NAME },
+    author: [
+      ...(post.author
+        ? [{
+            '@type': 'Person',
+            name: authorName,
+            url: `${pageOrigin}/author/${encodeURIComponent(post.author.handle)}`,
+          }]
+        : []),
+      ...coAuthors.map((coAuthor) => ({
+        '@type': 'Person',
+        name: coAuthor.displayName || coAuthor.handle,
+        url: `${pageOrigin}/author/${encodeURIComponent(coAuthor.handle)}`,
+      })),
+      ...(post.author ? [] : [{ '@type': 'Organization', name: c.env.PUB_NAME }]),
+    ],
     publisher: {
       '@type': 'Organization',
       name: c.env.PUB_NAME,
@@ -224,6 +365,7 @@ async function renderPost(
       <span class="article-reactions__status" aria-live="polite"></span>
     </section>`;
   const articleMetaTags = `
+    ${post.scheduled ? '<meta name="robots" content="noindex">' : ''}
     <link rel="site.standard.document" href="${escapeHtml(post.uri)}">
     <link rel="site.standard.publication" href="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3m3lav73ujc27">
     <meta name="atproto:uri" content="${escapeHtml(post.uri)}">
@@ -236,6 +378,7 @@ async function renderPost(
     <meta property="og:image" content="${escapeHtml(ogImage)}">
     <meta property="og:image:type" content="${post.cover ? 'image/jpeg' : 'image/png'}">
     <meta property="article:published_time" content="${escapeHtml(post.publishedAt)}">
+    ${latestUpdateAt ? `<meta property="article:modified_time" content="${escapeHtml(latestUpdateAt)}">` : ''}
     <meta property="article:author" content="${escapeHtml(authorName || c.env.PUB_NAME)}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${safeTitle}">
@@ -245,14 +388,33 @@ async function renderPost(
     <script type="application/ld+json">${structuredDataJson}</script>
   `;
 
+  const scheduledBanner = post.scheduled
+    ? `<p class="article-banner"><i class="fa-regular fa-clock" aria-hidden="true"></i> Scheduled — this story goes live ${formatDateTime(post.publishedAt)}. It isn't publicly listed yet; anyone with this link can preview it.</p>`
+    : '';
+
   const body = `
+    <style>
+      .article-banner { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--muted); font-size: 14px; margin: 0 0 22px; padding: 12px 16px; }
+      .article-banner i { color: var(--accent); margin-right: 8px; }
+      .article__byline { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+      .article__byline-sep { color: var(--muted); }
+      .article__updated { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+      .article__updated i { margin-right: 6px; }
+      .article__history { color: var(--muted); font-size: 14px; margin-top: 8px; }
+      .article__history summary { color: var(--accent); cursor: pointer; }
+      .article__history ul { margin: 8px 0 0; padding-left: 20px; }
+      .article__history li { margin-bottom: 4px; }
+    </style>
+    ${readingProgressHtml(post.uri)}
     <div class="article-layout">
     <article class="article">
       <a href="/" class="article__back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All stories</a>
+      ${scheduledBanner}
       <header class="article__header">
         <h1>${safeTitle}</h1>
         ${articleSubtitle ? `<p class="article__dek">${escapeHtml(articleSubtitle)}</p>` : ''}
-        ${post.author ? `<a class="article__author" href="${authorLink}">${authorAvatar ? `<img src="${authorAvatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span>Written by <span data-author-verification-did="${escapeHtml(post.author.did)}">${escapeHtml(authorName)}</span> on ${formatDate(post.publishedAt)}</span></a>` : ''}
+        ${bylineHtml}
+        ${updatesHtml}
         ${readingTime ? `<p class="article__reading-time">${readingTime} min read</p>` : ''}
         ${tagLinks ? `<nav class="article-tags" aria-label="Article tags">${tagLinks}</nav>` : ''}
       </header>
@@ -280,7 +442,95 @@ async function renderPost(
   return c.html(renderLayout(c, post.title, body, articleMetaTags, undefined, browserRun, { comments: true }));
 }
 
+// Unpublished-draft preview: renders a cc.coffeencode.author.draft record from
+// the author's repository. Draft records are public on the PDS, so the link —
+// an unguessable TID — is what you share for review. The page is noindexed.
+async function renderDraftPreview(c: Context<{ Bindings: Env }>, did: string, rkey: string) {
+  const notFound = () => c.html(renderLayout(c, 'Draft not found', `
+    <section class="not-found">
+      <h1>Draft not found</h1>
+      <p>This draft preview link is invalid, or the draft has been deleted.</p>
+      <div class="not-found__actions">
+        <a href="/" class="read-link">Back to publication <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+      </div>
+    </section>
+  `), 404);
+
+  if (!/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(did) || !/^[a-zA-Z0-9._~:-]{1,512}$/.test(rkey)) {
+    return notFound();
+  }
+  const pds = await getPdsEndpoint(did, c.env.OWNER_PDS);
+  const record = await fetchRecord(pds, did, 'cc.coffeencode.author.draft', rkey);
+  const value = record?.value;
+  if (!value || typeof value !== 'object') return notFound();
+
+  const document = (value.document || {}) as Record<string, unknown>;
+  const title = (typeof value.title === 'string' && value.title.trim() ? value.title : '')
+    || (typeof document.title === 'string' && document.title.trim() ? document.title : '')
+    || 'Untitled draft';
+  const description = typeof value.description === 'string' && value.description.trim()
+    ? value.description.trim()
+    : typeof document.description === 'string' ? document.description.trim() : '';
+  const pages = Array.isArray(document.pages) ? document.pages : [];
+  const content = JSON.stringify({ $type: 'pub.leaflet.content', pages });
+  const escapeHtml = (str: string) => str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const requestOrigin = new URL(c.req.url).origin;
+  const processImageSource = (source: string) => {
+    if (source.startsWith('/api/blob/')) {
+      const cid = source.replace(/^\/api\/blob\//, '');
+      const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
+      return proxyImageUrl(blobUrl, requestOrigin);
+    }
+    return proxyImageUrl(source, requestOrigin);
+  };
+  const renderedContent = await renderContent(content, undefined, 'application/json');
+  const htmlContent = routeExternalLinks(enhanceHtmlStructure(processImages(renderedContent, processImageSource)));
+  const readingTime = readingTimeMinutes(content, 'application/json');
+  const author = await fetchAuthorProfile(did, pds).catch(() => undefined);
+  const coverCid = (document.coverImage as { ref?: { $link?: string } } | undefined)?.ref?.$link;
+  const coverUrl = coverCid
+    ? proxyImageUrl(`${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(coverCid)}`, pds, 'wide_medium')
+    : undefined;
+  const updatedAt = typeof value.updatedAt === 'string' ? value.updatedAt
+    : typeof value.createdAt === 'string' ? value.createdAt : '';
+  const scheduledAt = typeof value.publishedAt === 'string' && Date.parse(value.publishedAt) > Date.now()
+    ? value.publishedAt
+    : undefined;
+
+  const body = `
+    <style>
+      .article-banner { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--muted); font-size: 14px; margin: 0 0 22px; padding: 12px 16px; }
+      .article-banner i { color: var(--accent); margin-right: 8px; }
+    </style>
+    ${readingProgressHtml(`draft:${did}/${rkey}`)}
+    <article class="article">
+      <a href="/" class="article__back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> ${escapeHtml(c.env.PUB_NAME)}</a>
+      <p class="article-banner"><i class="fa-regular fa-eye" aria-hidden="true"></i> Draft preview — this story isn't published yet. Anyone with this link can view it.${scheduledAt ? ` It is scheduled to publish ${escapeHtml(formatDateTime(scheduledAt))}.` : ''}</p>
+      <header class="article__header">
+        <h1>${escapeHtml(title)}</h1>
+        ${description ? `<p class="article__dek">${escapeHtml(description)}</p>` : ''}
+        ${author ? `<span class="article__author"><span>Drafted by <span data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(author.displayName || author.handle)}</span>${updatedAt ? ` · updated ${escapeHtml(formatDateTime(updatedAt))}` : ''}</span></span>` : ''}
+        ${readingTime ? `<p class="article__reading-time">${readingTime} min read</p>` : ''}
+      </header>
+      ${coverUrl ? `<figure class="article__cover"><img src="${escapeHtml(coverUrl)}" alt="" class="story-image" width="1200" height="667" fetchpriority="high" decoding="async"></figure>` : ''}
+      <div class="prose">${htmlContent}</div>
+    </article>
+  `;
+  const metaTags = `
+    <meta name="robots" content="noindex">
+    <meta name="description" content="${escapeHtml(description || `Draft preview of ${title}`)}">
+  `;
+  return c.html(renderLayout(c, `${title} — draft preview`, body, metaTags));
+}
+
 posts.get('/', (c) => c.redirect('/'));
+posts.get('/preview/draft/:did/:rkey', (c) => renderDraftPreview(c, c.req.param('did'), c.req.param('rkey')));
 posts.get('/post/:rkey', (c) => renderPost(c, c.req.param('rkey')));
 // Author-scoped post URLs are canonical; legacy /post/... routes redirect here.
 posts.get('/author/:handle/:rkey', (c) => renderPost(

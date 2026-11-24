@@ -47,6 +47,10 @@ export interface StandardDocument {
   publicationUri?: string;
   author?: AuthorProfile;
   metadata?: PostMetadata;
+  /** True when publishedAt is in the future — the story is scheduled and stays unlisted until then. */
+  scheduled?: boolean;
+  /** Additional author DIDs from the document's `authors` array (excluding the primary author). */
+  coAuthorDids?: string[];
 }
 
 export interface PostMetadata {

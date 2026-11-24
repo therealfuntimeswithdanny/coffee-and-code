@@ -183,7 +183,7 @@ async function fetchUserLists(pds: string, did: string): Promise<UserListRecord[
   return lists.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, maxListItems);
 }
 
-async function fetchListItems(pds: string, did: string, listUri: string): Promise<UserListItem[]> {
+export async function fetchListItems(pds: string, did: string, listUri: string): Promise<UserListItem[]> {
   const items: UserListItem[] = [];
   for (const collection of listItemCollections) {
     let cursor: string | undefined;
@@ -221,7 +221,7 @@ async function fetchListItems(pds: string, did: string, listUri: string): Promis
   return [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, maxListItems);
 }
 
-async function fetchListRecord(pds: string, did: string, rkey: string): Promise<UserListRecord | undefined> {
+export async function fetchListRecord(pds: string, did: string, rkey: string): Promise<UserListRecord | undefined> {
   const url = new URL(`${pds}/xrpc/com.atproto.repo.getRecord`);
   url.searchParams.set('repo', did);
   url.searchParams.set('collection', listCollection);
@@ -412,7 +412,8 @@ users.get('/:identifier/list/:rkey', async (c) => {
     <meta property="og:type" content="website">
     <meta property="og:url" content="${escapeHtml(pageUrl)}">
     <meta property="og:image" content="${escapeHtml(browserRenderOgImage(c))}">
-    <link rel="canonical" href="${escapeHtml(pageUrl)}">`;
+    <link rel="canonical" href="${escapeHtml(pageUrl)}">
+    <link rel="alternate" type="application/rss+xml" title="${escapeHtml(`${list.title} — ${c.env.PUB_NAME}`)}" href="/user/${encodeURIComponent(profile.handle)}/list/${encodeURIComponent(list.rkey)}/rss.xml">`;
   return c.html(renderLayout(c, escapeHtml(list.title), body, metaTags));
 });
 

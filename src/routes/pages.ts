@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { renderSearchBar } from '../templates/searchBar';
-import { getPdsEndpoint, isPdsAvailable, fetchArticles, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
+import { getPdsEndpoint, isPdsAvailable, fetchArticles, fetchAuthorProfile, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage, browserRunScreenshotUrl } from '../templates/layout';
 import { toPlainText, descriptionText, renderMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 import { listDocs, getDoc, renderDocIcons, type DocEntry } from '../lib/docs';
@@ -380,6 +380,12 @@ pages.get('/auth', (c) => {
             <a class="login-button auth-option__button" data-signedout-continue href="/auth">Sign back in</a>
           </div>
           <div class="account-switcher" data-account-switcher hidden></div>
+          <div class="auth-waiting" data-auth-waiting hidden role="status" aria-live="polite">
+            <span class="auth-waiting__spinner" aria-hidden="true"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+            <h2 class="auth-waiting__title">Connecting…</h2>
+            <p class="auth-waiting__detail" data-auth-waiting-detail></p>
+            <button type="button" class="auth-signout" data-auth-waiting-cancel>Cancel</button>
+          </div>
           <p class="auth-card__heading">Continue with your AT Protocol account</p>
           <div class="auth-providers" data-auth-providers>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><img class="auth-provider__logo" src="/favicon.png" alt="" aria-hidden="true"><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
@@ -768,6 +774,11 @@ const draftEditorStyles = `
     .draft-toolbar button[aria-pressed="true"] { background: var(--paper); color: var(--accent); }
     .draft-toolbar__sep { border-left: 1px solid var(--line); height: 22px; margin: 0 4px; }
     .draft-editor__meta { display: flex; flex-direction: column; min-width: 0; }
+    .draft-editor-page__preview-link { background: none; border: 0; cursor: pointer; padding: 0; }
+    .draft-publish-dialog__schedule { display: flex; flex-direction: column; font-size: 14px; font-weight: 600; gap: 6px; margin: 16px 0 4px; }
+    .draft-publish-dialog__schedule-optional { color: var(--muted); font-size: 12px; font-weight: 400; }
+    .draft-publish-dialog__schedule input { background: var(--paper-deep); border: 1px solid var(--line); color: var(--ink); font: inherit; padding: 8px 10px; }
+    .draft-publish-dialog__hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
     .draft-editor__doc-settings { margin: 0 auto 22px; max-width: var(--doc-width); }
     .draft-editor__doc-heading { font-size: 15px; margin: 0; }
     .draft-editor__doc-heading i { color: var(--accent); font-size: .85em; margin-right: 7px; }
@@ -921,6 +932,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
         <label class="draft-preview-toggle__btn" for="draft-preview-toggle"><i class="fa-solid fa-eye" aria-hidden="true"></i> Preview</label>
         <span class="draft-editor-page__status" data-draft-status role="status" aria-live="polite">Loading draft…</span>
         <a class="read-link" data-draft-published-link hidden target="_blank" rel="noopener">Published <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        <button type="button" class="read-link draft-editor-page__preview-link" data-draft-preview-link hidden><i class="fa-solid fa-link" aria-hidden="true"></i> Copy preview link</button>
         <div class="draft-editor-page__actions">
           <button type="button" class="auth-signout" data-draft-import><i class="fa-solid fa-file-import" aria-hidden="true"></i> Import</button>
           <input type="file" data-draft-import-file accept=".md,.markdown,.mdx,.docx,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
@@ -977,6 +989,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
               <div class="draft-editor__meta-grid">
                 <label class="draft-editor__meta-wide">Tags — comma separated<textarea name="draft-tags" rows="2" placeholder="coffee, code, …" data-draft-field="tags"></textarea></label>
                 <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
+                <label>Co-authors — comma separated handles<input name="draft-coauthors" type="text" placeholder="friend.bsky.social, did:plc:…" data-draft-field="coauthors"></label>
                 <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
                 <div class="draft-editor__meta-cover-row">
                   <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
@@ -1008,6 +1021,13 @@ pages.get('/account/author/draft/:rkey', (c) => {
           <h1 id="draft-publish-dialog-title">Publish post</h1>
           <p class="draft-publish-dialog__intro">Publishing this post will publish it as a record on your account, and it will be shown on the Coffee &amp; Code home page.</p>
           <div class="draft-share-card" data-draft-publish-preview></div>
+          <label class="draft-publish-dialog__schedule">Publish at <span class="draft-publish-dialog__schedule-optional">optional — leave blank for right now</span>
+            <input type="datetime-local" data-draft-schedule>
+          </label>
+          <p class="draft-publish-dialog__hint">A future time schedules the story: it stays off the home page until then, and its story link works as a preview right away. To publish a scheduled story early, republish with this field cleared.</p>
+          <label class="draft-publish-dialog__schedule" data-draft-update-note-row hidden>Update note <span class="draft-publish-dialog__schedule-optional">optional — shown to readers under the headline</span>
+            <input type="text" data-draft-update-note maxlength="500" placeholder="What changed? For example: corrected the benchmark numbers">
+          </label>
           <div class="draft-publish-dialog__actions">
             <button type="button" class="account-author-form__cancel" data-draft-publish-cancel>Cancel</button>
             <button type="button" class="auth-signout" data-draft-publish-confirm><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Publish</button>
@@ -1041,6 +1061,74 @@ pages.get('/account/author/draft/:rkey', (c) => {
     </section>`;
   const body = accountPageShell('Edit draft', inner, { signedOutMessage: 'Sign in to edit this draft.', hideSidebar: true });
   return c.html(renderLayout(c, 'Edit draft', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
+});
+
+// Hidden author tool — creates a site.standard.publication record in the
+// visitor's own repository. Deliberately unlinked; uses its own minimal-scope
+// OAuth client (oauth-client-metadata-create.json) rather than the site
+// session so the permission never lands in normal sign-ins.
+pages.get('/account/author/create', (c) => {
+  const styles = `<style>
+    .pub-create { max-width: 680px; margin: 0 auto; }
+    .pub-create h1 { margin-top: 0; }
+    .pub-create__intro { color: var(--muted); line-height: 1.6; }
+    .pub-create__field { display: flex; flex-direction: column; font-size: 14px; font-weight: 600; gap: 6px; margin-bottom: 14px; }
+    .pub-create__field input[type="text"], .pub-create__field input[type="number"], .pub-create__field textarea { background: var(--paper-deep); border: 1px solid var(--line); color: var(--ink); font: inherit; font-weight: 400; padding: 9px 12px; }
+    .pub-create__colors { display: grid; gap: 10px; grid-template-columns: repeat(2, 1fr); margin-bottom: 14px; }
+    @media (min-width: 560px) { .pub-create__colors { grid-template-columns: repeat(4, 1fr); } }
+    .pub-create__colors label { align-items: center; display: flex; font-size: 13px; gap: 8px; }
+    .pub-create__colors input { block-size: 32px; border: 1px solid var(--line); inline-size: 100%; padding: 2px; }
+    .pub-create__actions { align-items: center; display: flex; gap: 12px; margin-top: 18px; }
+    .pub-create__switch { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; text-decoration: underline; }
+    .pub-create__status { color: var(--muted); font-size: 14px; margin: 16px 0 0; min-height: 1.2em; }
+    .pub-create__result { background: var(--paper-deep); border: 1px solid var(--accent); font-size: 14px; line-height: 1.6; margin-top: 16px; overflow-wrap: anywhere; padding: 14px 16px; }
+    .pub-create__result code { color: var(--accent); }
+    .pub-create__registered { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 20px; }
+    .pub-create__registered h2 { font-size: 18px; margin-top: 0; }
+    .pub-create__registered ul { list-style: none; margin: 12px 0 18px; padding: 0; }
+    .pub-create__registered li { align-items: center; border-bottom: 1px solid var(--line); display: flex; gap: 12px; padding: 8px 0; }
+    .pub-create__registered li code { overflow-wrap: anywhere; }
+    .pub-create__registered li button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; margin-left: auto; text-decoration: underline; white-space: nowrap; }
+    .pub-create__registered li button:hover { color: var(--ink); }
+  </style>`;
+  const body = `
+    ${styles}
+    <section class="account-card pub-create" data-publication-create aria-labelledby="pub-create-title">
+      <h1 id="pub-create-title">Create a publication</h1>
+      <p class="pub-create__intro">This writes a <code>site.standard.publication</code> record into your own AT Protocol account. The publication URL is set to <code>coffeencode.cc/author/&lt;your-handle&gt;</code>, so stories you publish under it appear on your Coffee &amp; Code author page. Sign-in here uses a separate, minimal grant — it can only manage publications and upload an icon.</p>
+      <div data-pub-signin hidden>
+        <label class="pub-create__field">Your handle or DID<input type="text" data-pub-identifier placeholder="you.bsky.social or did:plc:…" autocomplete="off" spellcheck="false"></label>
+        <div class="pub-create__actions"><button type="button" class="auth-signout" data-pub-signin-button><i class="fa-solid fa-arrow-right" aria-hidden="true"></i> Sign in</button></div>
+      </div>
+      <form data-pub-form hidden>
+        <label class="pub-create__field">Name<input type="text" data-pub-name required maxlength="280" placeholder="My publication"></label>
+        <label class="pub-create__field">Description<textarea data-pub-description rows="3" maxlength="3000" placeholder="What the publication covers"></textarea></label>
+        <label class="pub-create__field">Icon — optional<input type="file" data-pub-icon accept="image/*"></label>
+        <div class="pub-create__colors">
+          <label>Accent<input type="color" data-pub-color="accent" value="#b2ac88"></label>
+          <label>Accent text<input type="color" data-pub-color="accentForeground" value="#28190e"></label>
+          <label>Background<input type="color" data-pub-color="background" value="#28190e"></label>
+          <label>Text<input type="color" data-pub-color="foreground" value="#ffffff"></label>
+        </div>
+        <label class="pub-create__field">Page width (px)<input type="number" data-pub-width value="768" min="320" max="2000" step="1"></label>
+        <div class="pub-create__actions">
+          <button type="submit" class="auth-signout" data-pub-submit><i class="fa-solid fa-plus" aria-hidden="true"></i> Create publication</button>
+          <button type="button" class="pub-create__switch" data-pub-switch>Use a different account</button>
+        </div>
+      </form>
+      <p class="pub-create__status" data-pub-status role="status" aria-live="polite">Loading…</p>
+      <div class="pub-create__result" data-pub-result hidden></div>
+      <section class="pub-create__registered" data-pub-registered hidden aria-labelledby="pub-registered-title">
+        <h2 id="pub-registered-title">Publications on Coffee &amp; Code</h2>
+        <p class="pub-create__intro">Publications created by the site owner appear automatically. A publication in your own repository shows on the site once its URI is added here — ask the site owner.</p>
+        <ul data-pub-registered-list></ul>
+        <div data-pub-admin hidden>
+          <label class="pub-create__field">Add a publication URI<input type="text" data-pub-add-uri placeholder="at://did:plc:…/site.standard.publication/…" autocomplete="off" spellcheck="false"></label>
+          <div class="pub-create__actions"><button type="button" class="auth-signout" data-pub-add-button><i class="fa-solid fa-plus" aria-hidden="true"></i> Add to Coffee &amp; Code</button></div>
+        </div>
+      </section>
+    </section>`;
+  return c.html(renderLayout(c, 'Create a publication', body, '<meta name="robots" content="noindex">'));
 });
 
 pages.get('/become-an-author', (c) => {
@@ -1187,16 +1275,26 @@ pages.get('/tags', async (c) => {
       ${selectedTag ? `<section class="tag-results" aria-labelledby="tag-results-title"><div class="section-heading"><span id="tag-results-title">Posts tagged “${escapeHtml(selectedTag)}”</span><span>${matchingPosts.length}</span></div><div class="tag-follow" data-tag-follow data-tag="${escapeHtml(selectedTagKey)}"><button type="button" class="author-follow__button" data-tag-follow-button>Follow tag</button><span class="author-follow__status" data-tag-follow-status role="status" aria-live="polite"></span></div>${postItems ? `<div class="archive-grid">${postItems}</div>` : '<p class="empty-state">No posts use this tag.</p>'}</section>` : ''}
     </section>
   `;
-  return c.html(renderLayout(c, 'Browse by Tag', body, '', 'Browse by Tag | Coffee & Code'));
+  const tagMetaTags = selectedTag
+    ? `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(`Posts tagged ${selectedTag} on ${c.env.PUB_NAME}`)}" href="/tag/${encodeURIComponent(selectedTag)}/rss.xml">`
+    : '';
+  return c.html(renderLayout(c, 'Browse by Tag', body, tagMetaTags, 'Browse by Tag | Coffee & Code'));
 });
 
 pages.get('/author/:handle', async (c) => {
   const identifier = c.req.param('handle');
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allPosts = await fetchArticles(pds, c.env.OWNER_DID);
+  // Resolve the identifier so co-authored stories (matched by DID) list here too.
+  const resolvedDid = /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(identifier)
+    ? identifier
+    : await resolveAtprotoIdentifier(identifier).catch(() => undefined);
   const authorPosts = allPosts.filter((post) => post.author?.did.toLowerCase() === identifier.toLowerCase()
-    || post.author?.handle.toLowerCase() === identifier.toLowerCase());
-  const author = authorPosts[0]?.author;
+    || post.author?.handle.toLowerCase() === identifier.toLowerCase()
+    || (resolvedDid ? post.author?.did === resolvedDid || post.coAuthorDids?.includes(resolvedDid) : false));
+  const author = authorPosts.find((post) => post.author?.did === resolvedDid)?.author
+    || authorPosts[0]?.author
+    || (resolvedDid ? await fetchAuthorProfile(resolvedDid, pds) : undefined);
   const publicationUri = authorPosts.find((post) => post.publicationUri)?.publicationUri;
 
   if (!author) {
@@ -1267,6 +1365,7 @@ pages.get('/author/:handle', async (c) => {
     <meta name="twitter:description" content="${escapeHtml(c.env.PUB_DESCRIPTION)}">
     <meta name="twitter:image" content="${escapeHtml(browserRenderOgImage(c))}">
     <link rel="canonical" href="${escapeHtml(pageUrl)}">
+    <link rel="alternate" type="application/rss+xml" title="${escapeHtml(`${authorName} on ${c.env.PUB_NAME}`)}" href="/author/${encodeURIComponent(author.handle)}/rss.xml">
   `;
 
   return c.html(renderLayout(c, authorName, body, metaTags));
