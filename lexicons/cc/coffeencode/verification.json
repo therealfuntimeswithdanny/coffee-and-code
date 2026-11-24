@@ -1,0 +1,31 @@
+{
+  "lexicon": 1,
+  "id": "cc.coffeencode.verification",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "A badge Coffee & Code grants to an account. Created by the publication owner; the record key is conventionally the subject's DID.",
+      "record": {
+        "type": "object",
+        "required": ["subject", "type", "createdAt"],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "format": "did",
+            "description": "The account this badge applies to."
+          },
+          "type": {
+            "type": "string",
+            "knownValues": ["verified", "author", "moderator", "developer"],
+            "description": "verified — real-human check; author — publication author; moderator — community moderator; developer — Coffee & Code developer."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

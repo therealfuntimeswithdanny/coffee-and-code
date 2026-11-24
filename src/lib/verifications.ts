@@ -1,4 +1,8 @@
+import { getEdgeCachedValue } from './atproto';
+
 const verifierDid = 'did:plc:z7hzwpuv5ytin56wecfxa4mx';
+const badgeCollection = 'cc.coffeencode.verification';
+const badgeTypes = new Set(['verified', 'author', 'moderator', 'developer']);
 const verificationCollection = 'app.bsky.graph.verification';
 const backlinksEndpoint = 'https://constellation.microcosm.blue/xrpc/blue.microcosm.links.getBacklinks';
 const headers = {
@@ -31,4 +35,39 @@ export async function getVerifiedDids(dids: string[]): Promise<Set<string>> {
   }
 
   return verified;
+}
+
+type BadgeRecord = { value?: { subject?: unknown; type?: unknown } };
+
+async function loadBadgeMap(pdsUrl: string, ownerDid: string): Promise<Record<string, string>> {
+  const badges: Record<string, string> = {};
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page += 1) {
+    const url = new URL(`${pdsUrl}/xrpc/com.atproto.repo.listRecords`);
+    url.searchParams.set('repo', ownerDid);
+    url.searchParams.set('collection', badgeCollection);
+    url.searchParams.set('limit', '100');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await fetch(url, { headers });
+    if (!response.ok) break; // A missing collection just means no badges yet.
+    const payload = await response.json() as { records?: BadgeRecord[]; cursor?: string };
+    for (const record of payload.records || []) {
+      const subject = record.value?.subject;
+      const type = record.value?.type;
+      if (typeof subject === 'string' && /^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(subject)
+        && typeof type === 'string' && badgeTypes.has(type)) {
+        badges[subject] = type;
+      }
+    }
+    if (!payload.cursor) break;
+    cursor = payload.cursor;
+  }
+  return badges;
+}
+
+/** cc.coffeencode.verification badges granted by the publication owner. */
+export async function getVerificationBadges(pdsUrl: string, ownerDid: string): Promise<Map<string, string>> {
+  const map = await getEdgeCachedValue('verifications', `${pdsUrl}\n${ownerDid}`, 300, () =>
+    loadBadgeMap(pdsUrl, ownerDid));
+  return new Map(Object.entries(map));
 }

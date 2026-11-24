@@ -76,7 +76,7 @@ export function renderLayout(
     .browser-run .article-layout { display: block; max-width: 820px; }
     .browser-run .article { margin: 0 auto; max-width: 820px; }
     .browser-run .article-rail, .browser-run .recommendations { display: none !important; }
-    * { box-sizing: border-box; } html, body { min-height: 100%; } body { display: flex; flex-direction: column; margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: var(--ui-font, 'Source Sans 3', sans-serif); font-size: 18px; line-height: 1.45; }
+    * { box-sizing: border-box; } html, body { min-height: 100%; overflow-x: clip; } body { display: flex; flex-direction: column; margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: var(--ui-font, 'Source Sans 3', sans-serif); font-size: 18px; line-height: 1.45; }
     a { color: inherit; text-decoration: none; } a:hover { color: var(--accent); } .site-header { border-bottom: 1px solid var(--line-strong); background: var(--paper); position: sticky; top: 0; z-index: 100; } .header-inner, .page-content, .footer-inner { width: min(var(--page-width), calc(100% - 48px)); margin: 0 auto; }
       .header-inner { min-height: 100px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; transition: min-height 180ms ease; } .site-nav, .header-links { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; } .header-links { justify-content: flex-end; }.site-brand { font-family: Lora, serif; font-size: clamp(1.55rem, 3vw, 2.3rem); font-weight: 700; letter-spacing: -.06em; white-space: nowrap; transition: font-size 180ms ease; }.site-header.is-compact { box-shadow: 0 3px 16px rgba(0, 0, 0, .2); }.site-header.is-compact .header-inner { min-height: 68px; }.site-header.is-compact .site-brand { font-size: clamp(1.35rem, 2.5vw, 1.9rem); }
     .subscribe-button { background: var(--accent); color: var(--paper); padding: 8px 13px; }.subscribe-button:hover { background: var(--ink); color: var(--paper); }
@@ -125,7 +125,7 @@ export function renderLayout(
     .user-tabs__tab:hover { color: var(--ink); }
     .user-tabs__tab--active, .user-tabs__tab[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
     .user-tabs__tab span { color: var(--muted); font-weight: 400; }
-    .author-page__banner { aspect-ratio: 3 / 1; display: block; margin-bottom: 24px; object-fit: cover; width: 100%; }.author-page__description { color: var(--muted); margin: -16px 0 36px; max-width: 740px; }.author-page__pinned { margin-bottom: 42px; }.author-page__pinned-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }.author-pinned-card { background: var(--paper-deep); border: 1px solid var(--line); min-width: 0; }.author-pinned-card__image { align-items: center; aspect-ratio: 16 / 9; background: var(--paper); display: flex; justify-content: center; overflow: hidden; }.author-pinned-card__image img { display: block; height: 100%; object-fit: cover; width: 100%; }.author-pinned-card__content { padding: 16px 18px 18px; }.author-pinned-card__content .eyebrow { color: var(--accent); font-size: 11px; margin: 0 0 8px; }.author-pinned-card__content h3 { font-size: clamp(18px, 2.2vw, 24px); line-height: 1.2; margin: 0; }.author-pinned-card__content > p:last-child:not(.eyebrow) { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 9px 0 0; }
+    .author-page__banner { aspect-ratio: 3 / 1; display: block; margin: 0 calc(50% - (100vw - 48px) / 2) 24px; max-width: calc(100vw - 48px); object-fit: cover; width: calc(100vw - 48px); }.author-page__description { color: var(--muted); margin: -16px 0 36px; max-width: 740px; }.author-page__pinned { margin-bottom: 42px; }.author-page__pinned-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }.author-pinned-card { background: var(--paper-deep); border: 1px solid var(--line); min-width: 0; }.author-pinned-card__image { align-items: center; aspect-ratio: 16 / 9; background: var(--paper); display: flex; justify-content: center; overflow: hidden; }.author-pinned-card__image img { display: block; height: 100%; object-fit: cover; width: 100%; }.author-pinned-card__content { padding: 16px 18px 18px; }.author-pinned-card__content .eyebrow { color: var(--accent); font-size: 11px; margin: 0 0 8px; }.author-pinned-card__content h3 { font-size: clamp(18px, 2.2vw, 24px); line-height: 1.2; margin: 0; }.author-pinned-card__content > p:last-child:not(.eyebrow) { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 9px 0 0; }
     @media (max-width: 760px) { .author-page__pinned-grid { gap: 12px; grid-template-columns: 1fr; }.author-pinned-card { display: grid; grid-template-columns: minmax(88px, 30%) minmax(0, 1fr); }.author-pinned-card__image { align-self: stretch; aspect-ratio: auto; min-height: 112px; }.author-pinned-card__content { align-self: center; padding: 12px; }.author-pinned-card__content h3 { font-size: 17px; }.author-pinned-card__content > p:last-child:not(.eyebrow) { display: none; }.author-follow { margin: -20px 0 30px; }.user-page__header { align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-left: 12px; }.user-page__avatar { flex-basis: 76px; height: 76px; width: 76px; }.user-page__identity .eyebrow { margin-top: 24px; }.user-page__bluesky { margin: 0 0 0 88px; }.user-page__description,.user-page__details { margin-left: 12px; }.user-comment { gap: 8px; grid-template-columns: 1fr; padding: 18px 4px; }.user-comment__date { font-size: 12px; } }
     .authors-page__header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 20px; }.authors-page__header .eyebrow { margin: 0 0 8px; }.authors-page__header h1 { margin: 0; }.author-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }.author-card { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); display: flex; gap: 14px; padding: 16px; }.author-card:hover { border-color: var(--accent); }.author-card__avatar { border-radius: 50%; flex: 0 0 64px; height: 64px; object-fit: cover; width: 64px; }.author-card__avatar--placeholder { background: var(--accent); }.author-card__details { display: grid; gap: 2px; }.author-card__details strong { color: var(--ink); font-family: Lora, serif; font-size: 20px; }.author-card__details span { color: var(--muted); font-size: 14px; }.author-card__details span:last-child { color: var(--accent); margin-top: 4px; }
     .author-invitation { margin: 24px auto 60px; max-width: 760px; }.author-invitation h1 { font-size: clamp(2.5rem, 6vw, 4rem); margin: 0; }.author-invitation__intro { color: var(--muted); font-size: 20px; line-height: 1.55; margin: 18px 0 32px; }.author-invitation__steps { counter-reset: author-step; display: grid; gap: 22px; list-style: none; margin: 0; padding: 0; }.author-invitation__steps li { border-top: 1px solid var(--line); padding-top: 20px; }.author-invitation__steps h2 { font-size: 22px; margin: 0 0 8px; }.author-invitation__steps p { color: var(--muted); line-height: 1.6; margin: 0; }.author-invitation__steps a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }.author-invitation__steps code { background: var(--paper-deep); border: 1px solid var(--line); display: inline-block; margin-top: 4px; overflow-wrap: anywhere; padding: 8px 10px; }.authors-page__invitation { margin: 28px 0 0; }
@@ -410,6 +410,9 @@ export function renderLayout(
     .reaction-button:disabled { cursor: wait; opacity: .65; }
     .reaction-count { color: var(--accent); font-variant-numeric: tabular-nums; }
     .author-verification-badge { color: #3897f0; display: inline-block; margin-left: .3em; }
+    .author-verification-badge--author { color: var(--accent); }
+    .author-verification-badge--moderator { color: #2e8b57; }
+    .author-verification-badge--developer { color: var(--ink); }
     .article-reactions__status { color: var(--muted); flex-basis: 100%; font-size: 12px; min-height: 18px; }
     .auth-page { display: flex; flex-direction: column; margin: 24px auto 60px; max-width: 1020px; min-height: calc(100vh - 120px); }
     .auth-hero { align-items: stretch; display: grid; flex: 1; gap: 48px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
@@ -1354,14 +1357,24 @@ export function renderLayout(
         fetch('/api/verifications?' + query.toString(), { cache: 'force-cache' })
           .then((response) => response.ok ? response.json() : Promise.reject(new Error('Author verification request failed')))
           .then((result) => {
-            const verifiedDids = new Set(result.verifiedDids);
+            const verifiedDids = new Set(result.verifiedDids || []);
+            const badges = result.badges || {};
+            const badgeStyles = {
+              verified: { icon: 'fa-circle-check', label: 'Verified by Coffee & Code' },
+              author: { icon: 'fa-feather', label: 'Coffee & Code author' },
+              moderator: { icon: 'fa-shield-halved', label: 'Coffee & Code moderator' },
+              developer: { icon: 'fa-code', label: 'Coffee & Code developer' },
+            };
             authorNameElements.forEach((element) => {
-              if (!verifiedDids.has(element.dataset.authorVerificationDid) || element.querySelector('.author-verification-badge')) return;
+              const did = element.dataset.authorVerificationDid;
+              const type = badges[did] || (verifiedDids.has(did) ? 'verified' : undefined);
+              const style = type && badgeStyles[type];
+              if (!style || element.querySelector('.author-verification-badge')) return;
               const badge = document.createElement('i');
-              badge.className = 'fa-solid fa-circle-check author-verification-badge';
+              badge.className = 'fa-solid ' + style.icon + ' author-verification-badge author-verification-badge--' + type;
               badge.setAttribute('role', 'img');
-              badge.setAttribute('aria-label', 'This author is a real human and has been verified by Coffee & Code');
-              badge.title = 'This author is a real human and has been verified by Coffee & Code';
+              badge.setAttribute('aria-label', style.label);
+              badge.title = style.label;
               element.append(badge);
             });
           })

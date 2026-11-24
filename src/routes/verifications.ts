@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { getVerifiedDids } from '../lib/verifications';
+import { getVerifiedDids, getVerificationBadges } from '../lib/verifications';
+import { getPdsEndpoint } from '../lib/atproto';
 import { Env } from '../types';
 
 const verifications = new Hono<{ Bindings: Env }>();
@@ -13,8 +14,19 @@ verifications.get('/', async (c) => {
   }
 
   try {
-    const verifiedDids = await getVerifiedDids(dids);
-    return c.json({ verifiedDids: [...verifiedDids] }, 200, {
+    // Badges are granted by the coffeencode.cc account, not the publication owner.
+    const badgeDid = 'did:plc:z7hzwpuv5ytin56wecfxa4mx';
+    const badgePds = await getPdsEndpoint(badgeDid, c.env.OWNER_PDS);
+    const [verifiedDids, badgeMap] = await Promise.all([
+      getVerifiedDids(dids),
+      getVerificationBadges(badgePds, badgeDid),
+    ]);
+    const badges: Record<string, string> = {};
+    dids.forEach((did) => {
+      const type = badgeMap.get(did);
+      if (type) badges[did] = type;
+    });
+    return c.json({ verifiedDids: [...verifiedDids], badges }, 200, {
       'Cache-Control': 'public, max-age=300',
     });
   } catch (error) {
