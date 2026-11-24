@@ -132,8 +132,7 @@ home.get('/', async (c) => {
               <div>
                 <h3><a href="${escapeHtml(post.path)}">${escapeHtml(post.title || 'Untitled')}</a></h3>
                 ${sideDek ? `<p class="story-dek${dekClass(post)}">${escapeHtml(sideDek)}</p>` : ''}
-                ${authorByline(post)}
-                ${articleMeta(post)}
+                <div class="story-byline">${authorByline(post)}${articleMeta(post)}</div>
               </div>
             </article>`;
           }

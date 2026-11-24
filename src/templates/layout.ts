@@ -208,7 +208,10 @@ export function renderLayout(
     .side-story:hover { box-shadow: none; transform: none; }
     .side-story__image { border-radius: 0; }
     .side-story h3 { font-size: 17px; }
-    .home-post-author { align-items: center; color: var(--accent); display: inline-flex; font-size: 13px; gap: 7px; margin: 7px 0; text-decoration: none; }
+    .home-post-author { align-items: center; color: var(--muted); display: inline-flex; font-size: 13px; gap: 7px; margin: 7px 0; text-decoration: none; vertical-align: middle; }
+    .home-post-author + .article-meta { vertical-align: middle; }
+    .story-byline { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+    .story-byline .home-post-author, .story-byline .article-meta { margin: 0; }
     .home-post-author img, .home-post-author__placeholder { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 50%; flex: 0 0 24px; height: 24px; object-fit: cover; width: 24px; }
     .home-post-author:hover { color: var(--ink); }
     .lead-column { min-width: 0; }
@@ -409,10 +412,10 @@ export function renderLayout(
     .engagement-stat { cursor: default; }
     .reaction-button:disabled { cursor: wait; opacity: .65; }
     .reaction-count { color: var(--accent); font-variant-numeric: tabular-nums; }
-    .author-verification-badge { color: #3897f0; display: inline-block; margin-left: .3em; }
+    .author-verification-badge { color: #3897f0; display: inline-block; font-size: .85em; margin-left: .3em; vertical-align: -0.05em; }
     .author-verification-badge--author { color: var(--accent); }
     .author-verification-badge--moderator { color: #2e8b57; }
-    .author-verification-badge--developer { color: var(--ink); }
+    .author-verification-badge--developer { color: #c0564f; }
     .article-reactions__status { color: var(--muted); flex-basis: 100%; font-size: 12px; min-height: 18px; }
     .auth-page { display: flex; flex-direction: column; margin: 24px auto 60px; max-width: 1020px; min-height: calc(100vh - 120px); }
     .auth-hero { align-items: stretch; display: grid; flex: 1; gap: 48px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
@@ -1365,10 +1368,16 @@ export function renderLayout(
               moderator: { icon: 'fa-shield-halved', label: 'Coffee & Code moderator' },
               developer: { icon: 'fa-code', label: 'Coffee & Code developer' },
             };
+            // Story pages and the home feed only need the "real" badges —
+            // verified and developer. Author/moderator roles are already
+            // obvious from context there.
+            const compactBadges = location.pathname === '/'
+              || (location.pathname.startsWith('/author/') && location.pathname.split('/').filter(Boolean).length === 3);
             authorNameElements.forEach((element) => {
               const did = element.dataset.authorVerificationDid;
               const listed = Array.isArray(badges[did]) ? badges[did] : badges[did] ? [badges[did]] : [];
-              const types = [...new Set([...listed, ...(verifiedDids.has(did) ? ['verified'] : [])])];
+              const types = [...new Set([...listed, ...(verifiedDids.has(did) ? ['verified'] : [])])]
+                .filter((type) => !compactBadges || type === 'verified' || type === 'developer');
               types.forEach((type) => {
                 const style = badgeStyles[type];
                 if (!style || element.querySelector('.author-verification-badge--' + type)) return;
