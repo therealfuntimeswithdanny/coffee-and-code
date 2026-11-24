@@ -579,6 +579,24 @@ function renderLeafletEmbed(block: any, useSrcdoc = false): string {
 
   const src = safeEmbedUrl(block.url);
   if (!src) return '';
+
+  // Uploads land at /video/ paths or carry a video extension — render those
+  // with a native player at full column width instead of an iframe shell.
+  let isVideo = false;
+  try {
+    const parsed = new URL(src);
+    isVideo = parsed.pathname.startsWith('/video/') || /\.(mp4|webm|mov|m4v|ogv|mpg|3gp|3g2)$/i.test(parsed.pathname);
+  } catch { /* safeEmbedUrl already validated the URL shape. */ }
+  if (isVideo) {
+    const captionText = typeof block.alt === 'string' && block.alt.trim()
+      ? block.alt.trim().slice(0, 200)
+      : typeof block.title === 'string' && block.title.trim() && block.title.trim() !== 'Embedded video'
+        ? block.title.trim().slice(0, 200)
+        : '';
+    const caption = captionText ? `<figcaption class="prose-video-figure__caption">${escapeHtml(captionText)}</figcaption>` : '';
+    return `<figure class="prose-video-figure"><video src="${escapeHtml(src)}" controls muted loop playsinline preload="metadata" data-autoplay-view style="width:100%;${height}"></video>${caption}</figure>`;
+  }
+
   return `<iframe class="prose-embed" title="${escapeHtml(title)}" src="${escapeHtml(src)}" sandbox="allow-scripts allow-forms allow-presentation" referrerpolicy="no-referrer" loading="lazy" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen style="width:100%;${height}"></iframe>`;
 }
 

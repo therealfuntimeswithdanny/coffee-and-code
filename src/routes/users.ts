@@ -470,6 +470,13 @@ users.get('/:identifier', async (c) => {
     console.error(`Could not load forum posts for ${did}:`, error);
   }
 
+  let lists: UserListRecord[] = [];
+  try {
+    lists = await fetchUserLists(pds, did);
+  } catch (error) {
+    console.error(`Could not load lists for ${did}:`, error);
+  }
+
   let articles: StandardDocument[] = [];
   try {
     const publicationPds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
@@ -508,31 +515,87 @@ users.get('/:identifier', async (c) => {
           <time datetime="${escapeHtml(post.createdAt)}">${escapeHtml(formatCommentDate(post.createdAt))}</time>
         </article>`).join('')}</div>`
     : '<p class="empty-state">No forum posts yet.</p>';
+  const shownLists = lists.length
+    ? `<ul class="list-index">${lists.map((list) => `
+        <li class="list-card">
+          ${renderListIcon(list, did, 'list-card__icon')}
+          <div class="list-card__body">
+            <h2><a href="/user/${encodeURIComponent(profile.handle)}/list/${encodeURIComponent(list.rkey)}">${escapeHtml(list.title)}</a></h2>
+            ${list.about ? `<p>${escapeHtml(list.about)}</p>` : ''}
+            <small>Created ${escapeHtml(formatCommentDate(list.createdAt))}</small>
+          </div>
+        </li>`).join('')}</ul>`
+    : '<p class="empty-state">No public lists yet.</p>';
+  const publicationUri = authorArticle?.publicationUri;
   const pageUrl = new URL(c.req.url).toString();
   const body = `
-    <section class="user-page" aria-labelledby="user-title">
-      ${banner ? `<div class="user-page__banner"><img src="${escapeHtml(banner)}" alt="" width="1200" height="400"></div>` : '<div class="user-page__banner user-page__banner--empty"></div>'}
-      <header class="user-page__header">
-        ${avatar ? `<img class="user-page__avatar" src="${escapeHtml(avatar)}" alt="" width="104" height="104">` : '<span class="user-page__avatar user-page__avatar--empty" aria-hidden="true"><i class="fa-solid fa-user"></i></span>'}
-        <div class="user-page__identity"><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}</p></div>
-        <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(did)}" data-block-user-name="${escapeHtml(name)}" hidden disabled>Block user</button>
-        ${authorArticle?.author ? `<a class="user-page__bluesky" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
-        <a class="user-page__bluesky" href="/user/${encodeURIComponent(profile.handle)}/lists">Lists <i class="fa-solid fa-list" aria-hidden="true"></i></a>
-        <a class="user-page__bluesky" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">Bluesky profile <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+    <section class="user-page author-page" aria-labelledby="user-title">
+      ${banner ? `<img class="author-page__banner" src="${escapeHtml(banner)}" alt="" width="1200" height="400" decoding="async">` : ''}
+      <header class="author-page__header">
+        ${avatar ? `<img class="author-page__avatar" src="${escapeHtml(avatar)}" alt="" width="88" height="88" decoding="async">` : '<span class="author-page__avatar author-page__avatar--empty" aria-hidden="true"><i class="fa-solid fa-user"></i></span>'}
+        <div><h1 id="user-title" data-author-verification-did="${escapeHtml(did)}">${escapeHtml(name)}</h1><p>@${escapeHtml(profile.handle)}${pronouns ? ` · ${escapeHtml(pronouns)}` : ''}</p></div>
       </header>
-      ${description ? `<p class="user-page__description">${escapeHtml(description)}</p>` : ''}
-      ${pronouns ? `<div class="user-page__details"><span>${escapeHtml(pronouns)}</span></div>` : ''}
-      <section class="user-page__activity" aria-labelledby="user-forum-title">
+      <div class="author-follow" ${publicationUri ? `data-author-follow data-author-did="${escapeHtml(did)}" data-author-name="${escapeHtml(name)}" data-publication-uri="${escapeHtml(publicationUri)}"` : ''}>
+        ${authorArticle?.author ? `<a class="author-page__profile-link" href="/author/${encodeURIComponent(authorArticle.author.handle)}">Open author profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>` : ''}
+        <a class="author-page__profile-link" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">View on Bluesky <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(did)}" data-block-user-name="${escapeHtml(name)}" hidden disabled>Block user</button>
+        <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
+        <span class="author-follow__status" data-author-follow-status role="status" aria-live="polite">${publicationUri ? '' : 'Following is unavailable for this account.'}</span>
+      </div>
+      ${description ? `<p class="author-page__description">${escapeHtml(description)}</p>` : ''}
+      <nav class="user-tabs" aria-label="Profile sections" data-user-tabs>
+        <a href="#forum" class="user-tabs__tab" data-user-tab="forum">Forum <span>${forumPosts.length}</span></a>
+        <a href="#comments" class="user-tabs__tab" data-user-tab="comments">Comments <span>${comments.length}</span></a>
+        <a href="#lists" class="user-tabs__tab" data-user-tab="lists">Lists <span>${lists.length}</span></a>
+      </nav>
+      <section id="forum" class="user-page__activity" aria-labelledby="user-forum-title" data-user-panel="forum">
         <div class="section-heading"><span id="user-forum-title">Forum posts</span><span>${forumPosts.length}</span></div>
         ${forumPosts.length === 100 ? '<p class="user-page__comment-limit">Showing the latest 100 forum posts.</p>' : ''}
         ${shownForumPosts}
       </section>
-      <section class="user-page__activity" aria-labelledby="user-comments-title">
+      <section id="comments" class="user-page__activity" aria-labelledby="user-comments-title" data-user-panel="comments">
         <div class="section-heading"><span id="user-comments-title">Comments</span><span>${comments.length}</span></div>
         ${comments.length === 100 ? '<p class="user-page__comment-limit">Showing the latest 100 comments.</p>' : ''}
         ${shownComments}
       </section>
-    </section>`;
+      <section id="lists" class="user-page__activity" aria-labelledby="user-lists-title" data-user-panel="lists">
+        <div class="section-heading"><span id="user-lists-title">Lists</span><span>${lists.length}</span></div>
+        ${shownLists}
+      </section>
+    </section>
+    <script>
+      (function () {
+        var nav = document.querySelector('[data-user-tabs]');
+        if (!nav) return;
+        var tabs = Array.prototype.slice.call(nav.querySelectorAll('[data-user-tab]'));
+        var panels = Array.prototype.slice.call(document.querySelectorAll('[data-user-panel]'));
+        var names = tabs.map(function (tab) { return tab.getAttribute('data-user-tab'); });
+        var activate = function (name) {
+          if (names.indexOf(name) === -1) name = names[0];
+          tabs.forEach(function (tab) {
+            var active = tab.getAttribute('data-user-tab') === name;
+            tab.setAttribute('aria-selected', String(active));
+            tab.classList.toggle('user-tabs__tab--active', active);
+          });
+          panels.forEach(function (panel) {
+            panel.hidden = panel.getAttribute('data-user-panel') !== name;
+          });
+        };
+        tabs.forEach(function (tab) {
+          tab.setAttribute('role', 'tab');
+          tab.addEventListener('click', function (event) {
+            event.preventDefault();
+            var name = tab.getAttribute('data-user-tab');
+            if (history.replaceState) history.replaceState(null, '', '#' + name);
+            activate(name);
+          });
+        });
+        activate(window.location.hash.replace('#', '') || names[0]);
+        window.addEventListener('hashchange', function () {
+          activate(window.location.hash.replace('#', ''));
+        });
+      })();
+    </script>`;
   const metaTags = `
     <meta name="description" content="${escapeHtml(description || `Public profile and comments by ${name} on Coffee and Code.`)}">
     <meta property="og:title" content="${escapeHtml(name)} | Coffee and Code">

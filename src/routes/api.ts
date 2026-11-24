@@ -231,7 +231,8 @@ const VIDEO_MIME_EXT: Record<string, string> = {
   'video/3gpp': '.3gp',
   'video/3gpp2': '.3g2',
 };
-const VIDEO_MAX_BYTES = 512 * 1024 * 1024; // 512 MB
+// 100 MB — Cloudflare's request-body proxy limit caps uploads above this.
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
 
 // Stores author videos in the public R2 bucket served at
 // storage.coffeencode.cc/video/. Two modes:
@@ -244,7 +245,7 @@ api.post('/video', async (c) => {
     return c.json({ error: 'Video storage is not configured.' }, 503, { 'Cache-Control': 'no-store' });
   }
   const storageBase = (c.env.STORAGE_PUBLIC_URL || 'https://storage.coffeencode.cc').replace(/\/+$/, '');
-  const tooLarge = () => c.json({ error: 'Video exceeds the 512 MB limit.' }, 413, { 'Cache-Control': 'no-store' });
+  const tooLarge = () => c.json({ error: 'Video exceeds the 100 MB limit.' }, 413, { 'Cache-Control': 'no-store' });
   const store = async (key: string, body: ReadableStream | null, mimeType: string, declared: number) => {
     if (Number.isFinite(declared) && declared > VIDEO_MAX_BYTES) {
       body?.cancel();

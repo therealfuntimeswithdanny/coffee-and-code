@@ -2700,7 +2700,12 @@ async function uploadAuthorImage(file: File): Promise<unknown> {
 // rejects the file — usually its blob size limit — the bytes go straight to
 // the storage endpoint instead. Either path returns the public
 // storage.coffeencode.cc/video/ URL embedded in the draft.
+// 100 MB — the worker's request-body limit for the storage proxy.
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
 async function uploadAuthorVideo(file: File): Promise<{ url: string; mimeType: string }> {
+  if (file.size > VIDEO_MAX_BYTES) {
+    throw new Error('Video exceeds the 100 MB limit. Choose a smaller file.');
+  }
   const activeSession = requireSession();
   try {
     const response = await activeSession.fetchHandler('/xrpc/com.atproto.repo.uploadBlob', {
@@ -4562,10 +4567,50 @@ document.querySelectorAll<HTMLElement>('[data-tag-follow]').forEach((container) 
   });
 });
 
+const unfollowDialog = document.querySelector<HTMLDialogElement>('[data-unfollow-dialog]');
+const unfollowDialogTitle = unfollowDialog?.querySelector<HTMLElement>('[data-unfollow-dialog-title]');
+const unfollowDialogStatus = unfollowDialog?.querySelector<HTMLElement>('[data-unfollow-dialog-status]');
+const unfollowOnBluesky = unfollowDialog?.querySelector<HTMLInputElement>('[data-unfollow-on-bluesky]');
+const confirmUnfollowButton = unfollowDialog?.querySelector<HTMLButtonElement>('[data-confirm-unfollow]');
+const cancelUnfollowButton = unfollowDialog?.querySelector<HTMLButtonElement>('[data-cancel-unfollow]');
+
+// Resolves 'both' (also unfollow on Bluesky), 'site' (Coffee & Code only), or
+// null when the user cancels. Without the dialog in the DOM, keep the old
+// behavior and unfollow on both.
+function promptAuthorUnfollow(name: string): Promise<'both' | 'site' | null> {
+  if (!unfollowDialog) return Promise.resolve('both');
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (choice: 'both' | 'site' | null) => {
+      if (settled) return;
+      settled = true;
+      confirmUnfollowButton?.removeEventListener('click', onConfirm);
+      cancelUnfollowButton?.removeEventListener('click', onCancel);
+      unfollowDialog.removeEventListener('cancel', onEscape);
+      resolve(choice);
+    };
+    const onConfirm = () => {
+      const alsoOnBluesky = Boolean(unfollowOnBluesky?.checked);
+      unfollowDialog.close();
+      done(alsoOnBluesky ? 'both' : 'site');
+    };
+    const onCancel = () => { unfollowDialog.close(); done(null); };
+    const onEscape = () => { done(null); };
+    if (unfollowDialogTitle) unfollowDialogTitle.textContent = `Unfollow ${name}?`;
+    if (unfollowDialogStatus) unfollowDialogStatus.textContent = '';
+    if (unfollowOnBluesky) unfollowOnBluesky.checked = true;
+    confirmUnfollowButton?.addEventListener('click', onConfirm);
+    cancelUnfollowButton?.addEventListener('click', onCancel);
+    unfollowDialog.addEventListener('cancel', onEscape);
+    unfollowDialog.showModal();
+  });
+}
+
 document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((container) => {
   const button = container.querySelector<HTMLButtonElement>('[data-author-follow-button]');
   const status = container.querySelector<HTMLElement>('[data-author-follow-status]');
   const did = container.dataset.authorDid;
+  const authorName = container.dataset.authorName || 'this author';
   const publication = container.dataset.publicationUri;
   const followCollection = 'app.bsky.graph.follow';
   const subscriptionCollection = 'site.standard.graph.subscription';
@@ -4630,6 +4675,7 @@ document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((containe
     button.disabled = true;
     if (status) status.textContent = 'Updating your follows…';
     const shouldFollow = !(followRecord && subscriptionRecord);
+    let unfollowedOnBluesky = false;
     const compensations: Array<() => Promise<void>> = [];
     try {
       if (shouldFollow) {
@@ -4649,6 +4695,11 @@ document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((containe
           compensations.push(() => deleteFollowRecord(subscriptionCollection, uri, activeDid));
         }
       } else {
+        const unfollowScope = await promptAuthorUnfollow(authorName);
+        if (!unfollowScope) {
+          if (status) status.textContent = '';
+          return;
+        }
         const oldSubscription = subscriptionRecord!;
         await deleteFollowRecord(subscriptionCollection, oldSubscription.uri, activeDid);
         compensations.push(async () => {
@@ -4657,18 +4708,25 @@ document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((containe
             $type: subscriptionCollection,
           }, activeDid);
         });
-        const oldFollow = followRecord!;
-        await deleteFollowRecord(followCollection, oldFollow.uri, activeDid);
-        compensations.push(async () => {
-          await createFollowRecord(followCollection, {
-            ...oldFollow.value,
-            $type: followCollection,
-          }, activeDid);
-        });
+        if (unfollowScope === 'both' && followRecord) {
+          const oldFollow = followRecord;
+          await deleteFollowRecord(followCollection, oldFollow.uri, activeDid);
+          compensations.push(async () => {
+            await createFollowRecord(followCollection, {
+              ...oldFollow.value,
+              $type: followCollection,
+            }, activeDid);
+          });
+        }
+        unfollowedOnBluesky = unfollowScope === 'both';
       }
 
       await loadFollowState();
-      if (status) status.textContent = shouldFollow ? 'Following on Bluesky and Coffee & Code.' : 'Unfollowed on Bluesky and Coffee & Code.';
+      if (status) status.textContent = shouldFollow
+        ? 'Following on Bluesky and Coffee & Code.'
+        : unfollowedOnBluesky
+          ? 'Unfollowed on Bluesky and Coffee & Code.'
+          : 'Unfollowed on Coffee & Code; still following on Bluesky.';
     } catch (error) {
       const rollbackErrors: unknown[] = [];
       for (const compensate of compensations.reverse()) {

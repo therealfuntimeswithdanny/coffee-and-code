@@ -231,10 +231,6 @@ async function renderPost(
       return `<a class="article__author" href="/author/${encodeURIComponent(coAuthor.handle)}">${avatar ? `<img src="${avatar}" alt="" class="article__author-avatar" width="36" height="36" loading="lazy" decoding="async">` : '<span class="article__author-avatar article__author-avatar--placeholder" aria-hidden="true"></span>'}<span data-author-verification-did="${escapeHtml(coAuthor.did)}">${escapeHtml(name)}</span></a>`;
     }),
   ].filter(Boolean);
-  const bylineHtml = bylineLinks.length
-    ? `<span class="article__byline">Written by ${bylineLinks.join('<span class="article__byline-sep"> and </span>')} <span class="article__byline-sep"> on </span>${formatDate(post.publishedAt)}</span>`
-    : '';
-
   // Update history: republishes stamp `updatedAt` (and optionally append
   // {at, note} entries to `updates`) on the document record.
   const updateEntries = (Array.isArray(post.record?.updates) ? post.record.updates : [])
@@ -251,9 +247,21 @@ async function renderPost(
   const latestUpdateAt = updateEntries[0]?.at || recordUpdatedAt;
   const updateNote = updateEntries[0]?.note
     || (typeof post.record?.updateNote === 'string' ? post.record.updateNote : '');
-  const updatesHtml = latestUpdateAt
-    ? `<p class="article__updated"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Updated ${escapeHtml(formatDateTime(latestUpdateAt))}${updateNote ? ` — ${escapeHtml(updateNote)}` : ''}</p>
-      ${updateEntries.length > 1 ? `<details class="article__history"><summary>Update history (${updateEntries.length})</summary><ul>${updateEntries.map((entry) => `<li><time datetime="${escapeHtml(entry.at)}">${escapeHtml(formatDateTime(entry.at))}</time>${entry.note ? ` — ${escapeHtml(entry.note)}` : ''}</li>`).join('')}</ul></details>` : ''}`
+  // Byline + latest-update stamp share one muted line; multi-update
+  // history stays in a collapsible <details> underneath.
+  const bylineParts = [
+    bylineLinks.length
+      ? `Written by ${bylineLinks.join(' and ')} on ${formatDate(post.publishedAt)}`
+      : '',
+    latestUpdateAt
+      ? `<i class="fa-solid fa-rotate" aria-hidden="true"></i> Updated ${escapeHtml(formatDateTime(latestUpdateAt))}${updateNote ? ` — ${escapeHtml(updateNote)}` : ''}`
+      : '',
+  ].filter(Boolean);
+  const bylineHtml = bylineParts.length
+    ? `<p class="article__byline">${bylineParts.join('<span class="article__byline-sep"> · </span>')}</p>`
+    : '';
+  const updatesHtml = updateEntries.length > 1
+    ? `<details class="article__history"><summary>Update history (${updateEntries.length})</summary><ul>${updateEntries.map((entry) => `<li><time datetime="${escapeHtml(entry.at)}">${escapeHtml(formatDateTime(entry.at))}</time>${entry.note ? ` — ${escapeHtml(entry.note)}` : ''}</li>`).join('')}</ul></details>`
     : '';
   const readingTime = readingTimeMinutes(post.content || '', post.mimeType);
   const safeTitle = escapeHtml(post.title);
@@ -396,10 +404,11 @@ async function renderPost(
     <style>
       .article-banner { background: var(--paper-deep); border: 1px solid var(--line-strong); color: var(--muted); font-size: 14px; margin: 0 0 22px; padding: 12px 16px; }
       .article-banner i { color: var(--accent); margin-right: 8px; }
-      .article__byline { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+      .article__byline { color: var(--muted); font-size: 14px; margin: 14px 0 0; }
+      .article__byline .article__author { display: inline; font-size: inherit; font-weight: 600; gap: 0; margin-top: 0; }
+      .article__byline .article__author-avatar { display: inline-block; height: 20px; margin: 0 5px 0 1px; vertical-align: -4px; width: 20px; }
+      .article__byline .fa-rotate { margin-right: 4px; }
       .article__byline-sep { color: var(--muted); }
-      .article__updated { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
-      .article__updated i { margin-right: 6px; }
       .article__history { color: var(--muted); font-size: 14px; margin-top: 8px; }
       .article__history summary { color: var(--accent); cursor: pointer; }
       .article__history ul { margin: 8px 0 0; padding-left: 20px; }

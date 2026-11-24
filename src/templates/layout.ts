@@ -115,6 +115,12 @@ export function renderLayout(
     .author-follow { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin: -20px 0 34px 108px; }.author-follow__button { background: var(--accent); border: 1px solid var(--accent); color: var(--paper); cursor: pointer; font: 700 13px 'Source Sans 3', sans-serif; min-height: 38px; padding: 8px 18px; }.author-follow__button[aria-pressed="true"] { background: transparent; color: var(--accent); }.author-follow__button:disabled { cursor: wait; opacity: .65; }.author-follow__count { color: var(--muted); font-size: 14px; }.author-follow__status { color: var(--muted); flex-basis: 100%; font-size: 13px; }
     .author-page__profile-link { align-items: center; border: 1px solid var(--line-strong); color: var(--accent); display: inline-flex; font-size: 13px; gap: 8px; min-height: 38px; padding: 8px 14px; text-decoration: none; }
     .user-page__banner { aspect-ratio: 3 / 1; background: var(--paper-deep); overflow: hidden; }.user-page__banner img { display: block; height: 100%; object-fit: cover; width: 100%; }.user-page__banner--empty { border-bottom: 1px solid var(--line); }.user-page__header { align-items: center; display: flex; gap: 20px; margin: -34px 0 20px 28px; position: relative; }.user-page__avatar { background: var(--paper-deep); border: 4px solid var(--paper); border-radius: 50%; flex: 0 0 104px; height: 104px; object-fit: cover; width: 104px; }.user-page__avatar--empty { align-items: center; color: var(--accent); display: flex; font-size: 34px; justify-content: center; }.user-page__identity { min-width: 0; }.user-page__identity .eyebrow { margin: 30px 0 2px; }.user-page__identity h1 { font-family: Lora, Georgia, serif; font-size: clamp(25px, 4vw, 38px); line-height: 1.1; margin: 0; overflow-wrap: anywhere; }.user-page__identity p:last-child { color: var(--muted); margin: 3px 0 0; }.user-page__bluesky { border: 1px solid var(--line-strong); font-size: 14px; margin-left: auto; padding: 8px 12px; white-space: nowrap; }.user-page__description { color: var(--ink); line-height: 1.65; margin: 0 0 12px 28px; max-width: 760px; white-space: pre-wrap; }.user-page__details { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 13px; gap: 12px; margin: 0 0 34px 28px; }.user-page__did { overflow-wrap: anywhere; }.user-page__activity { margin-top: 24px; }.user-page__comment-limit { color: var(--muted); font-size: 14px; margin: 14px 0 0; }.user-comments { margin-top: 8px; }.user-comment { border-bottom: 1px solid var(--line); display: grid; gap: 20px; grid-template-columns: 130px minmax(0, 1fr); padding: 22px 8px; }.user-comment__date { color: var(--muted); font-size: 13px; padding-top: 4px; }.user-comment__context { color: var(--muted); font-size: 14px; margin: 0 0 8px; }.user-comment__context a { color: var(--accent); font-weight: 600; }.user-comment__text { line-height: 1.6; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }.user-comment__permalink { color: var(--muted); display: inline-block; font-size: 13px; margin-top: 12px; }.user-comment__permalink:hover { color: var(--accent); }
+    .author-page__avatar--empty { align-items: center; background: var(--paper-deep); color: var(--accent); display: inline-flex; font-size: 30px; justify-content: center; }
+    .user-tabs { border-bottom: 1px solid var(--line-strong); display: flex; flex-wrap: wrap; gap: 22px; margin-top: 8px; }
+    .user-tabs__tab { border-bottom: 2px solid transparent; color: var(--muted); font: 700 13px 'Source Sans 3', sans-serif; letter-spacing: .05em; margin-bottom: -1px; padding: 10px 2px; text-decoration: none; text-transform: uppercase; }
+    .user-tabs__tab:hover { color: var(--ink); }
+    .user-tabs__tab--active, .user-tabs__tab[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+    .user-tabs__tab span { color: var(--muted); font-weight: 400; }
     .author-page__banner { aspect-ratio: 3 / 1; display: block; margin-bottom: 24px; object-fit: cover; width: 100%; }.author-page__description { color: var(--muted); margin: -16px 0 36px; max-width: 740px; }.author-page__pinned { margin-bottom: 42px; }.author-page__pinned-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }.author-pinned-card { background: var(--paper-deep); border: 1px solid var(--line); min-width: 0; }.author-pinned-card__image { align-items: center; aspect-ratio: 16 / 9; background: var(--paper); display: flex; justify-content: center; overflow: hidden; }.author-pinned-card__image img { display: block; height: 100%; object-fit: cover; width: 100%; }.author-pinned-card__content { padding: 16px 18px 18px; }.author-pinned-card__content .eyebrow { color: var(--accent); font-size: 11px; margin: 0 0 8px; }.author-pinned-card__content h3 { font-size: clamp(18px, 2.2vw, 24px); line-height: 1.2; margin: 0; }.author-pinned-card__content > p:last-child:not(.eyebrow) { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 9px 0 0; }
     @media (max-width: 760px) { .author-page__pinned-grid { gap: 12px; grid-template-columns: 1fr; }.author-pinned-card { display: grid; grid-template-columns: minmax(88px, 30%) minmax(0, 1fr); }.author-pinned-card__image { align-self: stretch; aspect-ratio: auto; min-height: 112px; }.author-pinned-card__content { align-self: center; padding: 12px; }.author-pinned-card__content h3 { font-size: 17px; }.author-pinned-card__content > p:last-child:not(.eyebrow) { display: none; }.author-follow { margin: -20px 0 30px 88px; }.user-page__header { align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-left: 12px; }.user-page__avatar { flex-basis: 76px; height: 76px; width: 76px; }.user-page__identity .eyebrow { margin-top: 24px; }.user-page__bluesky { margin: 0 0 0 88px; }.user-page__description,.user-page__details { margin-left: 12px; }.user-comment { gap: 8px; grid-template-columns: 1fr; padding: 18px 4px; }.user-comment__date { font-size: 12px; } }
     .authors-page__header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 20px; }.authors-page__header .eyebrow { margin: 0 0 8px; }.authors-page__header h1 { margin: 0; }.author-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }.author-card { align-items: center; background: var(--paper-deep); border: 1px solid var(--line); display: flex; gap: 14px; padding: 16px; }.author-card:hover { border-color: var(--accent); }.author-card__avatar { border-radius: 50%; flex: 0 0 64px; height: 64px; object-fit: cover; width: 64px; }.author-card__avatar--placeholder { background: var(--accent); }.author-card__details { display: grid; gap: 2px; }.author-card__details strong { color: var(--ink); font-family: Lora, serif; font-size: 20px; }.author-card__details span { color: var(--muted); font-size: 14px; }.author-card__details span:last-child { color: var(--accent); margin-top: 4px; }
@@ -799,6 +805,9 @@ export function renderLayout(
       .article-rail li { padding: 12px 0; }
       .article-rail__authors { margin-top: 28px; }
       .article__cover img, .prose img, .prose video, .prose iframe { height: auto; max-width: 100%; }
+      .prose video, .prose-video-figure video { display: block; width: 100%; }
+      .prose-video-figure { margin: 1.8rem 0; }
+      .prose-video-figure__caption { color: var(--muted); font-size: 14px; margin-top: 8px; text-align: center; }
       .prose .prose-embed { background: var(--paper-deep); border: 1px solid var(--line); display: block; margin: 24px auto; max-width: 100%; }
       .prose pre, .prose-pre { max-width: 100%; overflow-x: auto; }
       .article-engagement { display: grid; }
@@ -1155,6 +1164,13 @@ export function renderLayout(
     <p class="block-dialog__status" data-block-dialog-status role="status" aria-live="polite"></p>
     <div class="block-dialog__actions"><button type="button" class="author-follow__button" data-confirm-block>Confirm block</button><button type="button" class="auth-signout" data-cancel-block>Cancel</button></div>
   </dialog>
+  <dialog class="block-dialog" data-unfollow-dialog aria-labelledby="unfollow-dialog-title" aria-describedby="unfollow-dialog-description">
+    <h2 id="unfollow-dialog-title" data-unfollow-dialog-title>Unfollow this author?</h2>
+    <p id="unfollow-dialog-description">You will stop following their stories on Coffee &amp; Code.</p>
+    <label class="block-dialog__option"><input type="checkbox" data-unfollow-on-bluesky checked><span>Also unfollow on Bluesky</span></label>
+    <p class="block-dialog__status" data-unfollow-dialog-status role="status" aria-live="polite"></p>
+    <div class="block-dialog__actions"><button type="button" class="author-follow__button" data-confirm-unfollow>Unfollow</button><button type="button" class="auth-signout" data-cancel-unfollow>Cancel</button></div>
+  </dialog>
   <dialog class="feed-client-dialog" data-feed-client-dialog aria-labelledby="feed-client-title" aria-describedby="feed-client-description">
     <h2 id="feed-client-title">Choose your Social App</h2>
     <p id="feed-client-description">Open the Coffee &amp; Code following feed in your preferred client.</p>
@@ -1272,6 +1288,22 @@ export function renderLayout(
     } else {
     loadViewCounters(lazyViewCounters);
     }
+
+    // In-article videos autoplay muted while they're on screen and pause when
+    // scrolled away — muted playback is allowed without a user gesture.
+    document.querySelectorAll('video[data-autoplay-view]').forEach((video) => {
+      if (!('IntersectionObserver' in window)) {
+        video.play().catch(() => {});
+        return;
+      }
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) video.play().catch(() => {});
+          else video.pause();
+        });
+      }, { threshold: 0.25 });
+      observer.observe(video);
+    });
 
     // Author and archive cards use the same AT Protocol view records as post pages.
     document.querySelectorAll('[data-at-uri]').forEach((element) => {

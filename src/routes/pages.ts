@@ -833,7 +833,7 @@ const draftEditorStyles = `
     .draft-block__item-row .draft-block__editable { flex: 1; }
     .draft-block__hr { border: 0; border-top: 1px solid var(--line-strong); margin: 12px 0; }
     .draft-block__image img { display: block; max-width: 100%; }
-    .draft-block__video video { display: block; max-width: 100%; }
+    .draft-block__video video { display: block; width: 100%; }
     .draft-editor__add { margin-top: 10px; }
     .draft-preview { align-self: stretch; background: var(--doc-page); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); min-width: 0; padding: 30px; }
     .draft-preview h1.draft-preview__title { font-family: Lora, serif; font-size: 34px; line-height: 1.15; margin: 0 0 8px; overflow-wrap: anywhere; }
@@ -1339,7 +1339,7 @@ pages.get('/author/:handle', async (c) => {
         ${authorAvatar ? `<img src="${authorAvatar}" alt="" class="author-page__avatar" width="88" height="88" decoding="async">` : ''}
         <div><h1 id="author-title" data-author-verification-did="${escapeHtml(author.did)}">${escapeHtml(authorName)}</h1><p>@${escapeHtml(author.handle)}${author.pronouns ? ` · ${escapeHtml(author.pronouns)}` : ''}</p></div>
       </header>
-      <div class="author-follow" ${publicationUri ? `data-author-follow data-author-did="${escapeHtml(author.did)}" data-publication-uri="${escapeHtml(publicationUri)}"` : ''}>
+      <div class="author-follow" ${publicationUri ? `data-author-follow data-author-did="${escapeHtml(author.did)}" data-author-name="${escapeHtml(authorName)}" data-publication-uri="${escapeHtml(publicationUri)}"` : ''}>
         <a class="author-page__profile-link" href="/user/${encodeURIComponent(author.handle)}">View user profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(author.did)}" data-block-user-name="${escapeHtml(authorName)}" hidden disabled>Block user</button>
         <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
