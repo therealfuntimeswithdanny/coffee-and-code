@@ -1120,7 +1120,7 @@ pages.get('/account/author/create', (c) => {
       <div class="pub-create__result" data-pub-result hidden></div>
       <section class="pub-create__registered" data-pub-registered hidden aria-labelledby="pub-registered-title">
         <h2 id="pub-registered-title">Publications on Coffee &amp; Code</h2>
-        <p class="pub-create__intro">Publications created by the site owner appear automatically. A publication in your own repository shows on the site once its URI is added here — ask the site owner.</p>
+        <p class="pub-create__intro">This list reads the site's registration record — <code>at://did:plc:l37td5yhxl2irrzrgvei4qay/cc.coffeencode.publications/self</code>. Publications created by the site owner are also discovered automatically; a publication in your own repository shows on the site once its URI is registered here — ask the site owner.</p>
         <ul data-pub-registered-list></ul>
         <div data-pub-admin hidden>
           <label class="pub-create__field">Add a publication URI<input type="text" data-pub-add-uri placeholder="at://did:plc:…/site.standard.publication/…" autocomplete="off" spellcheck="false"></label>
@@ -1343,6 +1343,7 @@ pages.get('/author/:handle', async (c) => {
         <a class="author-page__profile-link" href="/user/${encodeURIComponent(author.handle)}">View user profile <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(author.did)}" data-block-user-name="${escapeHtml(authorName)}" hidden disabled>Block user</button>
         <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
+        ${publicationUri ? `<span class="publication-subscribe" data-publication-subscribe data-publication-uri="${escapeHtml(publicationUri)}"><button type="button" class="author-follow__button publication-subscribe__button" data-publication-subscribe-button>Subscribe</button><span class="author-follow__status" data-publication-subscribe-status role="status" aria-live="polite"></span></span>` : ''}
         <a class="author-germ" data-germ-dm data-germ-did="${escapeHtml(author.did)}" href="#" target="_blank" rel="noopener noreferrer" hidden><img src="/logomarks/germ.png" alt="" width="18" height="18" aria-hidden="true">Message on Germ</a>
         <span class="author-follow__status" data-author-follow-status role="status" aria-live="polite">${publicationUri ? '' : 'Following is unavailable for this author.'}</span>
       </div>

@@ -210,6 +210,9 @@ type PendingDigestItem = {
   actorDid?: string;
   actorHandle?: string;
   actorName?: string;
+  content?: string;
+  format?: string;
+  mimeType?: string;
   // Delivery state: addresses that already received the item, and the number
   // of failed dispatch rounds. Items are dropped once every matching
   // recipient has them or the attempt budget is exhausted.
@@ -273,6 +276,9 @@ export async function dispatchEmailNotifications(env: Env) {
           actorDid: notification.actorDid,
           actorHandle: notification.actorHandle,
           actorName: notification.actorName,
+          content: notification.documentContent,
+          format: notification.documentFormat,
+          mimeType: notification.documentMimeType,
         });
       }
       digest.items = digest.items.slice(-MAX_PENDING_ITEMS);
@@ -301,6 +307,9 @@ export async function dispatchEmailNotifications(env: Env) {
         matchedTags: item.matchedTags,
         actorName: item.actorName,
         actorHandle: item.actorHandle,
+        documentContent: item.content,
+        documentFormat: item.format,
+        documentMimeType: item.mimeType,
       });
       const batch = digest.items
         .filter((item) => (item.attempts || 0) < MAX_SEND_ATTEMPTS)
@@ -313,7 +322,7 @@ export async function dispatchEmailNotifications(env: Env) {
         const items = batch.filter((item) => !(item.sentTo || []).includes(entry.address)
           && matchesFilters(item, entry));
         if (!items.length) return;
-        const message = followedPostsEmail(env, items.map(toNotification), unsubscribeUrl, manageUrl, { label: digestLabel });
+        const message = await followedPostsEmail(env, items.map(toNotification), unsubscribeUrl, manageUrl, { label: digestLabel });
         const sent = await sendEmail(env, { to: entry.address, ...message });
         for (const item of items) {
           if (sent) item.sentTo = [...(item.sentTo || []), entry.address];

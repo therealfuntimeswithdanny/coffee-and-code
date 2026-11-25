@@ -540,6 +540,7 @@ users.get('/:identifier', async (c) => {
         <a class="author-page__profile-link" href="${externalLinkUrl(`https://bsky.app/profile/${encodeURIComponent(profile.handle)}`)}" target="_blank" rel="noopener noreferrer">View on Bluesky <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
         <button type="button" class="author-follow__button" data-block-user-did="${escapeHtml(did)}" data-block-user-name="${escapeHtml(name)}" hidden disabled>Block user</button>
         <button type="button" class="author-follow__button" data-author-follow-button${publicationUri ? '' : ' disabled'}>Follow</button>
+        ${publicationUri ? `<span class="publication-subscribe" data-publication-subscribe data-publication-uri="${escapeHtml(publicationUri)}"><button type="button" class="author-follow__button publication-subscribe__button" data-publication-subscribe-button>Subscribe</button><span class="author-follow__status" data-publication-subscribe-status role="status" aria-live="polite"></span></span>` : ''}
         <a class="author-germ" data-germ-dm data-germ-did="${escapeHtml(did)}" href="#" target="_blank" rel="noopener noreferrer" hidden><img src="/logomarks/germ.png" alt="" width="18" height="18" aria-hidden="true">Message on Germ</a>
         <span class="author-follow__status" data-author-follow-status role="status" aria-live="polite">${publicationUri ? '' : 'Following is unavailable for this account.'}</span>
       </div>

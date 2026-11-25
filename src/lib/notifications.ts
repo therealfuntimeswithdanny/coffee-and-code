@@ -26,6 +26,10 @@ export type Notification = {
   actorName?: string;
   actorHandle?: string;
   actorAvatar?: string;
+  // followed.post items carry the document body so email can include the story.
+  documentContent?: string;
+  documentFormat?: string;
+  documentMimeType?: string;
 };
 
 type Backlink = { did: string; collection: string; rkey: string };
@@ -247,6 +251,11 @@ export async function loadNotificationsForUser(env: Env, did: string): Promise<N
       documentTitle: document.title || 'Untitled story',
       documentPath: document.path,
       ...(matchedTags.length ? { matchedTags } : {}),
+      ...(typeof document.content === 'string' && document.content ? {
+        documentContent: document.content,
+        ...(document.format ? { documentFormat: document.format } : {}),
+        ...(document.mimeType ? { documentMimeType: document.mimeType } : {}),
+      } : {}),
       recordKey: document.rkey,
       createdAt: document.publishedAt,
     });

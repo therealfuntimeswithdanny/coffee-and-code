@@ -1,5 +1,6 @@
 import type { Env } from '../types';
 import type { Notification } from './notifications';
+import { renderContent, toPlainText } from './contentRenderer';
 import verificationTemplate from '../../cloudflare/email/templates/verification.html';
 import digestTemplate from '../../cloudflare/email/templates/digest.html';
 
@@ -115,26 +116,38 @@ export function verificationEmail(env: Env, verifyUrl: string) {
   return { subject: `Confirm your email for ${pubName} notifications`, html, text };
 }
 
-export function followedPostsEmail(env: Env, notifications: Notification[], unsubscribeUrl: string, manageUrl: string, options: { label?: string } = {}) {
+export async function followedPostsEmail(env: Env, notifications: Notification[], unsubscribeUrl: string, manageUrl: string, options: { label?: string } = {}) {
   const pubName = env.PUB_NAME || 'Coffee & Code';
-  const items = notifications.map((notification) => {
+  const items = await Promise.all(notifications.map(async (notification) => {
     const url = `${SITE_ORIGIN}${notification.documentPath || '/'}`;
     const actor = notification.actorName || notification.actorHandle || 'A followed author';
     const reason = notification.matchedTags?.length
       ? `Matches your followed ${notification.matchedTags.length === 1 ? 'tag' : 'tags'}: ${notification.matchedTags.join(', ')}`
       : `Published by ${actor}`;
     const title = notification.documentTitle || 'Untitled story';
+    let bodyHtml = '';
+    let bodyText = '';
+    if (notification.documentContent) {
+      try {
+        bodyHtml = await renderContent(notification.documentContent, notification.documentFormat, notification.documentMimeType);
+      } catch {
+        bodyHtml = '';
+      }
+      bodyText = toPlainText(notification.documentContent, notification.documentMimeType);
+    }
     return {
-      url, title, reason,
+      url, title, reason, bodyHtml, bodyText,
     };
-  });
+  }));
   const digest = splitItemBlock(digestTemplate);
   const itemsHtml = items.map((item) => fill(digest.item, {
     url: escapeHtml(item.url),
     title: escapeHtml(item.title),
     reason: escapeHtml(item.reason),
+    // Rendered story HTML is already sanitized by renderContent.
+    body: item.bodyHtml,
   })).join('');
-  const baseHeading = items.length === 1 ? '1 new story for you' : `${items.length} new stories for you`;
+  const baseHeading = items.length === 1 ? 'A new story for you' : `${items.length} new stories for you`;
   const heading = options.label ? `Your ${options.label} — ${baseHeading}` : baseHeading;
   const html = fill(digest.document, {
     heading: escapeHtml(heading),
@@ -144,12 +157,10 @@ export function followedPostsEmail(env: Env, notifications: Notification[], unsu
     unsubscribeUrl: escapeHtml(unsubscribeUrl),
   });
   const text = `${heading}\n\n`
-    + items.map((item) => `${item.title}\n${item.reason}\n${item.url}`).join('\n\n')
+    + items.map((item) => `${item.title}\n${item.reason}\n\n${item.bodyText ? `${item.bodyText}\n\n` : ''}Read it here: ${item.url}`).join('\n\n---\n\n')
     + `\n\nManage email settings: ${manageUrl}\nUnsubscribe: ${unsubscribeUrl}`;
-  const subject = options.label
-    ? `Your ${options.label}: ${items.length === 1 ? items[0].title : `${items.length} new stories on ${pubName}`}`
-    : items.length === 1
-      ? `New story: ${items[0].title}`
-      : `${items.length} new stories on ${pubName}`;
+  const subject = items.length === 1
+    ? items[0].title
+    : `${items.length} new stories on ${pubName}`;
   return { subject, html, text };
 }

@@ -211,6 +211,10 @@ home.get('/', async (c) => {
 
   const body = `
     <section class="front-page" aria-label="Latest stories">
+      <div class="author-follow home-subscribe" data-publication-subscribe data-publication-uri="at://did:plc:l37td5yhxl2irrzrgvei4qay/site.standard.publication/3myy27riph22b">
+        <button type="button" class="author-follow__button publication-subscribe__button" data-publication-subscribe-button>Subscribe</button>
+        <span class="author-follow__status" data-publication-subscribe-status role="status" aria-live="polite"></span>
+      </div>
       <div class="section-heading"><span>Latest</span><span>${pdsAvailable ? `${posts.length} ${posts.length === 1 ? 'story' : 'stories'}` : 'Temporarily unavailable'}</span></div>
       <div class="front-page__grid">
         ${heroHtml}

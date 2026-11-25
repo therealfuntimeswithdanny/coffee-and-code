@@ -531,7 +531,7 @@ const accountMenuButton = document.querySelector<HTMLButtonElement>('[data-accou
 const accountMenu = document.querySelector<HTMLElement>('[data-account-menu]');
 const headerAccountAvatar = document.querySelector<HTMLImageElement>('[data-account-avatar]');
 const headerAccountPlaceholder = document.querySelector<HTMLElement>('[data-account-placeholder]');
-const mobileAccountLink = document.querySelector<HTMLAnchorElement>('[data-mobile-account-link]');
+const mobileAccountLinks = document.querySelectorAll<HTMLAnchorElement>('[data-mobile-account-link]');
 const accountPage = document.querySelector<HTMLElement>('[data-account-page]');
 const signedOutAccount = document.querySelector<HTMLElement>('[data-account-signed-out]');
 const notificationsPage = document.querySelector<HTMLElement>('[data-notifications-page]');
@@ -671,10 +671,14 @@ function renderAccount() {
       accountMenuButton.title = accountLabel;
     }
   }
-  if (mobileAccountLink) {
-    mobileAccountLink.hidden = !session;
-    mobileAccountLink.textContent = session ? `Account (${displayName})` : 'Account';
-  }
+  mobileAccountLinks.forEach((link) => {
+    link.hidden = !session;
+    // The dropdown menu entry shows the signed-in name; compact entries (tab bar)
+    // keep their fixed label.
+    if (!link.querySelector('i')) {
+      link.textContent = session ? `Account (${displayName})` : 'Account';
+    }
+  });
   notificationLinks.forEach((link) => { link.hidden = !session; });
   if (session && oauthInitialized) {
     if (notificationBadgeDid !== session.did) setNotificationBadgeCount(0);
@@ -752,6 +756,11 @@ function renderAccount() {
   if (!session) {
     if (headerAccountAvatar) { headerAccountAvatar.hidden = true; headerAccountAvatar.removeAttribute('src'); }
     if (headerAccountPlaceholder) headerAccountPlaceholder.hidden = false;
+    document.querySelectorAll<HTMLImageElement>('[data-tab-avatar]').forEach((img) => {
+      img.hidden = true;
+      img.removeAttribute('src');
+    });
+    document.querySelectorAll<HTMLElement>('[data-tab-avatar-placeholder]').forEach((el) => { el.hidden = false; });
     return;
   }
 
@@ -773,6 +782,14 @@ function renderAccount() {
         headerAccountAvatar.alt = `${profile.displayName || profile.handle || 'Account'} profile picture`;
         headerAccountAvatar.hidden = false;
         if (headerAccountPlaceholder) headerAccountPlaceholder.hidden = true;
+      }
+      if (avatar) {
+        document.querySelectorAll<HTMLImageElement>('[data-tab-avatar]').forEach((img) => {
+          img.src = avatar;
+          img.alt = '';
+          img.hidden = false;
+        });
+        document.querySelectorAll<HTMLElement>('[data-tab-avatar-placeholder]').forEach((el) => { el.hidden = true; });
       }
     })
     .catch(() => {});
@@ -4803,6 +4820,92 @@ document.querySelectorAll<HTMLElement>('[data-author-follow]').forEach((containe
   });
 });
 
+// Standalone publication subscribe: writes only a site.standard.graph.subscription
+// record, without the Bluesky follow the author follow button bundles in.
+document.querySelectorAll<HTMLElement>('[data-publication-subscribe]').forEach((container) => {
+  const button = container.querySelector<HTMLButtonElement>('[data-publication-subscribe-button]');
+  const status = container.querySelector<HTMLElement>('[data-publication-subscribe-status]');
+  const publication = container.dataset.publicationUri;
+  if (!button || !publication) return;
+
+  let subscriptionRecord: OwnRepoRecord | undefined;
+  let subscribeStateReady = false;
+  button.disabled = true;
+  const renderSubscribeState = () => {
+    const subscribed = Boolean(subscriptionRecord);
+    button.textContent = subscribed ? 'Subscribed' : 'Subscribe';
+    button.setAttribute('aria-pressed', String(subscribed));
+  };
+  const loadSubscribeState = async () => {
+    await oauthReady;
+    if (!session) {
+      subscribeStateReady = true;
+      if (status) status.textContent = 'Sign in to subscribe to this publication.';
+      return;
+    }
+    const activeDid = session.did;
+    const next = await findOwnRepoRecord(subscriptionCollection, 'publication', publication, activeDid);
+    if (session?.did !== activeDid) return;
+    subscriptionRecord = next;
+    subscribeStateReady = true;
+    renderSubscribeState();
+    if (status) status.textContent = '';
+  };
+
+  void loadSubscribeState().catch((error) => {
+    console.error('Could not load publication subscription state:', error);
+    if (status) status.textContent = error instanceof Error ? error.message : 'Could not load subscription status.';
+  }).finally(() => {
+    button.disabled = false;
+  });
+
+  button.addEventListener('click', async () => {
+    await oauthReady;
+    if (!session) {
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/auth?returnTo=${encodeURIComponent(safeReturnPath(currentPath))}`);
+      return;
+    }
+    if (!subscribeStateReady) {
+      button.disabled = true;
+      if (status) status.textContent = 'Checking your subscription status…';
+      try {
+        await loadSubscribeState();
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Could not check your subscription status.';
+        return;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    const activeDid = session.did;
+    button.disabled = true;
+    const shouldSubscribe = !subscriptionRecord;
+    if (status) status.textContent = shouldSubscribe ? 'Subscribing…' : 'Unsubscribing…';
+    try {
+      if (shouldSubscribe) {
+        await createFollowRecord(subscriptionCollection, {
+          $type: subscriptionCollection,
+          publication,
+        }, activeDid);
+      } else if (subscriptionRecord) {
+        await deleteFollowRecord(subscriptionCollection, subscriptionRecord.uri, activeDid);
+      }
+      await loadSubscribeState();
+      if (status) status.textContent = shouldSubscribe
+        ? 'Subscribed to this publication.'
+        : 'Unsubscribed from this publication.';
+    } catch (error) {
+      try {
+        await loadSubscribeState();
+      } catch { /* Keep the stale state; the error message below explains. */ }
+      if (status) status.textContent = error instanceof Error ? error.message : 'Could not update your subscription.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+});
+
 document.querySelectorAll<HTMLElement>('[data-view-subject]').forEach((container) => {
   const documentUri = container.dataset.viewSubject;
   if (!documentUri) return;
@@ -6888,7 +6991,6 @@ async function loadDraftEditor(did: string) {
           const post = range.cloneRange();
           post.selectNodeContents(editable);
           post.setStart(range.endContainer, range.endOffset);
-          post.deleteContents();
           fragment.append(post.extractContents());
         }
         if (editable.classList.contains('draft-block__item-editable')) {
@@ -8273,52 +8375,36 @@ async function loadCreatePublication() {
 
   type RegisteredPublication = { uri: string; rkey: string; name?: string; owned: boolean };
   const readRegistered = async (): Promise<RegisteredPublication[]> => {
+    // The list reads at://{SITE_OWNER_DID}/cc.coffeencode.publications/self —
+    // its `publications` array is what this section shows and manages. The
+    // site itself additionally auto-discovers publications in the owner's
+    // repo; those appear here only once registered in the record.
     const configQuery = new URLSearchParams({ repo: SITE_OWNER_DID, collection: PUBLICATIONS_COLLECTION, rkey: 'self' });
-    const ownQuery = new URLSearchParams({ repo: SITE_OWNER_DID, collection: 'site.standard.publication', limit: '100' });
-    const [configResponse, ownResponse] = await Promise.all([
-      fetch(`${SITE_OWNER_PDS}/xrpc/com.atproto.repo.getRecord?${configQuery}`),
-      fetch(`${SITE_OWNER_PDS}/xrpc/com.atproto.repo.listRecords?${ownQuery}`),
-    ]);
-    // Publications whose records live in the owner's repo are discovered by
-    // the site automatically — they're "standard site publications".
-    const owned: RegisteredPublication[] = [];
-    if (ownResponse.ok) {
-      const data = await ownResponse.json() as { records?: Array<{ uri?: unknown; value?: { name?: unknown } }> };
-      for (const record of data.records || []) {
-        if (typeof record?.uri === 'string' && publicationUriPattern.test(record.uri)) {
-          owned.push({
-            uri: record.uri,
-            rkey: record.uri.split('/').pop() || '',
-            name: typeof record.value?.name === 'string' && record.value.name ? record.value.name : undefined,
-            owned: true,
-          });
+    const configResponse = await fetch(`${SITE_OWNER_PDS}/xrpc/com.atproto.repo.getRecord?${configQuery}`);
+    const record = configResponse.ok
+      ? await configResponse.json() as { value?: { publications?: unknown } }
+      : {};
+    const raw = Array.isArray(record.value?.publications) ? record.value.publications : [];
+    const uris = [...new Set(
+      raw.filter((uri): uri is string => typeof uri === 'string' && publicationUriPattern.test(uri)),
+    )];
+    const entries: RegisteredPublication[] = [];
+    for (const uri of uris) {
+      const parts = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/)!;
+      const owned = parts[1] === SITE_OWNER_DID;
+      let name: string | undefined;
+      try {
+        const pds = owned ? SITE_OWNER_PDS : (await resolveSignInPds(parts[1])).pds;
+        const pubQuery = new URLSearchParams({ repo: parts[1], collection: 'site.standard.publication', rkey: parts[2] });
+        const pubResponse = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${pubQuery}`);
+        if (pubResponse.ok) {
+          const pub = await pubResponse.json() as { value?: { name?: unknown } };
+          if (typeof pub.value?.name === 'string' && pub.value.name) name = pub.value.name;
         }
-      }
+      } catch { /* Name is decorative — the URI still lists. */ }
+      entries.push({ uri, rkey: parts[2], name, owned });
     }
-    // Publications living in other repos register by URI in cc.coffeencode.publications.
-    const registered: RegisteredPublication[] = [];
-    if (configResponse.ok) {
-      const record = await configResponse.json() as { value?: { publications?: unknown } };
-      const raw = Array.isArray(record.value?.publications) ? record.value.publications : [];
-      const uris = raw
-        .filter((uri): uri is string => typeof uri === 'string' && publicationUriPattern.test(uri))
-        .filter((uri) => !owned.some((entry) => entry.uri === uri));
-      for (const uri of uris) {
-        const parts = uri.match(/^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/)!;
-        let name: string | undefined;
-        try {
-          const { pds } = await resolveSignInPds(parts[1]);
-          const pubQuery = new URLSearchParams({ repo: parts[1], collection: 'site.standard.publication', rkey: parts[2] });
-          const pubResponse = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${pubQuery}`);
-          if (pubResponse.ok) {
-            const pub = await pubResponse.json() as { value?: { name?: unknown } };
-            if (typeof pub.value?.name === 'string' && pub.value.name) name = pub.value.name;
-          }
-        } catch { /* Name is decorative — the URI still lists. */ }
-        registered.push({ uri, rkey: parts[2], name, owned: false });
-      }
-    }
-    return [...owned, ...registered];
+    return entries;
   };
 
   let pubSession: OAuthSession | undefined;
@@ -8377,22 +8463,10 @@ async function loadCreatePublication() {
         remove.addEventListener('click', async () => {
           remove.disabled = true;
           try {
-            if (entry.owned) {
-              // Site-owned publications unregister by deleting the record.
-              const response = await pubSession!.fetchHandler('/xrpc/com.atproto.repo.deleteRecord', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  repo: SITE_OWNER_DID,
-                  collection: 'site.standard.publication',
-                  rkey: entry.rkey,
-                }),
-              });
-              if (!response.ok) throw new Error(`The publication record could not be deleted (${response.status}).`);
-            } else {
-              const current = await readRegistered();
-              await writeRegistered(current.filter((candidate) => !candidate.owned).map((candidate) => candidate.uri).filter((uri) => uri !== entry.uri));
-            }
+            // Removing unregisters the URI from the publications record — it
+            // never deletes the site.standard.publication record itself.
+            const current = await readRegistered();
+            await writeRegistered(current.map((candidate) => candidate.uri).filter((uri) => uri !== entry.uri));
             await renderRegistered();
           } catch (error) {
             status.textContent = errorMessage(error);
