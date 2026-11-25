@@ -431,7 +431,7 @@ api.get('/documents/:rkey', async (c) => {
 // Only same-site /post/ paths can be shortened, so the endpoint can't be used
 // to mint links to arbitrary URLs under the publication's API key.
 const PRIVO_API = 'https://privo.fyi';
-const SHORTLINK_PATH_PATTERN = /^\/post\/[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}\/[a-zA-Z0-9._~:-]{1,64}$/;
+const SHORTLINK_PATH_PATTERN = /^\/(?:author|post)\/[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}\/[a-zA-Z0-9._~:-]{1,64}$/;
 
 function shortlinkBaseCode(path: string) {
   const rkey = path.split('/').pop() || '';
@@ -456,7 +456,7 @@ async function privoReadLink(shortcode: string): Promise<{ status: number; url?:
 api.get('/shortlink', async (c) => {
   const path = c.req.query('path') || '';
   if (!SHORTLINK_PATH_PATTERN.test(path)) {
-    return c.json({ error: 'Only story paths (/post/<author>/<record>) can be shortened.' }, 400, { 'Cache-Control': 'no-store' });
+    return c.json({ error: 'Only story paths (/author/<author>/<record>) can be shortened.' }, 400, { 'Cache-Control': 'no-store' });
   }
   if (!c.env.PRIVO_API_KEY) {
     return c.json({ error: 'Short links are not configured on this site yet.' }, 503, { 'Cache-Control': 'no-store' });
