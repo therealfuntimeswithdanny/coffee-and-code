@@ -17,3 +17,4 @@ build/
 /app.json
 /ios/
 .aider*
+.dev.vars

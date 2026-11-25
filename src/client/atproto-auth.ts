@@ -5545,14 +5545,71 @@ document.querySelectorAll<HTMLElement>('.article-share').forEach((shareSection) 
     });
   }
 
-  shareSection.querySelector<HTMLButtonElement>('[data-share-copy]')?.addEventListener('click', async () => {
+  // "Copy link" expands in place to a choice between the canonical URL and a
+  // Privo short link. Short links are looked up or created server-side at
+  // /api/shortlink so the API key never reaches the browser.
+  const copyToggle = shareSection.querySelector<HTMLButtonElement>('[data-share-copy]');
+  const copyPanel = shareSection.querySelector<HTMLElement>('[data-share-copy-panel]');
+  const copyFull = shareSection.querySelector<HTMLButtonElement>('[data-share-copy-full]');
+  const copyShort = shareSection.querySelector<HTMLButtonElement>('[data-share-copy-short]');
+
+  const copyText = async (text: string, fallbackLabel: string) => {
     try {
-      await navigator.clipboard.writeText(url);
-      if (status) status.textContent = 'Story link copied to your clipboard.';
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch {
-      window.prompt('Copy this story link:', url);
+      window.prompt(fallbackLabel, text);
+      return false;
     }
-  });
+  };
+
+  if (copyToggle && copyPanel && copyFull && copyShort) {
+    const setPanelOpen = (open: boolean) => {
+      copyPanel.hidden = !open;
+      copyToggle.setAttribute('aria-expanded', String(open));
+    };
+    copyToggle.addEventListener('click', () => {
+      setPanelOpen(copyPanel.hidden);
+    });
+    document.addEventListener('click', (event) => {
+      if (copyPanel.hidden || shareSection.contains(event.target as Node)) return;
+      setPanelOpen(false);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !copyPanel.hidden) {
+        setPanelOpen(false);
+        copyToggle.focus();
+      }
+    });
+
+    copyFull.addEventListener('click', async () => {
+      const copied = await copyText(url, 'Copy this story link:');
+      if (copied && status) status.textContent = 'Story link copied to your clipboard.';
+    });
+
+    copyShort.addEventListener('click', async () => {
+      copyShort.disabled = true;
+      if (status) status.textContent = 'Getting the short link…';
+      try {
+        const response = await fetch(`/api/shortlink?path=${encodeURIComponent(window.location.pathname)}`);
+        const data = await response.json() as { shortUrl?: string; error?: string };
+        if (!response.ok || !data.shortUrl) {
+          throw new Error(data.error || 'Could not get the short link.');
+        }
+        const copied = await copyText(data.shortUrl, 'Copy this short link:');
+        if (copied && status) status.textContent = `Short link copied: ${data.shortUrl}`;
+      } catch (error) {
+        if (status) status.textContent = errorMessage(error);
+      } finally {
+        copyShort.disabled = false;
+      }
+    });
+  } else {
+    copyToggle?.addEventListener('click', async () => {
+      const copied = await copyText(url, 'Copy this story link:');
+      if (copied && status) status.textContent = 'Story link copied to your clipboard.';
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

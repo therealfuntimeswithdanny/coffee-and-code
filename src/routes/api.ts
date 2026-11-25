@@ -423,4 +423,89 @@ api.get('/documents/:rkey', async (c) => {
   }, 200, { 'Cache-Control': 'no-store' });
 });
 
+// Privo short links for stories. There's no Privo list endpoint, so each story
+// gets a deterministic shortcode derived from its record key: the check-then-
+// create flow first reads that code on privo.fyi and reuses it when it already
+// points at the story, and only creates a link when it doesn't. A code taken by
+// a different destination walks a short suffix chain (cc<rkey>, cc<rkey>2, …).
+// Only same-site /post/ paths can be shortened, so the endpoint can't be used
+// to mint links to arbitrary URLs under the publication's API key.
+const PRIVO_API = 'https://privo.fyi';
+const SHORTLINK_PATH_PATTERN = /^\/post\/[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}\/[a-zA-Z0-9._~:-]{1,64}$/;
+
+function shortlinkBaseCode(path: string) {
+  const rkey = path.split('/').pop() || '';
+  const alnum = rkey.replace(/[^a-zA-Z0-9]/g, '');
+  // TID record keys survive verbatim; sanitize anything else and pad short
+  // codes so the result always fits Privo's 4–45 alnum rule.
+  const core = (alnum.length >= 4 ? alnum : `${alnum}x`.padEnd(4, 'x')).slice(0, 41);
+  return `cc${core}`;
+}
+
+async function privoReadLink(shortcode: string): Promise<{ status: number; url?: string }> {
+  try {
+    const response = await fetch(`${PRIVO_API}/api/link/${encodeURIComponent(shortcode)}`);
+    if (response.status !== 200) return { status: response.status };
+    const data = await response.json() as { url?: string };
+    return { status: 200, url: typeof data.url === 'string' ? data.url : undefined };
+  } catch {
+    return { status: 0 };
+  }
+}
+
+api.get('/shortlink', async (c) => {
+  const path = c.req.query('path') || '';
+  if (!SHORTLINK_PATH_PATTERN.test(path)) {
+    return c.json({ error: 'Only story paths (/post/<author>/<record>) can be shortened.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  if (!c.env.PRIVO_API_KEY) {
+    return c.json({ error: 'Short links are not configured on this site yet.' }, 503, { 'Cache-Control': 'no-store' });
+  }
+  const destination = new URL(path, new URL(c.req.url).origin).toString();
+  const base = shortlinkBaseCode(path);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const shortcode = attempt === 0 ? base : `${base}${attempt + 1}`.slice(0, 45);
+    const existing = await privoReadLink(shortcode);
+    if (existing.status === 200) {
+      if (existing.url === destination) {
+        return c.json({ shortcode, shortUrl: `${PRIVO_API}/${shortcode}`, url: destination, created: false }, 200, { 'Cache-Control': 'no-store' });
+      }
+      continue; // taken by something else — try the next suffix
+    }
+    if (existing.status !== 404) {
+      return c.json({ error: 'The short link service is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+    }
+    try {
+      const created = await fetch(`${PRIVO_API}/api/link`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${c.env.PRIVO_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: destination, shortcode }),
+      });
+      if (created.status === 201) {
+        const data = await created.json() as { shortUrl?: string };
+        return c.json({ shortcode, shortUrl: data.shortUrl || `${PRIVO_API}/${shortcode}`, url: destination, created: true }, 200, { 'Cache-Control': 'no-store' });
+      }
+      if (created.status === 409) {
+        // Created concurrently (or squatted) — re-read it before moving on.
+        const raced = await privoReadLink(shortcode);
+        if (raced.status === 200 && raced.url === destination) {
+          return c.json({ shortcode, shortUrl: `${PRIVO_API}/${shortcode}`, url: destination, created: false }, 200, { 'Cache-Control': 'no-store' });
+        }
+        continue;
+      }
+      const detail = await created.text();
+      console.error(`Privo link creation failed (${created.status}):`, detail);
+      return c.json({ error: 'Could not create the short link.' }, 502, { 'Cache-Control': 'no-store' });
+    } catch (error) {
+      console.error('Privo link creation request failed:', error);
+      return c.json({ error: 'The short link service is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+    }
+  }
+  return c.json({ error: 'Could not find a free shortcode for this story.' }, 409, { 'Cache-Control': 'no-store' });
+});
+
 export default api;

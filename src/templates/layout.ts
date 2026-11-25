@@ -406,6 +406,13 @@ export function renderLayout(
     .article-share { display: grid; gap: 8px; }
     .article-share__label { color: var(--muted); font: 700 11px 'Source Sans 3', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
     .article-share__buttons { display: grid; gap: 6px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .article-share__copy-panel { background: var(--paper-deep); border: 1px solid var(--line); border-radius: 2px; display: grid; gap: 8px; padding: 10px; }
+    .article-share__copy-panel[hidden] { display: none; }
+    .article-share__copy-options { display: grid; gap: 6px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .article-share__copy-options .reaction-button { justify-content: center; min-width: 0; }
+    .article-share__copy-hint { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; }
+    .article-share__copy-hint a { color: var(--accent); }
+    .article-share [data-share-copy][aria-expanded="true"] { background: rgba(178,172,136,.16); border-color: var(--accent); }
     .article-rail .article-sources { border-top: 0; margin: 0 0 28px; padding: 0; }
     .article-rail .article-sources h2 { font-family: Lora, serif; font-size: 23px; font-weight: 600; letter-spacing: -.045em; margin: 0 0 16px; text-transform: none; }
     .article-rail .article-sources li { overflow-wrap: anywhere; }

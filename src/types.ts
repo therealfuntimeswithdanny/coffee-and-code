@@ -20,6 +20,9 @@ export type Env = {
   // also purges the story URL from the zone cache via the Cloudflare API.
   CF_ZONE_ID?: string;
   CF_API_TOKEN?: string;
+  // Privo API key (links:write scope) used by /api/shortlink to create
+  // per-story short links. Secret, optional — short links 503 without it.
+  PRIVO_API_KEY?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;

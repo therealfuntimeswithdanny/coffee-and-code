@@ -367,7 +367,14 @@ async function renderPost(
           <a class="reaction-button" href="https://www.threads.net/intent/post?text=${shareText}%20${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Threads"><i class="fa-brands fa-threads" aria-hidden="true"></i> Threads</a>
           <a class="reaction-button" href="https://www.facebook.com/sharer/sharer.php?u=${shareUrl}" target="_blank" rel="noopener" aria-label="Share on Facebook"><i class="fa-brands fa-facebook-f" aria-hidden="true"></i> Facebook</a>
           <button type="button" class="reaction-button" data-share-native hidden><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
-          <button type="button" class="reaction-button" data-share-copy><i class="fa-solid fa-link" aria-hidden="true"></i> Copy link</button>
+          <button type="button" class="reaction-button" data-share-copy aria-expanded="false" aria-controls="share-copy-panel"><i class="fa-solid fa-link" aria-hidden="true"></i> Copy link</button>
+        </div>
+        <div class="article-share__copy-panel" id="share-copy-panel" data-share-copy-panel hidden>
+          <div class="article-share__copy-options">
+            <button type="button" class="reaction-button" data-share-copy-full><i class="fa-solid fa-link" aria-hidden="true"></i> Copy full link</button>
+            <button type="button" class="reaction-button" data-share-copy-short><i class="fa-solid fa-bolt" aria-hidden="true"></i> Copy short link</button>
+          </div>
+          <p class="article-share__copy-hint">Short links go through <a href="https://privo.fyi" target="_blank" rel="noopener">privo.fyi</a> — same destination, no tracking.</p>
         </div>
       </div>
       <span class="article-reactions__status" aria-live="polite"></span>
