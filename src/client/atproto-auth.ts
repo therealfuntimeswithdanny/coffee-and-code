@@ -2168,11 +2168,14 @@ async function loadAuthorProfileEditor(did: string) {
       throw new Error('Your author profile record has an unexpected record type.');
     }
     if (!value) {
-      const postsResponse = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
-      if (!postsResponse.ok) throw new Error(`Could not check your published stories (${postsResponse.status}).`);
-      const posts = await postsResponse.json() as Array<{ uri?: string }>;
+      // No author profile record yet — only offer the editor when this account
+      // is actually a Coffee & Code author (a registered publication owner or
+      // an account with published stories).
+      const authorResponse = await fetch(`/api/authors/check?handle=${encodeURIComponent(did)}`, { cache: 'no-store' });
+      if (!authorResponse.ok) throw new Error(`Could not check your author status (${authorResponse.status}).`);
+      const authorResult = await authorResponse.json() as { isAuthor?: unknown };
       if (session?.did !== did) return;
-      if (posts.length === 0) {
+      if (authorResult.isAuthor !== true) {
         if (authorGate) authorGate.hidden = false;
         return;
       }
@@ -5803,9 +5806,11 @@ async function loadDraftListPage(did: string) {
 
   const showGate = async () => {
     try {
-      const postsResponse = await fetch(`/api/account/posts?author=${encodeURIComponent(did)}`, { cache: 'no-store' });
-      const posts = postsResponse.ok ? await postsResponse.json() as unknown[] : [];
-      if (!Array.isArray(posts) || posts.length === 0) {
+      const authorResponse = await fetch(`/api/authors/check?handle=${encodeURIComponent(did)}`, { cache: 'no-store' });
+      const authorResult = authorResponse.ok
+        ? await authorResponse.json() as { isAuthor?: unknown }
+        : null;
+      if (authorResult?.isAuthor === false) {
         section.hidden = true;
         if (gate) gate.hidden = false;
         return true;

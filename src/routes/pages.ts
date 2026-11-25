@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Env, StandardDocument } from '../types';
 import { renderSearchBar } from '../templates/searchBar';
-import { getPdsEndpoint, isPdsAvailable, fetchArticles, fetchAuthorProfile, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
+import { getPdsEndpoint, isPdsAvailable, fetchArticles, fetchAuthorProfile, fetchConfiguredLists, searchArticles, resolveAtprotoIdentifier, proxyImageUrl, proxyAvatarUrl, type ArticlePagination } from '../lib/atproto';
 import { renderLayout, browserRenderOgImage, browserRunScreenshotUrl } from '../templates/layout';
 import { toPlainText, descriptionText, renderMarkdown, processImages, enhanceHtmlStructure } from '../lib/contentRenderer';
 import { listDocs, getDoc, renderDocIcons, type DocEntry } from '../lib/docs';
@@ -296,7 +296,14 @@ pages.get('/api/authors/check', async (c) => {
 
   const pds = await getPdsEndpoint(c.env.OWNER_DID, c.env.OWNER_PDS);
   const allArticles = await fetchArticles(pds, c.env.OWNER_DID);
-  const isAuthor = allArticles.some((post) => post.author?.did.toLowerCase() === authorDid.toLowerCase());
+  let isAuthor = allArticles.some((post) => post.author?.did.toLowerCase() === authorDid.toLowerCase());
+  if (!isAuthor) {
+    // A registered publication's owner is an author even before their first
+    // story is indexed — otherwise they could never reach the draft editor to
+    // write it.
+    const { publicationUris } = await fetchConfiguredLists(pds, c.env.OWNER_DID);
+    isAuthor = publicationUris.some((uri) => uri.toLowerCase().startsWith(`at://${authorDid.toLowerCase()}/`));
+  }
   return c.json({ isAuthor }, 200, { 'Cache-Control': 'public, max-age=60' });
 });
 
@@ -742,7 +749,7 @@ pages.get('/account/author', (c) => {
     </section>
     <section class="account-card account-page__viewed" data-author-gate hidden aria-labelledby="author-gate-title">
       <h2 id="author-gate-title">Author profile</h2>
-      <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
+      <p class="account-page__viewed-status">Author tools appear here once your publication is linked on Coffee &amp; Code or you have published a story. <a href="/become-an-author">Learn how to become an author</a>.</p>
     </section>`;
   const body = accountPageShell('Author profile', main, { signedOutMessage: 'Sign in to manage your author profile.' });
   return c.html(renderLayout(c, 'Author profile', body));
@@ -913,7 +920,7 @@ pages.get('/account/author/draft', (c) => {
     </section>
     <section class="account-card account-page__viewed" data-draft-gate hidden aria-labelledby="draft-gate-title">
       <h2 id="draft-gate-title">Drafts</h2>
-      <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
+      <p class="account-page__viewed-status">Author tools appear here once your publication is linked on Coffee &amp; Code or you have published a story. <a href="/become-an-author">Learn how to become an author</a>.</p>
     </section>`;
   const body = accountPageShell('Drafts', main, { signedOutMessage: 'Sign in to write and manage your drafts.' });
   return c.html(renderLayout(c, 'Drafts', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));
@@ -1014,7 +1021,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
       </div>
       <section class="account-card account-page__viewed" data-draft-gate hidden aria-labelledby="draft-gate-title">
         <h2 id="draft-gate-title">Drafts</h2>
-        <p class="account-page__viewed-status">Author tools appear here once you have published a story on Coffee &amp; Code. <a href="/become-an-author">Learn how to become an author</a>.</p>
+        <p class="account-page__viewed-status">Author tools appear here once your publication is linked on Coffee &amp; Code or you have published a story. <a href="/become-an-author">Learn how to become an author</a>.</p>
       </section>
       <dialog class="draft-publish-dialog" data-draft-publish-dialog aria-labelledby="draft-publish-dialog-title">
         <div class="draft-publish-dialog__card">

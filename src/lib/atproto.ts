@@ -347,7 +347,7 @@ export async function fetchRecord(pdsUrl: string, repo: string, collection: stri
   }
 }
 
-async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[]; pinnedUris: string[] }> {
+export async function fetchConfiguredLists(pdsUrl: string, ownerDid: string): Promise<{ publicationUris: string[]; pinnedUris: string[] }> {
   const [publicationsRecord, ownerPublicationUris] = await Promise.all([
     fetchRecord(pdsUrl, ownerDid, 'cc.coffeencode.publications', 'self'),
     // Standard.site discovery: every site.standard.publication record in the
