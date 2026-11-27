@@ -3172,6 +3172,11 @@ if (initializationError && authForm) {
 }
 
 const oauthReady = (async () => {
+  // Capture the user's chosen method before OAuth initialization marks the
+  // restored OAuth session as current. Otherwise creating a Coffee & Code
+  // account while another OAuth account is saved would immediately flip back
+  // to that older account on the welcome page.
+  const preferredAuthMethod = lastAuthMethod();
   if (client) {
     try {
       const initialized = await initializeOAuthClient(client);
@@ -3191,7 +3196,7 @@ const oauthReady = (async () => {
   // takes precedence over a still-valid OAuth session, otherwise it only fills
   // in when OAuth found nothing.
   const storedPasswordSession = loadStoredPasswordSession();
-  if (storedPasswordSession && (!session || lastAuthMethod() === 'password')) {
+  if (storedPasswordSession && (!session || preferredAuthMethod === 'password')) {
     const restored = createPasswordSession(storedPasswordSession);
     try {
       const check = await restored.fetchHandler('/xrpc/com.atproto.server.getSession');
