@@ -26,13 +26,8 @@ OWNER_PDS = "https://account.coffeencode.cc"
 STORAGE_PUBLIC_URL = "https://storage.coffeencode.cc"
 VAPID_SUBJECT = "mailto:atcdn@danielmorrisey.com"
 VAPID_PUBLIC_KEY = "BFYP88Ohzh6ob5Qxpp8wsdvN94PTO8QsmOKRH1kgRkjSieEA0vX7nCQl177HIf7VN5mMglT8SXgcNP-b5yg4gUw"
-GOOGLE_CLIENT_ID = "391308630027-37eo8j55bp85un4cf4djhm7dmketblgp.apps.googleusercontent.com"
-
-# Optional Cloudflare zone purge for post updates.
-# 1. Set CF_ZONE_ID to the coffeencode.cc zone ID.
-# 2. Create an API token with Zone → Cache Purge permission.
-# 3. Store it with: wrangler secret put CF_API_TOKEN
-# CF_ZONE_ID = ""
+GOOGLE_CLIENT_ID = "1089638521565-c43jh0bake2q329tfq5obr5k62o3bu37.apps.googleusercontent.com"
+CF_ZONE_ID = "cb5bf50fe19cd974cd6f0340e619273e"
 
 # Push notification state.
 [[kv_namespaces]]
