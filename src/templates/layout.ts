@@ -510,9 +510,7 @@ export function renderLayout(
     .auth-form { display: grid; gap: 10px; margin-top: auto; }
     .auth-form label { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
     .auth-form input { background: var(--paper); border: 1px solid var(--line); color: var(--ink); font: 17px 'Source Sans 3', sans-serif; min-height: 48px; padding: 10px 12px; width: 100%; }
-    .auth-google-button { margin-bottom: 12px; min-height: 44px; }
-    .auth-google-button iframe { max-width: 100%; }
-    .auth-google-button[hidden] { display: none; }
+    .auth-provider--google { margin-bottom: 8px; }
     .google-signup__title { color: var(--ink); font-family: 'Lora', Georgia, serif; font-size: 24px; line-height: 1.15; margin: 0 0 10px; }
     .google-signup__intro { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
     .google-signup__summary { align-items: center; border: 1px solid var(--line); display: flex; gap: 12px; margin-bottom: 16px; padding: 12px; }

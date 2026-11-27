@@ -683,7 +683,6 @@ pages.get('/auth', (c) => {
             </div>
           </div>
           <p class="auth-card__heading">Continue with your AT Protocol account</p>
-          <div class="auth-google-button" data-google-button hidden></div>
           <div class="auth-providers" data-auth-providers>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><img class="auth-provider__logo" src="/favicon.png" alt="" aria-hidden="true"><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider="bsky.social"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-bsky.app-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Bluesky</strong><small>bsky.social</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
@@ -698,6 +697,7 @@ pages.get('/auth', (c) => {
             <button type="submit" class="login-button auth-option__button" data-handle-submit>Continue</button>
           </form>
           <div class="auth-card__divider"><span>Other ways to sign in</span></div>
+          <button type="button" class="auth-provider auth-provider--google" data-google-button hidden><i class="fa-brands fa-google" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Continue with Google</strong><small>Create a Coffee &amp; Code Account using your Google Account info</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
           <details class="auth-row">
             <summary><i class="fa-solid fa-key" aria-hidden="true"></i> Use an app password</summary>
             <form class="auth-form" data-app-password-form>

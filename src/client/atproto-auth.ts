@@ -525,7 +525,7 @@ const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]')
 const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
 const inviteCodeElement = document.querySelector<HTMLElement>('[data-invite-code]');
 const copyInviteButton = document.querySelector<HTMLButtonElement>('[data-copy-invite]');
-const googleButton = document.querySelector<HTMLElement>('[data-google-button]');
+const googleButton = document.querySelector<HTMLButtonElement>('[data-google-button]');
 const googleSignup = document.querySelector<HTMLElement>('[data-google-signup]');
 const googleStepDetails = document.querySelector<HTMLElement>('[data-google-step-details]');
 const googleStepReview = document.querySelector<HTMLElement>('[data-google-step-review]');
@@ -610,7 +610,12 @@ declare global {
       accounts?: {
         id?: {
           initialize: (config: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
-          renderButton: (element: HTMLElement, options: { theme?: string; size?: string; width?: number; text?: string; shape?: string }) => void;
+          prompt: (listener?: (notification: {
+            isNotDisplayed?: () => boolean;
+            isSkippedMoment?: () => boolean;
+            getNotDisplayedReason?: () => string;
+            getSkippedReason?: () => string;
+          }) => void) => void;
         };
       };
     };
@@ -4327,15 +4332,7 @@ function initializeGoogleSignup() {
       client_id: clientId,
       callback: (response) => { void handleGoogleCredential(response); },
     });
-    googleButton.replaceChildren();
     googleButton.hidden = false;
-    googleId.renderButton(googleButton, {
-      theme: 'filled_black',
-      size: 'large',
-      width: 320,
-      text: 'signup_with',
-      shape: 'rectangular',
-    });
   };
   if (window.google?.accounts?.id) {
     initialize();
@@ -4349,6 +4346,20 @@ function initializeGoogleSignup() {
   script.onerror = () => showAuthError('Google sign-in could not be loaded. Check your connection and try again.');
   document.head.appendChild(script);
 }
+
+googleButton?.addEventListener('click', () => {
+  clearAuthError();
+  const googleId = window.google?.accounts?.id;
+  if (!googleId) {
+    showAuthError('Google sign-in is still loading. Try again in a moment.');
+    return;
+  }
+  googleId.prompt((notification) => {
+    if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
+      showAuthError('Google sign-in could not be shown right now. Try again or use another sign-in option.');
+    }
+  });
+});
 
 initializeGoogleSignup();
 

@@ -3,8 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2024-04-01"
 compatibility_flags = ["nodejs_compat"]
 
-# HTML email templates under cloudflare/email/templates are imported as text.
-# Markdown docs under docs/ are imported as text for the /docs pages.
+# Import HTML email templates and Markdown docs as text.
 rules = [
   { type = "Text", globs = ["**/*.html", "**/*.md"], fallthrough = false },
 ]
@@ -25,44 +24,30 @@ PUB_DESCRIPTION = "A small tech news publication built on the AT Protocol by Dan
 OWNER_DID = "did:plc:l37td5yhxl2irrzrgvei4qay"
 OWNER_PDS = "https://account.coffeencode.cc"
 STORAGE_PUBLIC_URL = "https://storage.coffeencode.cc"
-# Browser push notifications (Web Push / VAPID). Generate a key pair, put the
-# public key here, and set the private key with:
-#   wrangler secret put VAPID_PRIVATE_KEY
-# VAPID_SUBJECT is a contact URI required by push services.
 VAPID_SUBJECT = "mailto:atcdn@danielmorrisey.com"
 VAPID_PUBLIC_KEY = "BFYP88Ohzh6ob5Qxpp8wsdvN94PTO8QsmOKRH1kgRkjSieEA0vX7nCQl177HIf7VN5mMglT8SXgcNP-b5yg4gUw"
-# Google Identity Services web client ID for /auth Google signup. Create an
-# OAuth web client in Google Cloud, add https://coffeencode.cc as an authorized
-# JavaScript origin, then set the public client ID here.
 GOOGLE_CLIENT_ID = "391308630027-37eo8j55bp85un4cf4djhm7dmketblgp.apps.googleusercontent.com"
-# Optional: purge the story URL from the Cloudflare zone cache when a post is
-# updated. Uncomment and set the API token with:
-#   wrangler secret put CF_API_TOKEN
-# CF_ZONE_ID = "<zone id>"
 
-# Stores Expo push tokens (device:<token>) and per-account push state
-# (state:<did>). To isolate `wrangler dev` from production data, create a
-# preview namespace with: wrangler kv:namespace create PUSH_TOKENS --preview
-# and add it here as: preview_id = "..."
+# Optional Cloudflare zone purge for post updates.
+# 1. Set CF_ZONE_ID to the coffeencode.cc zone ID.
+# 2. Create an API token with Zone → Cache Purge permission.
+# 3. Store it with: wrangler secret put CF_API_TOKEN
+# CF_ZONE_ID = ""
+
+# Push notification state.
 [[kv_namespaces]]
 binding = "PUSH_TOKENS"
 id = "69ad42d54b0f4304b4d0acf5a1e184d3"
 
-# Author-uploaded videos, served publicly at
-# https://storage.coffeencode.cc/video/<did>/<cid>.<ext> through the bucket's
-# custom domain. Create with: wrangler r2 bucket create coffeencode-storage
-# then attach the storage.coffeencode.cc custom domain in the dashboard.
+# Author-uploaded media, served through storage.coffeencode.cc.
 [[r2_buckets]]
 binding = "STORAGE"
 bucket_name = "coffeencode-storage"
 
-# Polls registered accounts' notification feeds, pushes new items, and emails
-# digests to opted-in subscribers.
+# Poll notification feeds and send push/email digests.
 [triggers]
 crons = ["*/5 * * * *"]
 
-# Cloudflare Email Sending binding used for verification and digest mail.
-# The from address domain (coffeencode.cc) must be enabled for Email Sending
-# in the Cloudflare dashboard for sends to succeed.
+# Cloudflare Email Sending for verification and digest mail.
 [[send_email]]
 name = "EMAIL"
