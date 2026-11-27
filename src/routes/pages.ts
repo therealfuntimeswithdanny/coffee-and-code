@@ -252,14 +252,16 @@ function normalizeSignupHandle(value: string, domain: string) {
   const suffix = domain.startsWith('.') ? domain : `.${domain}`;
   let handle = value.trim().toLowerCase().replace(/\.$/, '');
   if (handle.endsWith(suffix)) handle = handle.slice(0, -suffix.length);
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/.test(handle)) return undefined;
+  // Coffee handles resolve through the handle service, which allows 2–20
+  // characters per handle label.
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,18}[a-z0-9])$/.test(handle)) return undefined;
   return { local: handle, full: `${handle}${suffix}` };
 }
 
 function numberedSignupHandle(baseHandle: string, domain: string, suffixNumber: number) {
   if (suffixNumber === 0) return normalizeSignupHandle(baseHandle, domain);
   const suffix = String(suffixNumber).padStart(2, '0');
-  const trimmedBase = baseHandle.slice(0, Math.max(1, 30 - suffix.length)).replace(/-+$/g, '');
+  const trimmedBase = baseHandle.slice(0, Math.max(1, 20 - suffix.length)).replace(/-+$/g, '');
   return normalizeSignupHandle(`${trimmedBase}${suffix}`, domain);
 }
 
@@ -442,7 +444,7 @@ pages.post('/api/auth/google-signup', async (c) => {
 
   const handle = normalizeSignupHandle(requestedHandle, signupDomain);
   if (!handle) {
-    return c.json({ error: `Choose a handle using letters, numbers, and hyphens. It will end in ${signupDomain}.` }, 400, { 'Cache-Control': 'no-store' });
+    return c.json({ error: `Choose a handle of 2–20 characters using letters, numbers, and hyphens. It will end in ${signupDomain}.` }, 400, { 'Cache-Control': 'no-store' });
   }
 
   let providerProfile: GoogleTokenInfo;
@@ -962,7 +964,7 @@ pages.get('/auth', (c) => {
                 <label for="google-signup-email">Email</label>
                 <input id="google-signup-email" name="email" type="email" autocomplete="email" required>
                 <label for="google-signup-handle">Handle</label>
-                <div class="google-signup__handle-input"><input id="google-signup-handle" name="handle" autocapitalize="none" spellcheck="false" required><span>.coffeencode.cc</span></div>
+                <div class="google-signup__handle-input"><input id="google-signup-handle" name="handle" autocapitalize="none" spellcheck="false" minlength="2" maxlength="20" required><span>.coffeencode.cc</span></div>
                 <p class="auth-handle-form__hint">Your Google email is used for account recovery unless you change it here.</p>
                 <button type="submit" class="login-button auth-option__button">Create my account</button>
                 <button type="button" class="auth-signout" data-google-back>Back</button>
@@ -981,7 +983,7 @@ pages.get('/auth', (c) => {
           <p class="auth-card__heading">Continue with your AT Protocol account</p>
           <div class="auth-providers" data-auth-providers>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
-            <button type="button" class="auth-provider" aria-expanded="false" data-provider=""><i class="fa-solid fa-at" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Use a handle</strong><small>any AT Protocol account</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider=""><i class="fa-solid fa-at" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Use a handle</strong><small>any AT Protocol account, bsky.social, blacksky.app, eurosky.social, etc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
           </div>
           <form class="auth-form auth-handle-form" data-auth-form hidden>
             <label for="auth-handle" data-handle-label>Your handle</label>
@@ -1690,7 +1692,7 @@ pages.get('/account/author/create', (c) => {
       <h1 id="pub-create-title">Create a publication</h1>
       <p class="pub-create__intro">This writes a <code>site.standard.publication</code> record into your own AT Protocol account. The publication URL is set to <code>coffeencode.cc/author/&lt;your-handle&gt;</code>, so stories you publish under it appear on your Coffee &amp; Code author page. Sign-in here uses a separate, minimal grant — it can only manage publications and upload an icon.</p>
       <div data-pub-signin hidden>
-        <label class="pub-create__field">Your handle or DID<input type="text" data-pub-identifier placeholder="you.bsky.social or did:plc:…" autocomplete="off" spellcheck="false"></label>
+        <label class="pub-create__field">Your handle or DID<input type="text" data-pub-identifier placeholder="you.bsky.social or did:plc:…" autocomplete="off" autocapitalize="none" spellcheck="false" data-handle-typeahead data-typeahead-limit="5"></label>
         <div class="pub-create__actions"><button type="button" class="auth-signout" data-pub-signin-button><i class="fa-solid fa-arrow-right" aria-hidden="true"></i> Sign in</button></div>
       </div>
       <form data-pub-form hidden>
@@ -1720,7 +1722,8 @@ pages.get('/account/author/create', (c) => {
           <div class="pub-create__actions"><button type="button" class="auth-signout" data-pub-add-button><i class="fa-solid fa-plus" aria-hidden="true"></i> Add to Coffee &amp; Code</button></div>
         </div>
       </section>
-    </section>`;
+    </section>
+    <script type="module" src="/components/typeahead.js"></script>`;
   return c.html(renderLayout(c, 'Create a publication', body, '<meta name="robots" content="noindex">'));
 });
 

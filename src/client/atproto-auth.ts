@@ -4205,7 +4205,7 @@ function suggestGoogleHandle(email: string, displayName: string, preferredSource
     .replace(/^-|-$/g, '');
   if (!handle) handle = 'reader';
   if (handle.length < 3) handle = `${handle}-reader`;
-  return handle.slice(0, 30).replace(/-+$/g, '') || 'reader';
+  return handle.slice(0, 20).replace(/-+$/g, '') || 'reader';
 }
 
 function setGoogleAvatar(image: HTMLImageElement | null | undefined, placeholder: HTMLElement | null | undefined, url?: string) {
@@ -4510,8 +4510,8 @@ googleReviewForm?.addEventListener('submit', async (event) => {
     showAuthError('Enter a valid email address.');
     return;
   }
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/.test(handle)) {
-    showAuthError('Handles can use letters, numbers, and hyphens, and must start and end with a letter or number.');
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,18}[a-z0-9])$/.test(handle)) {
+    showAuthError('Handles must be 2–20 characters using letters, numbers, and hyphens, and must start and end with a letter or number.');
     return;
   }
 
