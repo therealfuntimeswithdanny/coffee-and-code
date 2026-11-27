@@ -520,11 +520,26 @@ const authAccount = document.querySelector<HTMLElement>('[data-auth-account]');
 const authName = document.querySelector<HTMLElement>('[data-auth-name]');
 const authError = document.querySelector<HTMLElement>('[data-auth-error]');
 const createCoffeeAccountButton = document.querySelector<HTMLButtonElement>('[data-create-coffee-account]');
-const createCoffeeAccountLabel = createCoffeeAccountButton?.querySelector<HTMLElement>('strong') || createCoffeeAccountButton;
+const createCoffeeAccountLabel = (createCoffeeAccountButton?.querySelector<HTMLElement>('strong') || createCoffeeAccountButton) as HTMLElement;
 const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
 const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
 const inviteCodeElement = document.querySelector<HTMLElement>('[data-invite-code]');
 const copyInviteButton = document.querySelector<HTMLButtonElement>('[data-copy-invite]');
+const googleButton = document.querySelector<HTMLElement>('[data-google-button]');
+const googleSignup = document.querySelector<HTMLElement>('[data-google-signup]');
+const googleStepDetails = document.querySelector<HTMLElement>('[data-google-step-details]');
+const googleStepReview = document.querySelector<HTMLElement>('[data-google-step-review]');
+const googlePasswordForm = document.querySelector<HTMLFormElement>('[data-google-password-form]');
+const googleReviewForm = document.querySelector<HTMLFormElement>('[data-google-review-form]');
+const googleCancelButton = document.querySelector<HTMLButtonElement>('[data-google-cancel]');
+const googleBackButton = document.querySelector<HTMLButtonElement>('[data-google-back]');
+const googleSummaryAvatar = document.querySelector<HTMLImageElement>('[data-google-summary-avatar]');
+const googleSummaryPlaceholder = document.querySelector<HTMLElement>('[data-google-summary-placeholder]');
+const googleSummaryName = document.querySelector<HTMLElement>('[data-google-summary-name]');
+const googleSummaryEmail = document.querySelector<HTMLElement>('[data-google-summary-email]');
+const googleSummaryHandle = document.querySelector<HTMLElement>('[data-google-summary-handle]');
+const googleReviewAvatar = document.querySelector<HTMLImageElement>('[data-google-review-avatar]');
+const googleReviewPlaceholder = document.querySelector<HTMLElement>('[data-google-review-placeholder]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
 const headerAccount = document.querySelector<HTMLElement>('[data-account-link]');
 const accountMenuButton = document.querySelector<HTMLButtonElement>('[data-account-menu-button]');
@@ -591,6 +606,14 @@ type ReaderPreferences = {
 
 declare global {
   interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (config: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
+          renderButton: (element: HTMLElement, options: { theme?: string; size?: string; width?: number; text?: string; shape?: string }) => void;
+        };
+      };
+    };
     coffeeAndCodePreferences?: {
       get: () => ReaderPreferences;
       apply: (prefs: { theme?: unknown; uiFont?: unknown; postFont?: unknown; postFontSize?: unknown }) => void;
@@ -660,6 +683,9 @@ function renderAccount() {
   loginLinks.forEach((link) => {
     link.hidden = Boolean(session);
     link.setAttribute('href', `/auth?returnTo=${encodeURIComponent(returnTo)}`);
+  });
+  document.querySelectorAll<HTMLElement>('[data-nav-subscribe]').forEach((el) => {
+    el.hidden = Boolean(session);
   });
   if (headerAccount) {
     headerAccount.hidden = !session;
@@ -765,6 +791,13 @@ function renderAccount() {
   }
 
   const did = session.did;
+  const cachedAccount = loadKnownAccounts().find((account) => account.did === did);
+  if (cachedAccount?.avatar && headerAccountAvatar) {
+    headerAccountAvatar.src = cachedAccount.avatar;
+    headerAccountAvatar.alt = `${cachedAccount.displayName || cachedAccount.handle || 'Account'} profile picture`;
+    headerAccountAvatar.hidden = false;
+    if (headerAccountPlaceholder) headerAccountPlaceholder.hidden = true;
+  }
   fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`)
     .then((response) => response.ok ? response.json() : Promise.reject(new Error('Profile unavailable')))
     .then((profile: { avatar?: string; displayName?: string; handle?: string }) => {
@@ -3052,7 +3085,8 @@ const oauthReady = (async () => {
     // continuing on to wherever they were headed.
     const doneUrl = new URL('/auth', window.location.origin);
     doneUrl.searchParams.set('state', 'completed');
-    const known = session ? loadKnownAccounts().find((a) => a.did === session.did) : undefined;
+    const activeDid = session?.did;
+    const known = activeDid ? loadKnownAccounts().find((a) => a.did === activeDid) : undefined;
     if (known?.handle) doneUrl.searchParams.set('handle', known.handle);
     doneUrl.searchParams.set('returnTo', safeReturnPath(callbackState));
     window.location.replace(`${doneUrl.pathname}${doneUrl.search}`);
@@ -3153,6 +3187,11 @@ async function showAuthWelcome() {
       });
     }
   } catch {}
+
+  if (!avatarUrl) {
+    const known = loadKnownAccounts().find((account) => account.did === did);
+    if (known?.avatar) avatarUrl = known.avatar;
+  }
 
   if (session?.did !== did) return;
   const displayName = name || handle || fallback;
@@ -3993,6 +4032,325 @@ function hideAuthWaiting() {
 }
 
 authWaitingCancel?.addEventListener('click', hideAuthWaiting);
+
+// ---- Google account signup -------------------------------------------------
+// Google only proves the person's email/name/photo. The PDS account itself is
+// created server-side with an invite code, so neither the PDS admin password
+// nor a Google client secret is ever exposed to the browser.
+type GoogleSignupDraft = {
+  credential: string;
+  googleEmail: string;
+  email: string;
+  displayName: string;
+  handle: string;
+  picture?: string;
+  password: string;
+  avatarData?: string;
+};
+
+let googleSignupDraft: GoogleSignupDraft | undefined;
+const googleSignupHiddenStates = new Map<HTMLElement, boolean>();
+
+function decodeGoogleCredential(credential: string): Record<string, unknown> | undefined {
+  try {
+    const segment = credential.split('.')[1] || '';
+    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function suggestGoogleHandle(email: string, displayName: string) {
+  const source = email.split('@')[0] || displayName || 'reader';
+  let handle = source.normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  if (!handle) handle = 'reader';
+  if (handle.length < 3) handle = `${handle}-reader`;
+  return handle.slice(0, 30).replace(/-+$/g, '') || 'reader';
+}
+
+function setGoogleAvatar(image: HTMLImageElement | null | undefined, placeholder: HTMLElement | null | undefined, url?: string) {
+  if (!image || !placeholder) return;
+  if (url) {
+    image.src = url;
+    image.hidden = false;
+    placeholder.hidden = true;
+  } else {
+    image.removeAttribute('src');
+    image.hidden = true;
+    placeholder.hidden = false;
+  }
+}
+
+function setGoogleSignupStep(step: 'details' | 'review') {
+  if (googleStepDetails) googleStepDetails.hidden = step !== 'details';
+  if (googleStepReview) googleStepReview.hidden = step !== 'review';
+}
+
+function takeOverAuthCardForGoogle() {
+  if (!authOptions || !googleSignup) return;
+  googleSignupHiddenStates.clear();
+  authOptions.querySelectorAll<HTMLElement>(':scope > *').forEach((element) => {
+    googleSignupHiddenStates.set(element, element.hidden);
+    element.hidden = element !== googleSignup;
+  });
+  googleSignup.hidden = false;
+  authOptions.hidden = false;
+}
+
+function restoreAuthCardFromGoogle() {
+  if (!authOptions || !googleSignup) return;
+  authOptions.querySelectorAll<HTMLElement>(':scope > *').forEach((element) => {
+    element.hidden = googleSignupHiddenStates.get(element) ?? true;
+  });
+  googleSignupHiddenStates.clear();
+  googleSignup.hidden = true;
+}
+
+function resetGoogleSignup() {
+  googleSignupDraft = undefined;
+  googlePasswordForm?.reset();
+  googleReviewForm?.reset();
+  setGoogleSignupStep('details');
+  restoreAuthCardFromGoogle();
+}
+
+function renderGoogleSignupDetails() {
+  if (!googleSignupDraft) return;
+  if (googleSummaryName) googleSummaryName.textContent = googleSignupDraft.displayName;
+  if (googleSummaryEmail) googleSummaryEmail.textContent = googleSignupDraft.googleEmail;
+  if (googleSummaryHandle) googleSummaryHandle.textContent = `@${googleSignupDraft.handle}.coffeencode.cc`;
+  setGoogleAvatar(googleSummaryAvatar, googleSummaryPlaceholder, googleSignupDraft.picture);
+}
+
+function fillGoogleReviewForm() {
+  if (!googleSignupDraft || !googleReviewForm) return;
+  const field = (name: string) => googleReviewForm.elements.namedItem(name) as HTMLInputElement;
+  field('displayName').value = googleSignupDraft.displayName;
+  field('email').value = googleSignupDraft.email;
+  field('handle').value = googleSignupDraft.handle;
+  setGoogleAvatar(googleReviewAvatar, googleReviewPlaceholder, googleSignupDraft.avatarData || googleSignupDraft.picture);
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read that image.'));
+    reader.onerror = () => reject(new Error('Could not read that image.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleGoogleCredential(response: { credential?: string }) {
+  clearAuthError();
+  const credential = response.credential || '';
+  const claims = credential ? decodeGoogleCredential(credential) : undefined;
+  const email = typeof claims?.email === 'string' ? claims.email.toLowerCase() : '';
+  if (!credential || !claims || !email) {
+    showAuthError('Google sign-in did not return an email address. Please try again.');
+    return;
+  }
+  const googleName = typeof claims.name === 'string' ? claims.name.trim() : '';
+  const displayName = googleName || email.split('@')[0] || 'Coffee reader';
+  googleSignupDraft = {
+    credential,
+    googleEmail: email,
+    email,
+    displayName,
+    handle: suggestGoogleHandle(email, displayName),
+    picture: typeof claims.picture === 'string' ? claims.picture : undefined,
+    password: '',
+  };
+  googlePasswordForm?.reset();
+  googleReviewForm?.reset();
+  setGoogleSignupStep('details');
+  renderGoogleSignupDetails();
+  takeOverAuthCardForGoogle();
+}
+
+googlePasswordForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  clearAuthError();
+  if (!googleSignupDraft) return;
+  const data = new FormData(googlePasswordForm);
+  const password = data.get('password')?.toString() || '';
+  const confirm = data.get('confirm')?.toString() || '';
+  if (password.length < 8) {
+    showAuthError('Choose a password of at least 8 characters.');
+    return;
+  }
+  if (password !== confirm) {
+    showAuthError('Those passwords do not match.');
+    return;
+  }
+  googleSignupDraft.password = password;
+  fillGoogleReviewForm();
+  setGoogleSignupStep('review');
+});
+
+googleCancelButton?.addEventListener('click', () => {
+  clearAuthError();
+  resetGoogleSignup();
+});
+
+googleBackButton?.addEventListener('click', () => {
+  clearAuthError();
+  setGoogleSignupStep('details');
+});
+
+const googleAvatarInput = googleReviewForm?.elements.namedItem('avatar') as HTMLInputElement | null | undefined;
+googleAvatarInput?.addEventListener('change', async () => {
+  clearAuthError();
+  if (!googleSignupDraft || !googleReviewForm) return;
+  const input = googleReviewForm.elements.namedItem('avatar') as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    showAuthError('Profile photos must be PNG, JPEG, or WebP images.');
+    input.value = '';
+    return;
+  }
+  if (file.size > 1_000_000) {
+    showAuthError('Profile photos must be smaller than 1 MB.');
+    input.value = '';
+    return;
+  }
+  try {
+    googleSignupDraft.avatarData = await readFileAsDataUrl(file);
+    setGoogleAvatar(googleReviewAvatar, googleReviewPlaceholder, googleSignupDraft.avatarData);
+  } catch (error) {
+    showAuthError(errorMessage(error));
+  }
+});
+
+googleReviewForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  clearAuthError();
+  if (!googleSignupDraft) return;
+  const data = new FormData(googleReviewForm);
+  const displayName = data.get('displayName')?.toString().trim() || '';
+  const email = data.get('email')?.toString().trim().toLowerCase() || '';
+  const handle = (data.get('handle')?.toString().trim().toLowerCase() || '').replace(/\.coffeencode\.cc$/, '');
+  if (!displayName || [...displayName].length > 64) {
+    showAuthError('Choose a display name of 64 characters or fewer.');
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showAuthError('Enter a valid email address.');
+    return;
+  }
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/.test(handle)) {
+    showAuthError('Handles can use letters, numbers, and hyphens, and must start and end with a letter or number.');
+    return;
+  }
+
+  googleSignupDraft.displayName = displayName;
+  googleSignupDraft.email = email;
+  googleSignupDraft.handle = handle;
+  const submit = googleReviewForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Creating your account…';
+  }
+  try {
+    const response = await fetch('/api/auth/google-signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        credential: googleSignupDraft.credential,
+        password: googleSignupDraft.password,
+        displayName,
+        email,
+        handle,
+        ...(googleSignupDraft.avatarData ? { avatarData: googleSignupDraft.avatarData } : {}),
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as {
+      error?: unknown; did?: unknown; handle?: unknown; pds?: unknown; accessJwt?: unknown; refreshJwt?: unknown; avatarCid?: unknown; warnings?: unknown;
+    };
+    if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Could not create your account. Please try again.');
+    if (typeof result.did !== 'string' || !result.did.startsWith('did:')
+      || typeof result.handle !== 'string' || typeof result.pds !== 'string' || !result.pds.startsWith('https://')
+      || typeof result.accessJwt !== 'string' || typeof result.refreshJwt !== 'string') {
+      throw new Error('The account service returned an invalid sign-in. Try signing in with your new password.');
+    }
+
+    const stored: StoredPasswordSession = {
+      pds: result.pds,
+      did: result.did as AuthSession['did'],
+      handle: result.handle,
+      accessJwt: result.accessJwt,
+      refreshJwt: result.refreshJwt,
+    };
+    savePasswordSession(stored);
+    session = createPasswordSession(stored);
+    setLastAuthMethod('password');
+    const importedAvatar = typeof result.avatarCid === 'string' && result.avatarCid
+      ? `https://cdn.coffeencode.cc/blob/${encodeURIComponent(stored.did)}/${encodeURIComponent(result.avatarCid)}/avatar_thumb`
+      : undefined;
+    rememberAccount(stored.did, { handle: stored.handle, displayName, ...(importedAvatar ? { avatar: importedAvatar } : {}) });
+    if (Array.isArray(result.warnings) && result.warnings.length) {
+      console.warn('Google signup finished with warnings:', result.warnings);
+    }
+    const doneUrl = new URL('/auth', window.location.origin);
+    doneUrl.searchParams.set('state', 'completed');
+    doneUrl.searchParams.set('handle', stored.handle || '');
+    doneUrl.searchParams.set('returnTo', safeReturnPath(new URLSearchParams(window.location.search).get('returnTo')));
+    window.location.assign(`${doneUrl.pathname}${doneUrl.search}`);
+  } catch (error) {
+    showAuthError(errorMessage(error));
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Create my account';
+    }
+  }
+});
+
+function initializeGoogleSignup() {
+  if (!authOptions || !googleButton || !googleSignup) return;
+  const clientId = authOptions.dataset.googleClientId?.trim();
+  if (!clientId) return;
+  const initialize = () => {
+    const googleId = window.google?.accounts?.id;
+    if (!googleId) return;
+    googleId.initialize({
+      client_id: clientId,
+      callback: (response) => { void handleGoogleCredential(response); },
+    });
+    googleButton.replaceChildren();
+    googleButton.hidden = false;
+    googleId.renderButton(googleButton, {
+      theme: 'filled_black',
+      size: 'large',
+      width: 320,
+      text: 'signup_with',
+      shape: 'rectangular',
+    });
+  };
+  if (window.google?.accounts?.id) {
+    initialize();
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.async = true;
+  script.defer = true;
+  script.onload = initialize;
+  script.onerror = () => showAuthError('Google sign-in could not be loaded. Check your connection and try again.');
+  document.head.appendChild(script);
+}
+
+initializeGoogleSignup();
 
 async function startOAuthSignIn(target: string, submit?: HTMLElement | null, isService = false) {
   if (submit) {

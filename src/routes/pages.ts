@@ -9,6 +9,7 @@ import { routeExternalLinks } from '../lib/externalLinks';
 import { externalLinkUrl } from '../lib/externalLinks';
 import { renderLegalDocument } from '../lib/legal';
 import { isForumModerator } from './forum';
+import { USER_PROFILE_COLLECTION, buildUserProfileRecord, validateUserProfileFields } from '../lib/userProfile';
 
 const pages = new Hono<{ Bindings: Env }>();
 
@@ -228,6 +229,253 @@ pages.post('/api/archive/more', async (c) => {
   }, 200, { 'Cache-Control': 'no-store' });
 });
 
+type GoogleTokenInfo = {
+  aud?: unknown;
+  iss?: unknown;
+  exp?: unknown;
+  email?: unknown;
+  email_verified?: unknown;
+  name?: unknown;
+  picture?: unknown;
+};
+
+type SignupImage = { bytes: Uint8Array; mimeType: string };
+
+function validSignupEmail(value: string) {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function normalizeSignupHandle(value: string, domain: string) {
+  const suffix = domain.startsWith('.') ? domain : `.${domain}`;
+  let handle = value.trim().toLowerCase().replace(/\.$/, '');
+  if (handle.endsWith(suffix)) handle = handle.slice(0, -suffix.length);
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/.test(handle)) return undefined;
+  return { local: handle, full: `${handle}${suffix}` };
+}
+
+function decodeSignupAvatar(value: unknown): SignupImage | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  const match = /^data:image\/(png|jpeg|webp);base64,([a-zA-Z0-9+/=]+)$/.exec(value);
+  if (!match) throw new Error('Profile photos must be PNG, JPEG, or WebP images.');
+  if (value.length > 1_450_000) throw new Error('Profile photos must be smaller than 1 MB.');
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  if (bytes.byteLength > 1_000_000) throw new Error('Profile photos must be smaller than 1 MB.');
+  return { bytes, mimeType: `image/${match[1]}` };
+}
+
+async function writeAccountRecord(pds: string, accessJwt: string, repo: string, collection: string, record: Record<string, unknown>) {
+  const response = await fetch(`${pds}/xrpc/com.atproto.repo.putRecord`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessJwt}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo, collection, rkey: 'self', record }),
+  });
+  if (!response.ok) throw new Error(`Could not write ${collection} (${response.status}).`);
+}
+
+async function verifyGoogleSignupToken(credential: string, clientId: string): Promise<GoogleTokenInfo> {
+  const url = new URL('https://oauth2.googleapis.com/tokeninfo');
+  url.searchParams.set('id_token', credential);
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('Google sign-in could not be verified. Please try again.');
+  const info = await response.json() as GoogleTokenInfo;
+  const issuerOk = info.iss === 'accounts.google.com' || info.iss === 'https://accounts.google.com';
+  const expiresAt = typeof info.exp === 'string' || typeof info.exp === 'number' ? Number(info.exp) : 0;
+  const emailVerified = info.email_verified === true || info.email_verified === 'true';
+  if (!issuerOk || info.aud !== clientId || !expiresAt || expiresAt * 1000 <= Date.now()) {
+    throw new Error('Google sign-in could not be verified. Please try again.');
+  }
+  if (typeof info.email !== 'string' || !validSignupEmail(info.email) || !emailVerified) {
+    throw new Error('Google did not return a verified email address for that account.');
+  }
+  return info;
+}
+
+// Creates a Coffee & Code PDS account after a Google Identity Services sign-in.
+// The Google client ID is public; the invite code comes from the invite worker,
+// so the PDS admin password never touches this worker or the browser.
+pages.post('/api/auth/google-signup', async (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID) {
+    return c.json({ error: 'Google sign-up is not configured yet.' }, 503, { 'Cache-Control': 'no-store' });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    const parsed = await c.req.json();
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('bad body');
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return c.json({ error: 'A JSON body is required.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+
+  const credential = typeof body.credential === 'string' ? body.credential : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const requestedHandle = typeof body.handle === 'string' ? body.handle : '';
+  if (!credential || credential.length > 8192) return c.json({ error: 'Google sign-in is missing or invalid.' }, 400, { 'Cache-Control': 'no-store' });
+  if (password.length < 8 || password.length > 256) return c.json({ error: 'Choose a password between 8 and 256 characters.' }, 400, { 'Cache-Control': 'no-store' });
+  const invalidProfileFields = validateUserProfileFields({ displayName });
+  if (!displayName || invalidProfileFields) return c.json({ error: invalidProfileFields || 'Choose a display name.' }, 400, { 'Cache-Control': 'no-store' });
+  if (!validSignupEmail(email)) return c.json({ error: 'Enter a valid email address.' }, 400, { 'Cache-Control': 'no-store' });
+
+  let customAvatar: SignupImage | undefined;
+  try {
+    customAvatar = decodeSignupAvatar(body.avatarData);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'That profile photo could not be used.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+
+  const pds = c.env.OWNER_PDS.replace(/\/$/, '');
+  let signupDomain = '.coffeencode.cc';
+  try {
+    const describeResponse = await fetch(`${pds}/xrpc/com.atproto.server.describeServer`, { headers: { Accept: 'application/json' } });
+    if (!describeResponse.ok) throw new Error(`describeServer returned ${describeResponse.status}`);
+    const description = await describeResponse.json() as { availableUserDomains?: unknown };
+    const domains = Array.isArray(description.availableUserDomains)
+      ? description.availableUserDomains.filter((domain): domain is string => typeof domain === 'string')
+      : [];
+    signupDomain = domains.find((domain) => domain === '.coffeencode.cc') || domains[0] || signupDomain;
+  } catch (error) {
+    console.error('Could not describe the account PDS:', error);
+    return c.json({ error: 'The Coffee & Code account service is temporarily unavailable.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+
+  const handle = normalizeSignupHandle(requestedHandle, signupDomain);
+  if (!handle) {
+    return c.json({ error: `Choose a handle using letters, numbers, and hyphens. It will end in ${signupDomain}.` }, 400, { 'Cache-Control': 'no-store' });
+  }
+
+  let google: GoogleTokenInfo;
+  try {
+    google = await verifyGoogleSignupToken(credential, c.env.GOOGLE_CLIENT_ID);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'Google sign-in could not be verified.' }, 401, { 'Cache-Control': 'no-store' });
+  }
+
+  let inviteCode = '';
+  try {
+    const inviteResponse = await fetch('https://invite-code.coffeencode.cc/', {
+      headers: { Accept: 'application/json', 'User-Agent': 'CoffeeAndCode (coffeencode.cc)' },
+    });
+    if (!inviteResponse.ok) throw new Error(`Invite service returned ${inviteResponse.status}`);
+    const invite = await inviteResponse.json() as { code?: unknown };
+    if (typeof invite.code !== 'string' || !/^[a-zA-Z0-9-]{8,128}$/.test(invite.code)) throw new Error('Invite service returned an invalid code');
+    inviteCode = invite.code;
+  } catch (error) {
+    console.error('Could not retrieve PDS invite code for Google signup:', error);
+    return c.json({ error: 'Could not get a signup invite code. Please try again shortly.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+
+  const createResponse = await fetch(`${pds}/xrpc/com.atproto.server.createAccount`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, handle: handle.full, inviteCode, password }),
+  });
+  const created = await createResponse.json().catch(() => ({})) as {
+    did?: unknown; handle?: unknown; accessJwt?: unknown; refreshJwt?: unknown; error?: unknown; message?: unknown;
+  };
+  if (!createResponse.ok) {
+    const errorName = typeof created.error === 'string' ? created.error : '';
+    const detail = typeof created.message === 'string' ? created.message : '';
+    let message = detail || 'The account service could not create that account.';
+    let status: 400 | 409 | 502 = 502;
+    if (errorName === 'HandleNotAvailable') {
+      message = 'That handle is already taken. Choose another one.';
+      status = 409;
+    } else if (errorName === 'InvalidHandle' || errorName === 'UnsupportedDomain') {
+      message = 'That handle cannot be used on Coffee & Code.';
+      status = 400;
+    } else if (errorName === 'InvalidInviteCode') {
+      message = 'The signup invite was not accepted. Please try again.';
+      status = 502;
+    }
+    return c.json({ error: message }, status, { 'Cache-Control': 'no-store' });
+  }
+
+  let accessJwt = typeof created.accessJwt === 'string' ? created.accessJwt : '';
+  let refreshJwt = typeof created.refreshJwt === 'string' ? created.refreshJwt : '';
+  const did = typeof created.did === 'string' ? created.did : '';
+  const finalHandle = typeof created.handle === 'string' ? created.handle : handle.full;
+  if (!did.startsWith('did:')) {
+    return c.json({ error: 'The account service returned an invalid account.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+
+  if (!accessJwt || !refreshJwt) {
+    const sessionResponse = await fetch(`${pds}/xrpc/com.atproto.server.createSession`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: finalHandle, password }),
+    });
+    const session = await sessionResponse.json().catch(() => ({})) as { accessJwt?: unknown; refreshJwt?: unknown };
+    if (sessionResponse.ok && typeof session.accessJwt === 'string' && typeof session.refreshJwt === 'string') {
+      accessJwt = session.accessJwt;
+      refreshJwt = session.refreshJwt;
+    }
+  }
+  if (!accessJwt || !refreshJwt) {
+    return c.json({ error: 'Your account was created, but sign-in could not be started. Try signing in with your new password.' }, 502, { 'Cache-Control': 'no-store' });
+  }
+
+  const warnings: string[] = [];
+  let avatarBlob: unknown;
+  let avatarCid: string | undefined;
+  try {
+    let image = customAvatar;
+    if (!image && typeof google.picture === 'string' && /^https:\/\/lh3\.googleusercontent\.com\//.test(google.picture)) {
+      const pictureResponse = await fetch(google.picture, { headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*' } });
+      const contentType = pictureResponse.headers.get('content-type')?.split(';')[0].toLowerCase() || '';
+      const bytes = pictureResponse.ok ? new Uint8Array(await pictureResponse.arrayBuffer()) : new Uint8Array();
+      if (pictureResponse.ok && ['image/png', 'image/jpeg', 'image/webp'].includes(contentType) && bytes.byteLength > 0 && bytes.byteLength <= 1_000_000) {
+        image = { bytes, mimeType: contentType };
+      }
+    }
+    if (image) {
+      const uploadResponse = await fetch(`${pds}/xrpc/com.atproto.repo.uploadBlob`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessJwt}`, 'Content-Type': image.mimeType },
+        body: image.bytes,
+      });
+      if (!uploadResponse.ok) throw new Error(`Image upload returned ${uploadResponse.status}`);
+      const uploaded = await uploadResponse.json() as { blob?: unknown };
+      if (!uploaded.blob || typeof uploaded.blob !== 'object') throw new Error('Image upload returned no blob');
+      avatarBlob = uploaded.blob;
+      const avatarLink = (uploaded.blob as { ref?: { $link?: unknown } }).ref?.$link;
+      if (typeof avatarLink === 'string' && avatarLink) avatarCid = avatarLink;
+    }
+  } catch (error) {
+    console.error('Could not import Google profile photo:', error);
+    warnings.push('Your account was created, but the Google profile photo could not be imported.');
+  }
+
+  try {
+    const actorProfile: Record<string, unknown> = {
+      $type: 'app.bsky.actor.profile',
+      displayName,
+    };
+    if (avatarBlob) actorProfile.avatar = avatarBlob;
+    await writeAccountRecord(pds, accessJwt, did, 'app.bsky.actor.profile', actorProfile);
+    await writeAccountRecord(pds, accessJwt, did, USER_PROFILE_COLLECTION, buildUserProfileRecord(undefined, { displayName }));
+  } catch (error) {
+    console.error('Could not initialize Google signup profile:', error);
+    warnings.push('Your account was created, but its profile details could not be saved yet.');
+  }
+
+  return c.json({
+    did,
+    handle: finalHandle,
+    pds,
+    accessJwt,
+    refreshJwt,
+    displayName,
+    email,
+    emailIsGoogleAddress: email === String(google.email || '').toLowerCase(),
+    ...(avatarCid ? { avatarCid } : {}),
+    warnings,
+  }, 201, { 'Cache-Control': 'no-store' });
+});
+
 pages.get('/api/invite-code', async (c) => {
   try {
     const response = await fetch('https://invite-code.coffeencode.cc/', {
@@ -372,7 +620,7 @@ pages.get('/auth', (c) => {
             <li><i class="fa-solid fa-feather" aria-hidden="true"></i><div><strong>Write with us</strong><span>Author accounts get a profile, drafts, and publishing tools.</span></div></li>
           </ul>
         </div>
-        <div class="auth-card" data-auth-options>
+        <div class="auth-card" data-auth-options data-google-client-id="${escapeHtml(c.env.GOOGLE_CLIENT_ID || '')}">
           <div class="auth-welcome" data-auth-welcome hidden>
             <img class="auth-welcome__avatar" data-welcome-avatar alt="" hidden>
             <span class="auth-welcome__avatar auth-welcome__avatar--placeholder" data-welcome-placeholder><i class="fa-solid fa-user" aria-hidden="true"></i></span>
@@ -393,7 +641,49 @@ pages.get('/auth', (c) => {
             <p class="auth-waiting__detail" data-auth-waiting-detail></p>
             <button type="button" class="auth-signout" data-auth-waiting-cancel>Cancel</button>
           </div>
+          <div class="google-signup" data-google-signup hidden>
+            <div data-google-step-details>
+              <h2 class="google-signup__title">Let’s create your Coffee &amp; Code account</h2>
+              <p class="google-signup__intro">Google confirmed these details. Choose a password for your new AT Protocol account.</p>
+              <div class="google-signup__summary">
+                <img data-google-summary-avatar alt="" hidden>
+                <span data-google-summary-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span>
+                <span class="google-signup__summary-copy"><strong data-google-summary-name></strong><span data-google-summary-email></span><span data-google-summary-handle></span></span>
+              </div>
+              <form class="auth-form" data-google-password-form>
+                <label for="google-signup-password">Password</label>
+                <input id="google-signup-password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+                <label for="google-signup-confirm">Confirm password</label>
+                <input id="google-signup-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required>
+                <button type="submit" class="login-button auth-option__button">Continue</button>
+                <button type="button" class="auth-signout" data-google-cancel>Cancel</button>
+              </form>
+            </div>
+            <div data-google-step-review hidden>
+              <h2 class="google-signup__title">Let’s double check</h2>
+              <p class="google-signup__intro">Make any last-minute changes before the account is created.</p>
+              <form class="auth-form" data-google-review-form>
+                <div class="google-signup__photo-row">
+                  <img data-google-review-avatar alt="" hidden>
+                  <span data-google-review-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span>
+                  <label class="google-signup__photo-picker">Profile photo
+                    <input name="avatar" type="file" accept="image/png,image/jpeg,image/webp">
+                  </label>
+                </div>
+                <label for="google-signup-name">Name</label>
+                <input id="google-signup-name" name="displayName" autocomplete="name" maxlength="64" required>
+                <label for="google-signup-email">Email</label>
+                <input id="google-signup-email" name="email" type="email" autocomplete="email" required>
+                <label for="google-signup-handle">Handle</label>
+                <div class="google-signup__handle-input"><input id="google-signup-handle" name="handle" autocapitalize="none" spellcheck="false" required><span>.coffeencode.cc</span></div>
+                <p class="auth-handle-form__hint">Your Google email is used for account recovery unless you change it here.</p>
+                <button type="submit" class="login-button auth-option__button">Create my account</button>
+                <button type="button" class="auth-signout" data-google-back>Back</button>
+              </form>
+            </div>
+          </div>
           <p class="auth-card__heading">Continue with your AT Protocol account</p>
+          <div class="auth-google-button" data-google-button hidden></div>
           <div class="auth-providers" data-auth-providers>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><img class="auth-provider__logo" src="/favicon.png" alt="" aria-hidden="true"><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider="bsky.social"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-bsky.app-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Bluesky</strong><small>bsky.social</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>

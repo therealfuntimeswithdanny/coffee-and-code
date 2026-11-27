@@ -23,6 +23,9 @@ export type Env = {
   // Privo API key (links:write scope) used by /api/shortlink to create
   // per-story short links. Secret, optional — short links 503 without it.
   PRIVO_API_KEY?: string;
+  // Google Identity Services web client ID used for Google account signup.
+  // This is a public OAuth client identifier, not a secret.
+  GOOGLE_CLIENT_ID?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;

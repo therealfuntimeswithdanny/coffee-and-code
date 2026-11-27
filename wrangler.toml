@@ -31,6 +31,10 @@ STORAGE_PUBLIC_URL = "https://storage.coffeencode.cc"
 # VAPID_SUBJECT is a contact URI required by push services.
 VAPID_SUBJECT = "mailto:atcdn@danielmorrisey.com"
 VAPID_PUBLIC_KEY = "BFYP88Ohzh6ob5Qxpp8wsdvN94PTO8QsmOKRH1kgRkjSieEA0vX7nCQl177HIf7VN5mMglT8SXgcNP-b5yg4gUw"
+# Google Identity Services web client ID for /auth Google signup. Create an
+# OAuth web client in Google Cloud, add https://coffeencode.cc as an authorized
+# JavaScript origin, then set the public client ID here.
+GOOGLE_CLIENT_ID = "391308630027-37eo8j55bp85un4cf4djhm7dmketblgp.apps.googleusercontent.com"
 # Optional: purge the story URL from the Cloudflare zone cache when a post is
 # updated. Uncomment and set the API token with:
 #   wrangler secret put CF_API_TOKEN
