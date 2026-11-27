@@ -833,6 +833,7 @@ function renderAccount() {
   }
 
   const did = session.did;
+  void loadHeaderAuthorLink(did);
   const cachedAccount = loadKnownAccounts().find((account) => account.did === did);
   if (cachedAccount?.avatar && headerAccountAvatar) {
     headerAccountAvatar.src = cachedAccount.avatar;
@@ -2212,6 +2213,21 @@ async function loadAccountProfile(did: string) {
       if (submit) submit.disabled = false;
     }
   };
+}
+
+async function loadHeaderAuthorLink(did: string) {
+  const links = document.querySelectorAll<HTMLElement>('[data-account-author-link]');
+  if (!links.length) return;
+  try {
+    const response = await fetch(`/api/authors/check?handle=${encodeURIComponent(did)}`, { cache: 'no-store' });
+    if (!response.ok || session?.did !== did) return;
+    const result = await response.json() as { isAuthor?: unknown };
+    if (result.isAuthor === true) {
+      links.forEach((link) => { link.hidden = false; });
+    }
+  } catch {
+    // Leave the author link hidden when the check is unavailable.
+  }
 }
 
 async function loadAuthorNavLinks(did: string) {
