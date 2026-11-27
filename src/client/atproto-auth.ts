@@ -513,6 +513,7 @@ const welcomeName = document.querySelector<HTMLElement>('[data-welcome-name]');
 const welcomeHandle = document.querySelector<HTMLElement>('[data-welcome-handle]');
 const welcomePronouns = document.querySelector<HTMLElement>('[data-welcome-pronouns]');
 const welcomePronounsValue = document.querySelector<HTMLElement>('[data-welcome-pronouns-value]');
+const welcomeNextTime = document.querySelector<HTMLElement>('[data-welcome-next-time]');
 const welcomeContinue = document.querySelector<HTMLAnchorElement>('[data-welcome-continue]');
 const signedOutBlock = document.querySelector<HTMLElement>('[data-auth-signedout]');
 const signedOutContinue = document.querySelector<HTMLAnchorElement>('[data-signedout-continue]');
@@ -526,9 +527,16 @@ const invitePanel = document.querySelector<HTMLElement>('[data-invite-panel]');
 const inviteCodeElement = document.querySelector<HTMLElement>('[data-invite-code]');
 const copyInviteButton = document.querySelector<HTMLButtonElement>('[data-copy-invite]');
 const googleButton = document.querySelector<HTMLButtonElement>('[data-google-button]');
+const githubButton = document.querySelector<HTMLButtonElement>('[data-github-button]');
 const googleSignup = document.querySelector<HTMLElement>('[data-google-signup]');
 const googleStepDetails = document.querySelector<HTMLElement>('[data-google-step-details]');
 const googleStepReview = document.querySelector<HTMLElement>('[data-google-step-review]');
+const googleStepExisting = document.querySelector<HTMLElement>('[data-google-step-existing]');
+const googleExistingHandle = document.querySelector<HTMLElement>('[data-google-existing-handle]');
+const googleExistingProvider = document.querySelector<HTMLElement>('[data-google-existing-provider]');
+const googleExistingCoffee = document.querySelector<HTMLButtonElement>('[data-google-existing-coffee]');
+const googleExistingHandleSignin = document.querySelector<HTMLButtonElement>('[data-google-existing-handle-signin]');
+const googleExistingCancel = document.querySelector<HTMLButtonElement>('[data-google-existing-cancel]');
 const googlePasswordForm = document.querySelector<HTMLFormElement>('[data-google-password-form]');
 const googleReviewForm = document.querySelector<HTMLFormElement>('[data-google-review-form]');
 const googleCancelButton = document.querySelector<HTMLButtonElement>('[data-google-cancel]');
@@ -540,6 +548,7 @@ const googleSummaryEmail = document.querySelector<HTMLElement>('[data-google-sum
 const googleSummaryHandle = document.querySelector<HTMLElement>('[data-google-summary-handle]');
 const googleReviewAvatar = document.querySelector<HTMLImageElement>('[data-google-review-avatar]');
 const googleReviewPlaceholder = document.querySelector<HTMLElement>('[data-google-review-placeholder]');
+const signupProviderName = document.querySelector<HTMLElement>('[data-signup-provider-name]');
 const signoutButton = document.querySelector<HTMLButtonElement>('[data-auth-signout]');
 const headerAccount = document.querySelector<HTMLElement>('[data-account-link]');
 const accountMenuButton = document.querySelector<HTMLButtonElement>('[data-account-menu-button]');
@@ -555,6 +564,7 @@ const notificationsStatus = notificationsPage?.querySelector<HTMLElement>('[data
 const notificationsRefresh = notificationsPage?.querySelector<HTMLButtonElement>('[data-notifications-refresh]');
 const notificationLinks = document.querySelectorAll<HTMLElement>('[data-notifications-link]');
 const notificationBadges = document.querySelectorAll<HTMLElement>('[data-notifications-badge]');
+const feedLinks = document.querySelectorAll<HTMLElement>('[data-feed-client-picker]');
 let signupInviteCode: string | undefined;
 let accountAuthorRecord: Record<string, unknown> | undefined;
 let accountAuthorDid: string | undefined;
@@ -608,14 +618,13 @@ declare global {
   interface Window {
     google?: {
       accounts?: {
-        id?: {
-          initialize: (config: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
-          prompt: (listener?: (notification: {
-            isNotDisplayed?: () => boolean;
-            isSkippedMoment?: () => boolean;
-            getNotDisplayedReason?: () => string;
-            getSkippedReason?: () => string;
-          }) => void) => void;
+        oauth2?: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (response: { access_token?: string; error?: string; error_description?: string }) => void;
+            error_callback?: (error: { type?: string }) => void;
+          }) => { requestAccessToken: (options?: { prompt?: string }) => void };
         };
       };
     };
@@ -681,6 +690,28 @@ async function requestedScope(handle?: string) {
   return authorResult.isAuthor ? sharedScope : memberScope;
 }
 
+function subscribedToAllSitePublications() {
+  return navSubscriptionStateReady
+    && navPublicationUris.length > 0
+    && navPublicationUris.every((uri) => navSubscribedPublications.has(uri));
+}
+
+function updateNavSubscribeVisibility() {
+  const navSubscribes = [...document.querySelectorAll<HTMLElement>('[data-nav-subscribe]')];
+  // Keep the nav action available while signed out, and for signed-in readers
+  // until they are subscribed to every publication on the site.
+  const subscribedToAll = subscribedToAllSitePublications();
+  navSubscribes.forEach((el) => {
+    el.hidden = Boolean(session) && subscribedToAll;
+    el.dataset.subscriptionState = subscribedToAll ? 'subscribed' : 'unsubscribed';
+    const button = el.querySelector<HTMLButtonElement>('[data-publication-subscribe-button]');
+    if (button) {
+      button.textContent = subscribedToAll ? 'Subscribed' : 'Subscribe';
+      button.setAttribute('aria-pressed', String(subscribedToAll));
+    }
+  });
+}
+
 function renderAccount() {
   const loginLinks = document.querySelectorAll<HTMLElement>('[data-login-link]');
   const displayName = session ? 'Your account' : '';
@@ -689,9 +720,14 @@ function renderAccount() {
     link.hidden = Boolean(session);
     link.setAttribute('href', `/auth?returnTo=${encodeURIComponent(returnTo)}`);
   });
-  document.querySelectorAll<HTMLElement>('[data-nav-subscribe]').forEach((el) => {
-    el.hidden = Boolean(session);
-  });
+  if (session) {
+    void loadNavSubscriptionState(session.did);
+  } else {
+    navSubscriptionStateDid = undefined;
+    navSubscriptionStateReady = false;
+    navSubscribedPublications = new Set();
+  }
+  updateNavSubscribeVisibility();
   if (headerAccount) {
     headerAccount.hidden = !session;
     const accountLabel = session ? `Account for ${displayName}` : 'Your account';
@@ -711,6 +747,7 @@ function renderAccount() {
     }
   });
   notificationLinks.forEach((link) => { link.hidden = !session; });
+  feedLinks.forEach((link) => { link.hidden = !session; });
   if (session && oauthInitialized) {
     if (notificationBadgeDid !== session.did) setNotificationBadgeCount(0);
     if (!notificationsPage) void loadNotificationBadge(session.did);
@@ -1031,6 +1068,93 @@ type SubscriptionRecord = { uri: string; publication: string };
 
 const graphFollowCollection = 'app.bsky.graph.follow';
 const subscriptionCollection = 'site.standard.graph.subscription';
+const siteOwnerDid = 'did:plc:l37td5yhxl2irrzrgvei4qay';
+const siteOwnerPds = 'https://account.coffeencode.cc';
+const publicationsConfigCollection = 'cc.coffeencode.publications';
+
+let navPublicationUris: string[] = [];
+let navSubscribedPublications = new Set<string>();
+let navSubscriptionStateDid: string | undefined;
+let navSubscriptionStateReady = false;
+let navSubscriptionStatePromise: Promise<void> | undefined;
+let sitePublicationUrisPromise: Promise<string[]> | undefined;
+
+function fallbackPublicationUris() {
+  return [...new Set([...document.querySelectorAll<HTMLElement>('[data-nav-subscribe]')]
+    .map((el) => el.dataset.publicationUri || '')
+    .filter(Boolean))];
+}
+
+async function loadSitePublicationUris() {
+  if (sitePublicationUrisPromise) return sitePublicationUrisPromise;
+  sitePublicationUrisPromise = (async () => {
+    const uris = new Set(fallbackPublicationUris());
+
+    const readRegistered = async () => {
+      const query = new URLSearchParams({ repo: siteOwnerDid, collection: publicationsConfigCollection, rkey: 'self' });
+      const response = await fetch(`${siteOwnerPds}/xrpc/com.atproto.repo.getRecord?${query}`, { cache: 'no-store' });
+      if (!response.ok) return;
+      const record = await response.json() as { value?: { publications?: unknown } };
+      const publications = Array.isArray(record.value?.publications) ? record.value.publications : [];
+      for (const uri of publications) {
+        if (typeof uri === 'string' && uri.startsWith('at://')) uris.add(uri);
+      }
+    };
+
+    const readOwnerPublications = async () => {
+      let cursor: string | undefined;
+      const seenCursors = new Set<string>();
+      do {
+        const query = new URLSearchParams({ repo: siteOwnerDid, collection: 'site.standard.publication', limit: '100' });
+        if (cursor) query.set('cursor', cursor);
+        const response = await fetch(`${siteOwnerPds}/xrpc/com.atproto.repo.listRecords?${query}`, { cache: 'no-store' });
+        if (!response.ok) break;
+        const page = await response.json() as { records?: Array<{ uri?: unknown }>; cursor?: unknown };
+        for (const record of page.records || []) {
+          if (typeof record.uri === 'string' && record.uri.includes('/site.standard.publication/')) uris.add(record.uri);
+        }
+        if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) break;
+        seenCursors.add(page.cursor);
+        cursor = page.cursor;
+      } while (cursor);
+    };
+
+    // Either source may fail independently; the nav URI remains as a fallback.
+    await Promise.all([
+      readRegistered().catch((error) => console.error('Could not load registered publications:', error)),
+      readOwnerPublications().catch((error) => console.error('Could not load owner publications:', error)),
+    ]);
+    return [...uris];
+  })().catch((error) => {
+    console.error('Could not load site publications:', error);
+    return fallbackPublicationUris();
+  });
+  return sitePublicationUrisPromise;
+}
+
+function loadNavSubscriptionState(did: string, force = false) {
+  if (!force && navSubscriptionStateDid === did && navSubscriptionStatePromise) return navSubscriptionStatePromise;
+  navSubscriptionStateDid = did;
+  navSubscriptionStateReady = false;
+  navSubscriptionStatePromise = (async () => {
+    const [publications, subscriptions] = await Promise.all([
+      loadSitePublicationUris(),
+      listPublicationSubscriptions(did),
+    ]);
+    if (navSubscriptionStateDid !== did || session?.did !== did) return;
+    navPublicationUris = publications.length ? publications : fallbackPublicationUris();
+    navSubscribedPublications = new Set(subscriptions.map((record) => record.publication));
+    navSubscriptionStateReady = true;
+    updateNavSubscribeVisibility();
+  })().catch((error) => {
+    console.error('Could not load publication subscription state:', error);
+    if (navSubscriptionStateDid === did) {
+      navSubscriptionStateReady = false;
+      navSubscriptionStatePromise = undefined;
+    }
+  });
+  return navSubscriptionStatePromise;
+}
 
 async function listGraphFollows(did: string): Promise<GraphFollowRecord[]> {
   const records: GraphFollowRecord[] = [];
@@ -3201,7 +3325,12 @@ async function showAuthWelcome() {
   if (session?.did !== did) return;
   const displayName = name || handle || fallback;
   if (welcomeName) welcomeName.textContent = displayName;
-  if (welcomeHandle) welcomeHandle.textContent = handle || (fallback.startsWith('did:') ? did : fallback);
+  const resolvedHandle = handle || (fallback.startsWith('did:') ? did : fallback);
+  if (welcomeHandle) welcomeHandle.textContent = resolvedHandle;
+  if (welcomeNextTime && ['google', 'github'].includes(params.get('method') || '')) {
+    welcomeNextTime.textContent = `Next time, use Continue with Coffee & Code, or choose Use a handle and enter @${resolvedHandle}.`;
+    welcomeNextTime.hidden = false;
+  }
   if (pronouns && welcomePronouns && welcomePronounsValue) {
     welcomePronounsValue.textContent = pronouns;
     welcomePronouns.hidden = false;
@@ -4043,7 +4172,9 @@ authWaitingCancel?.addEventListener('click', hideAuthWaiting);
 // created server-side with an invite code, so neither the PDS admin password
 // nor a Google client secret is ever exposed to the browser.
 type GoogleSignupDraft = {
-  credential: string;
+  provider: 'google' | 'github';
+  accessToken?: string;
+  ticket?: string;
   googleEmail: string;
   email: string;
   displayName: string;
@@ -4056,23 +4187,11 @@ type GoogleSignupDraft = {
 let googleSignupDraft: GoogleSignupDraft | undefined;
 const googleSignupHiddenStates = new Map<HTMLElement, boolean>();
 
-function decodeGoogleCredential(credential: string): Record<string, unknown> | undefined {
-  try {
-    const segment = credential.split('.')[1] || '';
-    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
-    const binary = atob(padded);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-  } catch {
-    return undefined;
-  }
-}
+type GoogleTokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
+let googleTokenClient: GoogleTokenClient | undefined;
 
-function suggestGoogleHandle(email: string, displayName: string) {
-  const source = email.split('@')[0] || displayName || 'reader';
+function suggestGoogleHandle(email: string, displayName: string, preferredSource = '') {
+  const source = preferredSource || email.split('@')[0] || displayName || 'reader';
   let handle = source.normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
@@ -4097,9 +4216,10 @@ function setGoogleAvatar(image: HTMLImageElement | null | undefined, placeholder
   }
 }
 
-function setGoogleSignupStep(step: 'details' | 'review') {
+function setGoogleSignupStep(step: 'details' | 'review' | 'existing') {
   if (googleStepDetails) googleStepDetails.hidden = step !== 'details';
   if (googleStepReview) googleStepReview.hidden = step !== 'review';
+  if (googleStepExisting) googleStepExisting.hidden = step !== 'existing';
 }
 
 function takeOverAuthCardForGoogle() {
@@ -4156,31 +4276,139 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-async function handleGoogleCredential(response: { credential?: string }) {
-  clearAuthError();
-  const credential = response.credential || '';
-  const claims = credential ? decodeGoogleCredential(credential) : undefined;
-  const email = typeof claims?.email === 'string' ? claims.email.toLowerCase() : '';
-  if (!credential || !claims || !email) {
-    showAuthError('Google sign-in did not return an email address. Please try again.');
-    return;
-  }
-  const googleName = typeof claims.name === 'string' ? claims.name.trim() : '';
-  const displayName = googleName || email.split('@')[0] || 'Coffee reader';
+function beginSocialSignup(input: {
+  provider: 'google' | 'github';
+  accessToken?: string;
+  ticket?: string;
+  email: string;
+  displayName: string;
+  preferredHandle?: string;
+  picture?: string;
+}) {
   googleSignupDraft = {
-    credential,
-    googleEmail: email,
-    email,
-    displayName,
-    handle: suggestGoogleHandle(email, displayName),
-    picture: typeof claims.picture === 'string' ? claims.picture : undefined,
+    provider: input.provider,
+    ...(input.accessToken ? { accessToken: input.accessToken } : {}),
+    ...(input.ticket ? { ticket: input.ticket } : {}),
+    googleEmail: input.email,
+    email: input.email,
+    displayName: input.displayName,
+    handle: suggestGoogleHandle(input.email, input.displayName, input.preferredHandle || ''),
+    picture: input.picture,
     password: '',
   };
+  if (signupProviderName) signupProviderName.textContent = input.provider === 'github' ? 'GitHub' : 'Google';
   googlePasswordForm?.reset();
   googleReviewForm?.reset();
   setGoogleSignupStep('details');
   renderGoogleSignupDetails();
   takeOverAuthCardForGoogle();
+}
+
+async function handleGoogleAccessToken(response: { access_token?: string; error?: string; error_description?: string }) {
+  clearAuthError();
+  const accessToken = response.access_token || '';
+  if (!accessToken || response.error) {
+    showAuthError(response.error_description || 'Google sign-in did not complete. Please try again.');
+    if (googleButton) googleButton.disabled = false;
+    return;
+  }
+
+  try {
+    const profileResponse = await fetch('/api/auth/google-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken }),
+    });
+    const claims = await profileResponse.json().catch(() => ({})) as {
+      error?: unknown; email?: unknown; name?: unknown; picture?: unknown;
+      existingAccount?: { did?: unknown; handle?: unknown };
+    };
+    if (!profileResponse.ok) throw new Error(typeof claims.error === 'string' ? claims.error : 'Google sign-in could not be verified.');
+    if (claims.existingAccount && typeof claims.existingAccount.handle === 'string' && claims.existingAccount.handle) {
+      googleSignupDraft = undefined;
+      if (googleExistingProvider) googleExistingProvider.textContent = 'Google';
+      if (googleExistingHandle) googleExistingHandle.textContent = `@${claims.existingAccount.handle}`;
+      setGoogleSignupStep('existing');
+      takeOverAuthCardForGoogle();
+      return;
+    }
+    const email = typeof claims.email === 'string' ? claims.email.toLowerCase() : '';
+    if (!email) throw new Error('Google sign-in did not return an email address. Please try again.');
+    const googleName = typeof claims.name === 'string' ? claims.name.trim() : '';
+    const displayName = googleName || email.split('@')[0] || 'Coffee reader';
+    beginSocialSignup({
+      provider: 'google',
+      accessToken,
+      email,
+      displayName,
+      picture: typeof claims.picture === 'string' ? claims.picture : undefined,
+    });
+  } catch (error) {
+    showAuthError(errorMessage(error));
+  } finally {
+    if (googleButton) googleButton.disabled = false;
+  }
+}
+
+async function handleGitHubTicket(ticket: string) {
+  clearAuthError();
+  if (githubButton) githubButton.disabled = true;
+  try {
+    const profileResponse = await fetch('/api/auth/github-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket }),
+    });
+    const claims = await profileResponse.json().catch(() => ({})) as {
+      error?: unknown; email?: unknown; login?: unknown; name?: unknown; picture?: unknown;
+      existingAccount?: { did?: unknown; handle?: unknown };
+    };
+    if (!profileResponse.ok) throw new Error(typeof claims.error === 'string' ? claims.error : 'GitHub sign-in could not be verified.');
+    if (claims.existingAccount && typeof claims.existingAccount.handle === 'string' && claims.existingAccount.handle) {
+      googleSignupDraft = undefined;
+      if (googleExistingProvider) googleExistingProvider.textContent = 'GitHub';
+      if (googleExistingHandle) googleExistingHandle.textContent = `@${claims.existingAccount.handle}`;
+      setGoogleSignupStep('existing');
+      takeOverAuthCardForGoogle();
+      return;
+    }
+    const email = typeof claims.email === 'string' ? claims.email.toLowerCase() : '';
+    if (!email) throw new Error('GitHub sign-in did not return an email address. Please try again.');
+    const login = typeof claims.login === 'string' ? claims.login.trim() : '';
+    const githubName = typeof claims.name === 'string' ? claims.name.trim() : '';
+    beginSocialSignup({
+      provider: 'github',
+      ticket,
+      email,
+      displayName: githubName || login || email.split('@')[0] || 'Coffee reader',
+      preferredHandle: login,
+      picture: typeof claims.picture === 'string' ? claims.picture : undefined,
+    });
+  } catch (error) {
+    showAuthError(errorMessage(error));
+  } finally {
+    if (githubButton) githubButton.disabled = false;
+  }
+}
+
+function processGitHubSignupRedirect() {
+  if (window.location.pathname !== '/auth') return;
+  const params = new URLSearchParams(window.location.search);
+  const githubError = params.get('githubError');
+  const ticket = params.get('github') === 'signup' ? params.get('ticket') || '' : '';
+  if (!githubError && !ticket) return;
+
+  params.delete('githubError');
+  params.delete('github');
+  params.delete('ticket');
+  const cleanSearch = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+
+  if (githubError) {
+    showAuthError(githubError);
+    return;
+  }
+  if (ticket) void handleGitHubTicket(ticket);
 }
 
 googlePasswordForm?.addEventListener('submit', (event) => {
@@ -4211,6 +4439,29 @@ googleCancelButton?.addEventListener('click', () => {
 googleBackButton?.addEventListener('click', () => {
   clearAuthError();
   setGoogleSignupStep('details');
+});
+
+googleExistingCancel?.addEventListener('click', () => {
+  clearAuthError();
+  resetGoogleSignup();
+});
+
+googleExistingCoffee?.addEventListener('click', () => {
+  clearAuthError();
+  resetGoogleSignup();
+  document.querySelector<HTMLButtonElement>('[data-provider="account.coffeencode.cc"]')?.click();
+});
+
+googleExistingHandleSignin?.addEventListener('click', () => {
+  clearAuthError();
+  const existingHandle = (googleExistingHandle?.textContent || '').replace(/^@/, '').trim();
+  resetGoogleSignup();
+  document.querySelector<HTMLButtonElement>('[data-provider=""]')?.click();
+  if (handleInput && existingHandle) {
+    handleInput.value = existingHandle;
+    handleInput.focus();
+    handleInput.select();
+  }
 });
 
 const googleAvatarInput = googleReviewForm?.elements.namedItem('avatar') as HTMLInputElement | null | undefined;
@@ -4272,7 +4523,9 @@ googleReviewForm?.addEventListener('submit', async (event) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        credential: googleSignupDraft.credential,
+        provider: googleSignupDraft.provider,
+        ...(googleSignupDraft.accessToken ? { accessToken: googleSignupDraft.accessToken } : {}),
+        ...(googleSignupDraft.ticket ? { ticket: googleSignupDraft.ticket } : {}),
         password: googleSignupDraft.password,
         displayName,
         email,
@@ -4309,6 +4562,7 @@ googleReviewForm?.addEventListener('submit', async (event) => {
     }
     const doneUrl = new URL('/auth', window.location.origin);
     doneUrl.searchParams.set('state', 'completed');
+    doneUrl.searchParams.set('method', googleSignupDraft.provider);
     doneUrl.searchParams.set('handle', stored.handle || '');
     doneUrl.searchParams.set('returnTo', safeReturnPath(new URLSearchParams(window.location.search).get('returnTo')));
     window.location.assign(`${doneUrl.pathname}${doneUrl.search}`);
@@ -4321,20 +4575,32 @@ googleReviewForm?.addEventListener('submit', async (event) => {
   }
 });
 
+function authCompletionPanelActive() {
+  if (window.location.pathname !== '/auth') return false;
+  return ['completed', 'signed-out'].includes(new URLSearchParams(window.location.search).get('state') || '');
+}
+
 function initializeGoogleSignup() {
   if (!authOptions || !googleButton || !googleSignup) return;
   const clientId = authOptions.dataset.googleClientId?.trim();
   if (!clientId) return;
   const initialize = () => {
-    const googleId = window.google?.accounts?.id;
-    if (!googleId) return;
-    googleId.initialize({
+    const googleOAuth = window.google?.accounts?.oauth2;
+    if (!googleOAuth) return;
+    googleTokenClient = googleOAuth.initTokenClient({
       client_id: clientId,
-      callback: (response) => { void handleGoogleCredential(response); },
+      scope: 'openid email profile',
+      callback: (response) => { void handleGoogleAccessToken(response); },
+      error_callback: (error) => {
+        if (googleButton) googleButton.disabled = false;
+        if (error.type !== 'popup_closed') {
+          showAuthError('Google sign-in could not be shown. Check that popups are allowed and try again.');
+        }
+      },
     });
-    googleButton.hidden = false;
+    if (!authWelcomeShown && !authCompletionPanelActive()) googleButton.hidden = false;
   };
-  if (window.google?.accounts?.id) {
+  if (window.google?.accounts?.oauth2) {
     initialize();
     return;
   }
@@ -4349,18 +4615,38 @@ function initializeGoogleSignup() {
 
 googleButton?.addEventListener('click', () => {
   clearAuthError();
-  const googleId = window.google?.accounts?.id;
-  if (!googleId) {
+  if (!googleTokenClient) {
     showAuthError('Google sign-in is still loading. Try again in a moment.');
     return;
   }
-  googleId.prompt((notification) => {
-    if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
-      showAuthError('Google sign-in could not be shown right now. Try again or use another sign-in option.');
-    }
-  });
+  googleButton.disabled = true;
+  try {
+    googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+  } catch {
+    googleButton.disabled = false;
+    showAuthError('Google sign-in could not be shown. Check that popups are allowed and try again.');
+  }
 });
 
+function socialSignupReturnPath() {
+  const params = new URLSearchParams(window.location.search);
+  return safeReturnPath(params.get('returnTo') || `${window.location.pathname}${window.location.search}${window.location.hash}`);
+}
+
+function initializeGitHubSignup() {
+  if (!authOptions || !githubButton) return;
+  if (authOptions.dataset.githubEnabled !== 'true') return;
+  if (!authWelcomeShown && !authCompletionPanelActive()) githubButton.hidden = false;
+}
+
+githubButton?.addEventListener('click', () => {
+  clearAuthError();
+  githubButton.disabled = true;
+  window.location.assign(`/auth/github/start?returnTo=${encodeURIComponent(socialSignupReturnPath())}`);
+});
+
+processGitHubSignupRedirect();
+initializeGitHubSignup();
 initializeGoogleSignup();
 
 async function startOAuthSignIn(target: string, submit?: HTMLElement | null, isService = false) {
@@ -5199,26 +5485,33 @@ document.querySelectorAll<HTMLElement>('[data-publication-subscribe]').forEach((
   const status = container.querySelector<HTMLElement>('[data-publication-subscribe-status]');
   const publication = container.dataset.publicationUri;
   if (!button || !publication) return;
+  const isNavSubscribe = container.hasAttribute('data-nav-subscribe');
 
   let subscriptionRecord: OwnRepoRecord | undefined;
   let subscribeStateReady = false;
   button.disabled = true;
   const renderSubscribeState = () => {
-    const subscribed = Boolean(subscriptionRecord);
+    const subscribed = isNavSubscribe ? subscribedToAllSitePublications() : Boolean(subscriptionRecord);
+    container.dataset.subscriptionState = subscribed ? 'subscribed' : 'unsubscribed';
     button.textContent = subscribed ? 'Subscribed' : 'Subscribe';
     button.setAttribute('aria-pressed', String(subscribed));
+    updateNavSubscribeVisibility();
   };
   const loadSubscribeState = async () => {
     await oauthReady;
     if (!session) {
+      subscriptionRecord = undefined;
       subscribeStateReady = true;
+      renderSubscribeState();
       if (status) status.textContent = 'Sign in to subscribe to this publication.';
       return;
     }
     const activeDid = session.did;
-    const next = await findOwnRepoRecord(subscriptionCollection, 'publication', publication, activeDid);
-    if (session?.did !== activeDid) return;
-    subscriptionRecord = next;
+    if (!isNavSubscribe) {
+      const next = await findOwnRepoRecord(subscriptionCollection, 'publication', publication, activeDid);
+      if (session?.did !== activeDid) return;
+      subscriptionRecord = next;
+    }
     subscribeStateReady = true;
     renderSubscribeState();
     if (status) status.textContent = '';
@@ -5252,24 +5545,57 @@ document.querySelectorAll<HTMLElement>('[data-publication-subscribe]').forEach((
     }
     const activeDid = session.did;
     button.disabled = true;
-    const shouldSubscribe = !subscriptionRecord;
+    const shouldSubscribe = isNavSubscribe || !subscriptionRecord;
     if (status) status.textContent = shouldSubscribe ? 'Subscribing…' : 'Unsubscribing…';
     try {
-      if (shouldSubscribe) {
-        await createFollowRecord(subscriptionCollection, {
-          $type: subscriptionCollection,
-          publication,
-        }, activeDid);
-      } else if (subscriptionRecord) {
-        await deleteFollowRecord(subscriptionCollection, subscriptionRecord.uri, activeDid);
+      if (isNavSubscribe) {
+        // The header action is site-wide: fill in every publication subscription
+        // the reader is missing, then hide the action once all are present.
+        const [publications, subscriptions] = await Promise.all([
+          loadSitePublicationUris(),
+          listPublicationSubscriptions(activeDid),
+        ]);
+        const existing = new Set(subscriptions.map((record) => record.publication));
+        const missing = publications.filter((uri) => !existing.has(uri));
+        if (missing.length) {
+          if (status) {
+            status.textContent = missing.length === 1
+              ? 'Subscribing…'
+              : `Subscribing to ${missing.length} publications…`;
+          }
+          for (const missingPublication of missing) {
+            await createFollowRecord(subscriptionCollection, {
+              $type: subscriptionCollection,
+              publication: missingPublication,
+            }, activeDid);
+          }
+        }
+        await loadSubscribeState();
+        void loadNavSubscriptionState(activeDid, true);
+        if (status) {
+          status.textContent = missing.length
+            ? 'Subscribed to all publications.'
+            : 'Already subscribed to all publications.';
+        }
+      } else {
+        if (shouldSubscribe) {
+          await createFollowRecord(subscriptionCollection, {
+            $type: subscriptionCollection,
+            publication,
+          }, activeDid);
+        } else if (subscriptionRecord) {
+          await deleteFollowRecord(subscriptionCollection, subscriptionRecord.uri, activeDid);
+        }
+        await loadSubscribeState();
+        void loadNavSubscriptionState(activeDid, true);
+        if (status) status.textContent = shouldSubscribe
+          ? 'Subscribed to this publication.'
+          : 'Unsubscribed from this publication.';
       }
-      await loadSubscribeState();
-      if (status) status.textContent = shouldSubscribe
-        ? 'Subscribed to this publication.'
-        : 'Unsubscribed from this publication.';
     } catch (error) {
       try {
         await loadSubscribeState();
+        void loadNavSubscriptionState(activeDid, true);
       } catch { /* Keep the stale state; the error message below explains. */ }
       if (status) status.textContent = error instanceof Error ? error.message : 'Could not update your subscription.';
     } finally {

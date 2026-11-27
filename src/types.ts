@@ -26,6 +26,10 @@ export type Env = {
   // Google Identity Services web client ID used for Google account signup.
   // This is a public OAuth client identifier, not a secret.
   GOOGLE_CLIENT_ID?: string;
+  // GitHub OAuth app credentials used for GitHub account signup. The client ID
+  // is public; the secret must be configured with `wrangler secret put`.
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
   // Optional Cloudflare Email Sending (`send_email`) binding.
   EMAIL?: {
     send(message: EmailMessage): Promise<void>;

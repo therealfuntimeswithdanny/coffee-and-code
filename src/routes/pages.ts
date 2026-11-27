@@ -237,6 +237,9 @@ type GoogleTokenInfo = {
   email_verified?: unknown;
   name?: unknown;
   picture?: unknown;
+  id?: unknown;
+  login?: unknown;
+  sub?: unknown;
 };
 
 type SignupImage = { bytes: Uint8Array; mimeType: string };
@@ -251,6 +254,53 @@ function normalizeSignupHandle(value: string, domain: string) {
   if (handle.endsWith(suffix)) handle = handle.slice(0, -suffix.length);
   if (!/^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/.test(handle)) return undefined;
   return { local: handle, full: `${handle}${suffix}` };
+}
+
+function numberedSignupHandle(baseHandle: string, domain: string, suffixNumber: number) {
+  if (suffixNumber === 0) return normalizeSignupHandle(baseHandle, domain);
+  const suffix = String(suffixNumber).padStart(2, '0');
+  const trimmedBase = baseHandle.slice(0, Math.max(1, 30 - suffix.length)).replace(/-+$/g, '');
+  return normalizeSignupHandle(`${trimmedBase}${suffix}`, domain);
+}
+
+function googleSignupMappingKey(email: string) {
+  return `google-signup:${email.trim().toLowerCase()}`;
+}
+
+async function readGoogleSignupMapping(env: Env, email: string) {
+  const stored = await env.PUSH_TOKENS.get(googleSignupMappingKey(email));
+  if (!stored) return undefined;
+  try {
+    const parsed = JSON.parse(stored) as { did?: unknown; handle?: unknown };
+    if (typeof parsed.did === 'string' && parsed.did.startsWith('did:') && typeof parsed.handle === 'string' && parsed.handle) {
+      return { did: parsed.did, handle: parsed.handle };
+    }
+  } catch {}
+  return undefined;
+}
+
+function githubSignupMappingKey(githubId: string) {
+  return `github-signup:${githubId}`;
+}
+
+async function readGithubSignupMapping(env: Env, githubId: string) {
+  const stored = await env.PUSH_TOKENS.get(githubSignupMappingKey(githubId));
+  if (!stored) return undefined;
+  try {
+    const parsed = JSON.parse(stored) as { did?: unknown; handle?: unknown };
+    if (typeof parsed.did === 'string' && parsed.did.startsWith('did:') && typeof parsed.handle === 'string' && parsed.handle) {
+      return { did: parsed.did, handle: parsed.handle };
+    }
+  } catch {}
+  return undefined;
+}
+
+function githubTicketKey(ticket: string) {
+  return `github-signup-ticket:${ticket}`;
+}
+
+function githubOauthStateKey(state: string) {
+  return `github-oauth-state:${state}`;
 }
 
 function decodeSignupAvatar(value: unknown): SignupImage | undefined {
@@ -274,30 +324,75 @@ async function writeAccountRecord(pds: string, accessJwt: string, repo: string, 
   if (!response.ok) throw new Error(`Could not write ${collection} (${response.status}).`);
 }
 
-async function verifyGoogleSignupToken(credential: string, clientId: string): Promise<GoogleTokenInfo> {
-  const url = new URL('https://oauth2.googleapis.com/tokeninfo');
-  url.searchParams.set('id_token', credential);
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error('Google sign-in could not be verified. Please try again.');
-  const info = await response.json() as GoogleTokenInfo;
-  const issuerOk = info.iss === 'accounts.google.com' || info.iss === 'https://accounts.google.com';
-  const expiresAt = typeof info.exp === 'string' || typeof info.exp === 'number' ? Number(info.exp) : 0;
-  const emailVerified = info.email_verified === true || info.email_verified === 'true';
-  if (!issuerOk || info.aud !== clientId || !expiresAt || expiresAt * 1000 <= Date.now()) {
+async function verifyGoogleSignupToken(accessToken: string, clientId: string): Promise<GoogleTokenInfo> {
+  const tokenUrl = new URL('https://oauth2.googleapis.com/tokeninfo');
+  tokenUrl.searchParams.set('access_token', accessToken);
+  const tokenResponse = await fetch(tokenUrl, { headers: { Accept: 'application/json' } });
+  if (!tokenResponse.ok) throw new Error('Google sign-in could not be verified. Please try again.');
+  const tokenInfo = await tokenResponse.json() as {
+    aud?: unknown; scope?: unknown; expires_in?: unknown; email_verified?: unknown;
+  };
+  const expiresIn = typeof tokenInfo.expires_in === 'string' || typeof tokenInfo.expires_in === 'number'
+    ? Number(tokenInfo.expires_in)
+    : 0;
+  const scopes = new Set(typeof tokenInfo.scope === 'string' ? tokenInfo.scope.split(/\s+/) : []);
+  const hasEmailScope = scopes.has('email') || scopes.has('https://www.googleapis.com/auth/userinfo.email');
+  const hasProfileScope = scopes.has('profile') || scopes.has('https://www.googleapis.com/auth/userinfo.profile');
+  if (tokenInfo.aud !== clientId || !expiresIn || expiresIn <= 0 || !hasEmailScope || !hasProfileScope) {
     throw new Error('Google sign-in could not be verified. Please try again.');
   }
+
+  const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+  });
+  if (!profileResponse.ok) throw new Error('Google did not return that account’s profile. Please try again.');
+  const info = await profileResponse.json() as GoogleTokenInfo;
+  const emailVerified = info.email_verified === true || info.email_verified === 'true' || tokenInfo.email_verified === true || tokenInfo.email_verified === 'true';
   if (typeof info.email !== 'string' || !validSignupEmail(info.email) || !emailVerified) {
     throw new Error('Google did not return a verified email address for that account.');
   }
   return info;
 }
 
+// Returns the verified Google profile used to prefill the signup form. The
+// access token is re-verified before account creation as well.
+pages.post('/api/auth/google-profile', async (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID) {
+    return c.json({ error: 'Google sign-up is not configured yet.' }, 503, { 'Cache-Control': 'no-store' });
+  }
+  let body: Record<string, unknown>;
+  try {
+    const parsed = await c.req.json();
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('bad body');
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return c.json({ error: 'A JSON body is required.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  const accessToken = typeof body.accessToken === 'string' ? body.accessToken : '';
+  if (!accessToken || accessToken.length > 4096) {
+    return c.json({ error: 'Google sign-in is missing or invalid.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  try {
+    const profile = await verifyGoogleSignupToken(accessToken, c.env.GOOGLE_CLIENT_ID);
+    const email = String(profile.email || '').toLowerCase();
+    const existingAccount = await readGoogleSignupMapping(c.env, email).catch(() => undefined);
+    return c.json({
+      email: profile.email,
+      ...(typeof profile.name === 'string' ? { name: profile.name } : {}),
+      ...(typeof profile.picture === 'string' ? { picture: profile.picture } : {}),
+      ...(existingAccount ? { existingAccount } : {}),
+    }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'Google sign-in could not be verified.' }, 401, { 'Cache-Control': 'no-store' });
+  }
+});
+
 // Creates a Coffee & Code PDS account after a Google Identity Services sign-in.
 // The Google client ID is public; the invite code comes from the invite worker,
 // so the PDS admin password never touches this worker or the browser.
 pages.post('/api/auth/google-signup', async (c) => {
-  if (!c.env.GOOGLE_CLIENT_ID) {
-    return c.json({ error: 'Google sign-up is not configured yet.' }, 503, { 'Cache-Control': 'no-store' });
+  if (!c.env.GOOGLE_CLIENT_ID && !(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET)) {
+    return c.json({ error: 'Social sign-up is not configured yet.' }, 503, { 'Cache-Control': 'no-store' });
   }
 
   let body: Record<string, unknown>;
@@ -309,12 +404,15 @@ pages.post('/api/auth/google-signup', async (c) => {
     return c.json({ error: 'A JSON body is required.' }, 400, { 'Cache-Control': 'no-store' });
   }
 
-  const credential = typeof body.credential === 'string' ? body.credential : '';
+  const provider = body.provider === 'github' ? 'github' : 'google';
+  const accessToken = typeof body.accessToken === 'string' ? body.accessToken : '';
+  const ticket = typeof body.ticket === 'string' ? body.ticket : '';
   const password = typeof body.password === 'string' ? body.password : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   const requestedHandle = typeof body.handle === 'string' ? body.handle : '';
-  if (!credential || credential.length > 8192) return c.json({ error: 'Google sign-in is missing or invalid.' }, 400, { 'Cache-Control': 'no-store' });
+  if (provider === 'google' && (!accessToken || accessToken.length > 4096)) return c.json({ error: 'Google sign-in is missing or invalid.' }, 400, { 'Cache-Control': 'no-store' });
+  if (provider === 'github' && !/^[0-9a-f-]{36}$/i.test(ticket)) return c.json({ error: 'GitHub sign-in is missing or invalid.' }, 400, { 'Cache-Control': 'no-store' });
   if (password.length < 8 || password.length > 256) return c.json({ error: 'Choose a password between 8 and 256 characters.' }, 400, { 'Cache-Control': 'no-store' });
   const invalidProfileFields = validateUserProfileFields({ displayName });
   if (!displayName || invalidProfileFields) return c.json({ error: invalidProfileFields || 'Choose a display name.' }, 400, { 'Cache-Control': 'no-store' });
@@ -347,11 +445,36 @@ pages.post('/api/auth/google-signup', async (c) => {
     return c.json({ error: `Choose a handle using letters, numbers, and hyphens. It will end in ${signupDomain}.` }, 400, { 'Cache-Control': 'no-store' });
   }
 
-  let google: GoogleTokenInfo;
+  let providerProfile: GoogleTokenInfo;
   try {
-    google = await verifyGoogleSignupToken(credential, c.env.GOOGLE_CLIENT_ID);
+    if (provider === 'github') {
+      const storedTicket = await c.env.PUSH_TOKENS.get(githubTicketKey(ticket));
+      if (!storedTicket) throw new Error('That GitHub sign-in expired. Please try again.');
+      const ticketProfile = JSON.parse(storedTicket) as GoogleTokenInfo;
+      if ((typeof ticketProfile.id !== 'string' && typeof ticketProfile.id !== 'number')
+        || typeof ticketProfile.email !== 'string' || !validSignupEmail(ticketProfile.email)) {
+        throw new Error('That GitHub sign-in could not be verified. Please try again.');
+      }
+      providerProfile = ticketProfile;
+    } else {
+      if (!c.env.GOOGLE_CLIENT_ID) throw new Error('Google sign-up is not configured yet.');
+      providerProfile = await verifyGoogleSignupToken(accessToken, c.env.GOOGLE_CLIENT_ID);
+    }
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : 'Google sign-in could not be verified.' }, 401, { 'Cache-Control': 'no-store' });
+    return c.json({ error: error instanceof Error ? error.message : 'Social sign-in could not be verified.' }, 401, { 'Cache-Control': 'no-store' });
+  }
+
+  const providerEmail = String(providerProfile.email || '').toLowerCase();
+  const githubId = provider === 'github' ? String(providerProfile.id || '') : '';
+  const existingAccount = provider === 'github'
+    ? await readGithubSignupMapping(c.env, githubId).catch(() => undefined)
+    : await readGoogleSignupMapping(c.env, providerEmail).catch(() => undefined);
+  if (existingAccount) {
+    const providerName = provider === 'github' ? 'GitHub' : 'Google';
+    return c.json({
+      error: `This ${providerName} account already has a Coffee & Code account. Use AT Protocol sign-in with ${existingAccount.handle}.`,
+      existingAccount,
+    }, 409, { 'Cache-Control': 'no-store' });
   }
 
   let inviteCode = '';
@@ -368,23 +491,33 @@ pages.post('/api/auth/google-signup', async (c) => {
     return c.json({ error: 'Could not get a signup invite code. Please try again shortly.' }, 502, { 'Cache-Control': 'no-store' });
   }
 
-  const createResponse = await fetch(`${pds}/xrpc/com.atproto.server.createAccount`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, handle: handle.full, inviteCode, password }),
-  });
-  const created = await createResponse.json().catch(() => ({})) as {
+  let created: {
     did?: unknown; handle?: unknown; accessJwt?: unknown; refreshJwt?: unknown; error?: unknown; message?: unknown;
-  };
-  if (!createResponse.ok) {
-    const errorName = typeof created.error === 'string' ? created.error : '';
-    const detail = typeof created.message === 'string' ? created.message : '';
+  } = {};
+  let createdHandle = handle.full;
+  let createSucceeded = false;
+  for (let suffixNumber = 0; suffixNumber <= 20; suffixNumber += 1) {
+    const candidate = numberedSignupHandle(handle.local, signupDomain, suffixNumber);
+    if (!candidate) continue;
+    const createResponse = await fetch(`${pds}/xrpc/com.atproto.server.createAccount`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, handle: candidate.full, inviteCode, password }),
+    });
+    const attempt = await createResponse.json().catch(() => ({})) as typeof created;
+    if (createResponse.ok) {
+      created = attempt;
+      createdHandle = typeof attempt.handle === 'string' ? attempt.handle : candidate.full;
+      createSucceeded = true;
+      break;
+    }
+
+    const errorName = typeof attempt.error === 'string' ? attempt.error : '';
+    if (errorName === 'HandleNotAvailable') continue;
+    const detail = typeof attempt.message === 'string' ? attempt.message : '';
     let message = detail || 'The account service could not create that account.';
     let status: 400 | 409 | 502 = 502;
-    if (errorName === 'HandleNotAvailable') {
-      message = 'That handle is already taken. Choose another one.';
-      status = 409;
-    } else if (errorName === 'InvalidHandle' || errorName === 'UnsupportedDomain') {
+    if (errorName === 'InvalidHandle' || errorName === 'UnsupportedDomain') {
       message = 'That handle cannot be used on Coffee & Code.';
       status = 400;
     } else if (errorName === 'InvalidInviteCode') {
@@ -393,11 +526,14 @@ pages.post('/api/auth/google-signup', async (c) => {
     }
     return c.json({ error: message }, status, { 'Cache-Control': 'no-store' });
   }
+  if (!createSucceeded) {
+    return c.json({ error: 'That handle and its numbered variations are already taken. Choose another one.' }, 409, { 'Cache-Control': 'no-store' });
+  }
 
   let accessJwt = typeof created.accessJwt === 'string' ? created.accessJwt : '';
   let refreshJwt = typeof created.refreshJwt === 'string' ? created.refreshJwt : '';
   const did = typeof created.did === 'string' ? created.did : '';
-  const finalHandle = typeof created.handle === 'string' ? created.handle : handle.full;
+  const finalHandle = typeof created.handle === 'string' ? created.handle : createdHandle;
   if (!did.startsWith('did:')) {
     return c.json({ error: 'The account service returned an invalid account.' }, 502, { 'Cache-Control': 'no-store' });
   }
@@ -418,13 +554,24 @@ pages.post('/api/auth/google-signup', async (c) => {
     return c.json({ error: 'Your account was created, but sign-in could not be started. Try signing in with your new password.' }, 502, { 'Cache-Control': 'no-store' });
   }
 
+  try {
+    const mappingKey = provider === 'github' ? githubSignupMappingKey(githubId) : googleSignupMappingKey(providerEmail);
+    await c.env.PUSH_TOKENS.put(mappingKey, JSON.stringify({ did, handle: finalHandle }));
+    if (provider === 'github') await c.env.PUSH_TOKENS.delete(githubTicketKey(ticket));
+  } catch (error) {
+    console.error('Could not store the social signup account mapping:', error);
+  }
+
   const warnings: string[] = [];
   let avatarBlob: unknown;
   let avatarCid: string | undefined;
   try {
     let image = customAvatar;
-    if (!image && typeof google.picture === 'string' && /^https:\/\/lh3\.googleusercontent\.com\//.test(google.picture)) {
-      const pictureResponse = await fetch(google.picture, { headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*' } });
+    const pictureUrl = typeof providerProfile.picture === 'string' ? providerProfile.picture : '';
+    const trustedPictureUrl = /^https:\/\/lh3\.googleusercontent\.com\//.test(pictureUrl)
+      || /^https:\/\/avatars\.githubusercontent\.com\//.test(pictureUrl);
+    if (!image && pictureUrl && trustedPictureUrl) {
+      const pictureResponse = await fetch(pictureUrl, { headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*' } });
       const contentType = pictureResponse.headers.get('content-type')?.split(';')[0].toLowerCase() || '';
       const bytes = pictureResponse.ok ? new Uint8Array(await pictureResponse.arrayBuffer()) : new Uint8Array();
       if (pictureResponse.ok && ['image/png', 'image/jpeg', 'image/webp'].includes(contentType) && bytes.byteLength > 0 && bytes.byteLength <= 1_000_000) {
@@ -445,8 +592,8 @@ pages.post('/api/auth/google-signup', async (c) => {
       if (typeof avatarLink === 'string' && avatarLink) avatarCid = avatarLink;
     }
   } catch (error) {
-    console.error('Could not import Google profile photo:', error);
-    warnings.push('Your account was created, but the Google profile photo could not be imported.');
+    console.error('Could not import social profile photo:', error);
+    warnings.push('Your account was created, but the social profile photo could not be imported.');
   }
 
   try {
@@ -458,7 +605,7 @@ pages.post('/api/auth/google-signup', async (c) => {
     await writeAccountRecord(pds, accessJwt, did, 'app.bsky.actor.profile', actorProfile);
     await writeAccountRecord(pds, accessJwt, did, USER_PROFILE_COLLECTION, buildUserProfileRecord(undefined, { displayName }));
   } catch (error) {
-    console.error('Could not initialize Google signup profile:', error);
+    console.error('Could not initialize social signup profile:', error);
     warnings.push('Your account was created, but its profile details could not be saved yet.');
   }
 
@@ -470,7 +617,8 @@ pages.post('/api/auth/google-signup', async (c) => {
     refreshJwt,
     displayName,
     email,
-    emailIsGoogleAddress: email === String(google.email || '').toLowerCase(),
+    emailIsProviderAddress: email === providerEmail,
+    provider,
     ...(avatarCid ? { avatarCid } : {}),
     warnings,
   }, 201, { 'Cache-Control': 'no-store' });
@@ -605,6 +753,144 @@ pages.get('/api/pds-status', async (c) => {
   return c.json({ host: ownerHost, state: ownerState, states }, 200, cacheHeaders);
 });
 
+// GitHub uses the standard OAuth authorization-code flow. The signup ticket
+// stored in KV proves that the profile details came from GitHub without
+// exposing the access token or client secret to the browser.
+pages.get('/auth/github/start', async (c) => {
+  if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) {
+    return c.redirect(`/auth?githubError=${encodeURIComponent('GitHub sign-up is not configured yet.')}`);
+  }
+  const state = crypto.randomUUID();
+  const returnTo = c.req.query('returnTo') || '/';
+  await c.env.PUSH_TOKENS.put(githubOauthStateKey(state), JSON.stringify({ returnTo }), { expirationTtl: 10 * 60 });
+  const origin = new URL(c.req.url).origin;
+  const authorizeUrl = new URL('https://github.com/login/oauth/authorize');
+  authorizeUrl.searchParams.set('client_id', c.env.GITHUB_CLIENT_ID);
+  authorizeUrl.searchParams.set('redirect_uri', `${origin}/auth/github/callback`);
+  authorizeUrl.searchParams.set('scope', 'read:user user:email');
+  authorizeUrl.searchParams.set('state', state);
+  return c.redirect(authorizeUrl.toString());
+});
+
+pages.get('/auth/github/callback', async (c) => {
+  const fail = (message: string, returnTo = '/') => c.redirect(
+    `/auth?githubError=${encodeURIComponent(message)}&returnTo=${encodeURIComponent(returnTo)}`,
+  );
+  if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) return fail('GitHub sign-up is not configured yet.');
+  const code = c.req.query('code') || '';
+  const state = c.req.query('state') || '';
+  if (!code || !state) return fail('GitHub sign-in did not complete. Please try again.');
+
+  const stateKey = githubOauthStateKey(state);
+  const storedState = await c.env.PUSH_TOKENS.get(stateKey);
+  await c.env.PUSH_TOKENS.delete(stateKey);
+  if (!storedState) return fail('That GitHub sign-in expired. Please try again.');
+  let returnTo = '/';
+  try {
+    const parsed = JSON.parse(storedState) as { returnTo?: unknown };
+    if (typeof parsed.returnTo === 'string' && parsed.returnTo) returnTo = parsed.returnTo;
+  } catch {}
+
+  try {
+    const origin = new URL(c.req.url).origin;
+    const redirectUri = `${origin}/auth/github/callback`;
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'CoffeeAndCode (coffeencode.cc)',
+      },
+      body: JSON.stringify({
+        client_id: c.env.GITHUB_CLIENT_ID,
+        client_secret: c.env.GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const tokenPayload = await tokenResponse.json().catch(() => ({})) as { access_token?: unknown; error?: unknown; error_description?: unknown };
+    if (!tokenResponse.ok || typeof tokenPayload.access_token !== 'string' || !tokenPayload.access_token) {
+      throw new Error(typeof tokenPayload.error_description === 'string' ? tokenPayload.error_description : 'GitHub did not return an access token.');
+    }
+    const githubToken = tokenPayload.access_token;
+    const githubHeaders = {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${githubToken}`,
+      'User-Agent': 'CoffeeAndCode (coffeencode.cc)',
+    };
+    const [userResponse, emailsResponse] = await Promise.all([
+      fetch('https://api.github.com/user', { headers: githubHeaders }),
+      fetch('https://api.github.com/user/emails', { headers: githubHeaders }),
+    ]);
+    if (!userResponse.ok) throw new Error(`GitHub profile request returned ${userResponse.status}.`);
+    const user = await userResponse.json() as {
+      id?: unknown; login?: unknown; name?: unknown; email?: unknown; avatar_url?: unknown;
+    };
+    const githubId = typeof user.id === 'number' || typeof user.id === 'string' ? String(user.id) : '';
+    const login = typeof user.login === 'string' ? user.login : '';
+    if (!githubId || !login) throw new Error('GitHub returned an invalid profile.');
+
+    let email = typeof user.email === 'string' ? user.email.toLowerCase() : '';
+    if (emailsResponse.ok) {
+      const emails = await emailsResponse.json() as Array<{ email?: unknown; primary?: unknown; verified?: unknown }>;
+      const validEmails = emails.filter((entry): entry is { email: string; primary?: unknown; verified?: unknown } =>
+        typeof entry.email === 'string' && validSignupEmail(entry.email));
+      const verified = validEmails.filter((entry) => entry.verified === true);
+      const primary = verified.find((entry) => entry.primary === true) || verified[0];
+      if (primary) email = primary.email.toLowerCase();
+    }
+    if (!validSignupEmail(email)) throw new Error('GitHub did not return a verified email address for that account.');
+
+    const ticket = crypto.randomUUID();
+    await c.env.PUSH_TOKENS.put(githubTicketKey(ticket), JSON.stringify({
+      id: githubId,
+      login,
+      email,
+      ...(typeof user.name === 'string' && user.name.trim() ? { name: user.name.trim() } : {}),
+      ...(typeof user.avatar_url === 'string' && user.avatar_url ? { picture: user.avatar_url } : {}),
+    }), { expirationTtl: 15 * 60 });
+    return c.redirect(`/auth?github=signup&ticket=${encodeURIComponent(ticket)}&returnTo=${encodeURIComponent(returnTo)}`);
+  } catch (error) {
+    console.error('GitHub signup callback failed:', error);
+    return fail(error instanceof Error ? error.message : 'GitHub sign-in could not be verified. Please try again.', returnTo);
+  }
+});
+
+// Returns the GitHub profile associated with a short-lived OAuth ticket.
+pages.post('/api/auth/github-profile', async (c) => {
+  let body: Record<string, unknown>;
+  try {
+    const parsed = await c.req.json();
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('bad body');
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return c.json({ error: 'A JSON body is required.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+  const ticket = typeof body.ticket === 'string' ? body.ticket : '';
+  if (!/^[0-9a-f-]{36}$/i.test(ticket)) return c.json({ error: 'GitHub sign-in is missing or invalid.' }, 400, { 'Cache-Control': 'no-store' });
+  const stored = await c.env.PUSH_TOKENS.get(githubTicketKey(ticket));
+  if (!stored) return c.json({ error: 'That GitHub sign-in expired. Please try again.' }, 401, { 'Cache-Control': 'no-store' });
+  try {
+    const profile = JSON.parse(stored) as {
+      id?: unknown; login?: unknown; email?: unknown; name?: unknown; picture?: unknown;
+    };
+    if ((typeof profile.id !== 'string' && typeof profile.id !== 'number') || typeof profile.email !== 'string' || !validSignupEmail(profile.email)) {
+      throw new Error('invalid ticket');
+    }
+    const githubId = String(profile.id);
+    const existingAccount = await readGithubSignupMapping(c.env, githubId).catch(() => undefined);
+    return c.json({
+      email: profile.email,
+      ...(typeof profile.login === 'string' ? { login: profile.login } : {}),
+      ...(typeof profile.name === 'string' ? { name: profile.name } : {}),
+      ...(typeof profile.picture === 'string' ? { picture: profile.picture } : {}),
+      ...(existingAccount ? { existingAccount } : {}),
+    }, 200, { 'Cache-Control': 'no-store' });
+  } catch {
+    return c.json({ error: 'That GitHub sign-in could not be verified. Please try again.' }, 401, { 'Cache-Control': 'no-store' });
+  }
+});
+
 pages.get('/auth', (c) => {
   const body = `
     <section class="auth-page" aria-labelledby="auth-title">
@@ -620,12 +906,13 @@ pages.get('/auth', (c) => {
             <li><i class="fa-solid fa-feather" aria-hidden="true"></i><div><strong>Write with us</strong><span>Author accounts get a profile, drafts, and publishing tools.</span></div></li>
           </ul>
         </div>
-        <div class="auth-card" data-auth-options data-google-client-id="${escapeHtml(c.env.GOOGLE_CLIENT_ID || '')}">
+        <div class="auth-card" data-auth-options data-google-client-id="${escapeHtml(c.env.GOOGLE_CLIENT_ID || '')}" data-github-enabled="${c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET ? 'true' : ''}">
           <div class="auth-welcome" data-auth-welcome hidden>
             <img class="auth-welcome__avatar" data-welcome-avatar alt="" hidden>
             <span class="auth-welcome__avatar auth-welcome__avatar--placeholder" data-welcome-placeholder><i class="fa-solid fa-user" aria-hidden="true"></i></span>
             <h2 class="auth-welcome__title">Welcome, <span data-welcome-name></span></h2>
             <p class="auth-welcome__handle">@<span data-welcome-handle></span><span data-welcome-pronouns hidden> · <span data-welcome-pronouns-value></span></span></p>
+            <p class="auth-welcome__next" data-welcome-next-time hidden></p>
             <a class="login-button auth-option__button" data-welcome-continue href="/">Continue to Coffee &amp; Code</a>
           </div>
           <div class="auth-welcome" data-auth-signedout hidden>
@@ -644,7 +931,7 @@ pages.get('/auth', (c) => {
           <div class="google-signup" data-google-signup hidden>
             <div data-google-step-details>
               <h2 class="google-signup__title">Let’s create your Coffee &amp; Code account</h2>
-              <p class="google-signup__intro">Google confirmed these details. Choose a password for your new AT Protocol account.</p>
+              <p class="google-signup__intro"><span data-signup-provider-name>Google</span> confirmed these details. Choose a password for your new AT Protocol account.</p>
               <div class="google-signup__summary">
                 <img data-google-summary-avatar alt="" hidden>
                 <span data-google-summary-placeholder aria-hidden="true"><i class="fa-solid fa-user"></i></span>
@@ -681,13 +968,19 @@ pages.get('/auth', (c) => {
                 <button type="button" class="auth-signout" data-google-back>Back</button>
               </form>
             </div>
+            <div data-google-step-existing hidden>
+              <h2 class="google-signup__title">You already have a Coffee &amp; Code account</h2>
+              <p class="google-signup__intro">This <span data-google-existing-provider>Google</span> account is already connected to <strong data-google-existing-handle></strong>. Use AT Protocol sign-in instead.</p>
+              <div class="google-signup__existing-actions">
+                <button type="button" class="login-button auth-option__button" data-google-existing-coffee>Continue with Coffee &amp; Code</button>
+                <button type="button" class="auth-signout" data-google-existing-handle-signin>Use a handle</button>
+                <button type="button" class="auth-signout" data-google-existing-cancel>Cancel</button>
+              </div>
+            </div>
           </div>
           <p class="auth-card__heading">Continue with your AT Protocol account</p>
           <div class="auth-providers" data-auth-providers>
-            <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><img class="auth-provider__logo" src="/favicon.png" alt="" aria-hidden="true"><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
-            <button type="button" class="auth-provider" aria-expanded="false" data-provider="bsky.social"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-bsky.app-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Bluesky</strong><small>bsky.social</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
-            <button type="button" class="auth-provider" aria-expanded="false" data-provider="eurosky.social"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-eurosky.social-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Eurosky</strong><small>eurosky.social</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
-            <button type="button" class="auth-provider" aria-expanded="false" data-provider="blacksky.app"><img class="auth-provider__logo" src="/logomarks/login/coffee-and-code-blackskyweb.xyz-avatar.jpg" alt="" aria-hidden="true" loading="lazy"><span class="auth-provider__copy"><strong>Continue with Blacksky</strong><small>blacksky.app</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+            <button type="button" class="auth-provider" aria-expanded="false" data-provider="account.coffeencode.cc"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Continue with Coffee &amp; Code</strong><small>account.coffeencode.cc</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
             <button type="button" class="auth-provider" aria-expanded="false" data-provider=""><i class="fa-solid fa-at" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Use a handle</strong><small>any AT Protocol account</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
           </div>
           <form class="auth-form auth-handle-form" data-auth-form hidden>
@@ -696,8 +989,9 @@ pages.get('/auth', (c) => {
             <p class="auth-handle-form__hint" data-handle-hint hidden></p>
             <button type="submit" class="login-button auth-option__button" data-handle-submit>Continue</button>
           </form>
-          <div class="auth-card__divider"><span>Other ways to sign in</span></div>
           <button type="button" class="auth-provider auth-provider--google" data-google-button hidden><i class="fa-brands fa-google" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Continue with Google</strong><small>Create a Coffee &amp; Code Account using your Google Account info</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+          <button type="button" class="auth-provider auth-provider--github" data-github-button hidden><i class="fa-brands fa-github" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Continue with GitHub</strong><small>Create a Coffee &amp; Code Account using your GitHub Account info</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+          <div class="auth-card__divider"><span>Other ways to sign in</span></div>
           <details class="auth-row">
             <summary><i class="fa-solid fa-key" aria-hidden="true"></i> Use an app password</summary>
             <form class="auth-form" data-app-password-form>
@@ -709,7 +1003,7 @@ pages.get('/auth', (c) => {
             </form>
             <p class="auth-page__resolution">Create an app password in your account provider’s settings (on Bluesky: Settings → App passwords). Signing in this way skips the permissions screen, so only use it on a device you trust.</p>
           </details>
-          <button type="button" class="auth-provider auth-provider--create" data-create-coffee-account><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Create a Coffee &amp; Code account</strong><small>hosted on our own infrastructure, works with thousands of apps</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
+          <button type="button" class="auth-provider auth-provider--create" data-create-coffee-account><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span class="auth-provider__copy"><strong>Create a Coffee &amp; Code account</strong><small>Hosted on our own infrastructure, works with thousands of apps</small></span><i class="fa-solid fa-chevron-right auth-provider__chevron" aria-hidden="true"></i></button>
           <p class="auth-page__resolution" data-invite-status aria-live="polite"></p>
           <div class="auth-invite" data-invite-panel hidden><code data-invite-code></code><button type="button" class="auth-signout" data-copy-invite>Copy invite code</button></div>
         </div>
@@ -1076,7 +1370,7 @@ const draftEditorStyles = `
     .draft-publish-dialog__schedule-optional { color: var(--muted); font-size: 12px; font-weight: 400; }
     .draft-publish-dialog__schedule input { background: var(--paper-deep); border: 1px solid var(--line); color: var(--ink); font: inherit; padding: 8px 10px; }
     .draft-publish-dialog__hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
-    .draft-editor__doc-settings { margin: 0 auto 22px; max-width: var(--doc-width); }
+    .draft-editor__doc-settings { margin: 0 0 22px; max-width: none; width: 100%; }
     .draft-editor__doc-heading { font-size: 15px; margin: 0; }
     .draft-editor__doc-heading i { color: var(--accent); font-size: .85em; margin-right: 7px; }
     .draft-editor__meta-wide { grid-column: 1 / -1; }
@@ -1097,7 +1391,8 @@ const draftEditorStyles = `
     .draft-editor__meta-title::placeholder, .draft-editor__meta-description::placeholder { color: var(--muted); opacity: .55; }
     .draft-editor__meta-description { background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--muted); font: inherit; font-size: 16px; line-height: 1.5; margin-bottom: 22px; padding: 0 0 14px; resize: none; width: 100%; }
     .draft-editor__meta-description:focus { color: var(--ink); outline: none; }
-    .draft-editor__meta-grid { column-gap: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); row-gap: 12px; }
+    .draft-editor__meta-grid { column-gap: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; }
+    @media (max-width: 700px) { .draft-editor__meta-grid { grid-template-columns: 1fr; } }
     .draft-editor__meta-grid label, .draft-editor__meta-sources label { color: var(--muted); display: grid; font-size: 11px; font-weight: 700; gap: 4px; letter-spacing: .06em; text-transform: uppercase; }
     .draft-editor__meta-grid input, .draft-editor__meta-grid select, .draft-editor__meta-grid textarea, .draft-editor__meta-sources input, .draft-editor__meta-sources textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font: inherit; font-size: 14px; letter-spacing: normal; padding: 7px 10px; text-transform: none; }
     .draft-editor__meta-grid input:focus, .draft-editor__meta-grid select:focus, .draft-editor__meta-grid textarea:focus, .draft-editor__meta-sources input:focus, .draft-editor__meta-sources textarea:focus { border-color: var(--accent); outline: none; }
@@ -1286,7 +1581,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
               <div class="draft-editor__meta-grid">
                 <label class="draft-editor__meta-wide">Tags — comma separated<textarea name="draft-tags" rows="2" placeholder="coffee, code, …" data-draft-field="tags"></textarea></label>
                 <label>Publication<select name="draft-publication" data-draft-field="publication"><option value="" disabled selected>Loading publications…</option></select></label>
-                <label>Co-authors — comma separated handles<input name="draft-coauthors" type="text" placeholder="friend.bsky.social, did:plc:…" data-draft-field="coauthors"></label>
+                <label>Co-authors — comma separated handles<input name="draft-coauthors" type="text" placeholder="friend.bsky.social, did:plc:…" autocomplete="off" autocapitalize="none" spellcheck="false" data-draft-field="coauthors" data-handle-typeahead data-typeahead-multiple data-typeahead-limit="6"></label>
                 <label>Cover image<input name="draft-cover" type="file" accept="image/*" data-draft-field="cover"></label>
                 <div class="draft-editor__meta-cover-row">
                   <label class="account-author-form__check draft-editor__meta-check"><input name="draft-cover-remove" type="checkbox" data-draft-field="coverRemove"> Remove current cover</label>
@@ -1355,6 +1650,7 @@ pages.get('/account/author/draft/:rkey', (c) => {
           </div>
         </div>
       </dialog>
+      <script type="module" src="/components/typeahead.js"></script>
     </section>`;
   const body = accountPageShell('Edit draft', inner, { signedOutMessage: 'Sign in to edit this draft.', hideSidebar: true });
   return c.html(renderLayout(c, 'Edit draft', `${draftEditorStyles}${body}`, '<meta name="robots" content="noindex">'));

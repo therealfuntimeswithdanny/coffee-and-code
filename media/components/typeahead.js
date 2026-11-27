@@ -205,6 +205,8 @@ customElements.define('handle-typeahead', HandleTypeahead);
 
 // Attach mode — wire the same suggestions onto an existing <input>:
 //   <input data-handle-typeahead data-typeahead-limit="6" data-typeahead-api="/api/typeahead/searchActorsTypeahead">
+// Add `data-typeahead-multiple` for comma-separated handle entry; suggestions
+// then replace only the comma-separated token currently being edited.
 // Selecting a suggestion fills the input with the bare handle and dispatches a
 // `handle-selected` CustomEvent from the input.
 let attachStylesInjected = false;
@@ -249,6 +251,27 @@ function attachHandleTypeahead(input) {
 
   const api = input.getAttribute('data-typeahead-api') || '/api/typeahead/searchActorsTypeahead';
   const limit = Math.min(Math.max(parseInt(input.getAttribute('data-typeahead-limit') || '8', 10) || 8, 1), 100);
+  const multiSeparator = input.hasAttribute('data-typeahead-multiple')
+    ? (input.getAttribute('data-typeahead-separator') || ',')
+    : '';
+  const currentToken = () => {
+    if (!multiSeparator) {
+      return { end: input.value.length, query: input.value.trim(), start: 0 };
+    }
+    const caret = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+    const boundaryStart = caret > 0 ? input.value.lastIndexOf(multiSeparator, caret - 1) + 1 : 0;
+    const nextSeparator = input.value.indexOf(multiSeparator, caret);
+    const boundaryEnd = nextSeparator === -1 ? input.value.length : nextSeparator;
+    const segment = input.value.slice(boundaryStart, boundaryEnd);
+    const leading = (segment.match(/^\s*/) || [''])[0].length;
+    const trimmed = segment.trim();
+    const start = boundaryStart + leading;
+    return {
+      end: start + trimmed.length,
+      query: trimmed.replace(/^@/, ''),
+      start,
+    };
+  };
   const popover = document.createElement('ul');
   popover.className = 'handle-typeahead-popover';
   popover.setAttribute('role', 'listbox');
@@ -260,6 +283,7 @@ function attachHandleTypeahead(input) {
   let seq = 0;
   let timer = 0;
   let abort = null;
+  let ignoreSelectionInput = false;
 
   input.setAttribute('role', 'combobox');
   input.setAttribute('aria-autocomplete', 'list');
@@ -300,7 +324,18 @@ function attachHandleTypeahead(input) {
   const select = (index) => {
     const actor = actors[index];
     if (!actor) return;
-    input.value = actor.handle;
+    ignoreSelectionInput = true;
+    if (multiSeparator) {
+      const token = currentToken();
+      let before = input.value.slice(0, token.start);
+      const after = input.value.slice(token.end);
+      if (before.endsWith(multiSeparator) && before.trim()) before += ' ';
+      input.value = `${before}${actor.handle}${after}`;
+      const caret = before.length + actor.handle.length;
+      input.setSelectionRange(caret, caret);
+    } else {
+      input.value = actor.handle;
+    }
     input.dispatchEvent(new Event('input', { bubbles: true }));
     hide();
     input.dispatchEvent(new CustomEvent('handle-selected', { detail: actor, bubbles: true }));
@@ -360,8 +395,12 @@ function attachHandleTypeahead(input) {
   };
 
   input.addEventListener('input', () => {
+    if (ignoreSelectionInput) {
+      ignoreSelectionInput = false;
+      return;
+    }
     clearTimeout(timer);
-    timer = setTimeout(() => search(input.value.trim()), 160);
+    timer = setTimeout(() => search(currentToken().query), 160);
   });
   input.addEventListener('keydown', (event) => {
     if (popover.hidden) {
